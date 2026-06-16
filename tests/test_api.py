@@ -2,9 +2,12 @@
 
 from fastapi.testclient import TestClient
 
+from app.embeddings import get_embedder
 from app.main import app
 
 client = TestClient(app)
+
+_HAS_EMBEDDER = get_embedder() is not None
 
 
 def test_health():
@@ -50,3 +53,38 @@ def test_validate_endpoint_missing_fields():
     data = resp.json()
     assert data["valid"] is False
     assert len(data["errors"]) > 0 or len(data["missing"]) > 0
+
+
+def test_contacts_resolve_endpoint():
+    resp = client.post(
+        "/contacts/resolve",
+        json={
+            "name": "Ahmed",
+            "contacts": [
+                {"id": "1", "name": "Ahmed Hassan", "account": "A1"},
+                {"id": "2", "name": "Sara Adel", "account": "A2"},
+            ],
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["candidates"]) >= 1
+    if _HAS_EMBEDDER:
+        assert data["matched"] is not None
+        assert data["matched"]["contact"]["name"] == "Ahmed Hassan"
+
+
+def test_similar_endpoint():
+    resp = client.get("/nlu/similar", params={"text": "send 100 to John", "k": 3})
+    assert resp.status_code == 200
+    data = resp.json()
+    if _HAS_EMBEDDER:
+        assert len(data) == 3
+        assert data[0]["score"] >= data[-1]["score"]
+
+
+def test_parse_includes_intent_source():
+    resp = client.post("/nlu/parse", json={"text": "send 200 dollars to Ahmed"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["intent_source"] in {"semantic", "keyword"}

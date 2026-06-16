@@ -44,6 +44,21 @@ class ParseRequest(BaseModel):
     )
 
 
+class Contact(BaseModel):
+    """A beneficiary in the user's address book."""
+
+    id: str
+    name: str
+    account: str | None = None
+
+
+class ContactMatch(BaseModel):
+    """A contact matched to an extracted recipient, with a similarity score."""
+
+    contact: Contact
+    score: float = Field(..., ge=0.0, le=1.0)
+
+
 class NLUResponse(BaseModel):
     """Structured NLU result for an utterance."""
 
@@ -51,7 +66,41 @@ class NLUResponse(BaseModel):
     language: Language
     intent: Intent
     confidence: float = Field(..., ge=0.0, le=1.0)
+    intent_source: str = Field(
+        default="keyword",
+        description="Which classifier produced the intent: 'semantic' or 'keyword'.",
+    )
     entities: TransferEntities
+    resolved_recipient: ContactMatch | None = Field(
+        default=None,
+        description="Best contact-book match for the extracted recipient, if any.",
+    )
+
+
+class SimilarExampleSchema(BaseModel):
+    """A nearest example utterance returned by ``GET /nlu/similar``."""
+
+    text: str
+    intent: Intent
+    score: float
+
+
+class ResolveContactRequest(BaseModel):
+    """Input for ``POST /contacts/resolve``."""
+
+    name: str = Field(..., min_length=1, description="Recipient name to resolve.")
+    contacts: list[Contact] | None = Field(
+        default=None,
+        description="Address book to match against; defaults to the demo contacts.",
+    )
+    top_k: int = Field(default=3, ge=1, le=20)
+
+
+class ResolveContactResponse(BaseModel):
+    """Output for ``POST /contacts/resolve``."""
+
+    matched: ContactMatch | None
+    candidates: list[ContactMatch] = Field(default_factory=list)
 
 
 class TransferRequest(BaseModel):
