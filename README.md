@@ -40,6 +40,15 @@ python -c "import stanza; stanza.download('ar')"
 uvicorn app.main:app --reload --port 8000
 ```
 
+## Web simulator
+
+Open <http://localhost:8000/> in a browser for a built-in simulation & testing
+page. It lets you try utterances in English or Arabic (with one-click samples),
+shows the parsed intent, `intent_source`, confidence, extracted entities and the
+resolved contact, and has panels for `/nlu/similar` and `/contacts/resolve`. The
+raw JSON for each call is available under a collapsible section. Interactive
+OpenAPI docs remain at <http://localhost:8000/docs>.
+
 ## How semantic NLU works
 
 ```
