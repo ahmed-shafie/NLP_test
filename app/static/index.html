@@ -74,6 +74,9 @@
     .badge.fallback { background: rgba(245,158,11,.15); color: var(--warn); border: 1px solid rgba(245,158,11,.4); }
     .badge.semantic { background: rgba(56,189,248,.15); color: var(--accent); border: 1px solid rgba(56,189,248,.4); }
     .badge.keyword { background: rgba(148,163,184,.15); color: var(--muted); border: 1px solid rgba(148,163,184,.4); }
+    .badge.llm { background: rgba(168,85,247,.15); color: #c4b5fd; border: 1px solid rgba(168,85,247,.4); }
+    .clarify { margin-top: 12px; background: rgba(168,85,247,.08); border: 1px solid rgba(168,85,247,.35); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+    .clarify .lbl { color: #c4b5fd; font-size: 12px; display: block; margin-bottom: 4px; }
     .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; margin-top: 12px; font-size: 14px; }
     .kv .k { color: var(--muted); }
     .kv .v { word-break: break-word; }
@@ -214,10 +217,13 @@
         const rr = r.resolved_recipient;
         const intentClass = r.intent === "transfer_money" ? "transfer" : "fallback";
         const recipientName = rr ? esc(rr.contact.name) : '<span class="muted">— none —</span>';
+        const llmBadge = r.llm_assisted ? '<span class="badge llm" title="LiteLLM exception handler filled or corrected slots">LLM assisted</span>' : "";
+        const clarify = r.clarification ? `<div class="clarify"><span class="lbl">LLM clarification</span><span dir="auto">${esc(r.clarification)}</span></div>` : "";
         out.innerHTML = `
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <span class="badge ${intentClass}">${esc(r.intent)}</span>
             <span class="badge ${esc(r.intent_source)}">${esc(r.intent_source)}</span>
+            ${llmBadge}
             <span class="muted">language: <b>${esc(r.language)}</b></span>
           </div>
           <div style="margin-top:10px">
@@ -231,6 +237,7 @@
             <div class="k">source account</div><div class="v">${e.source_account ?? '<span class="muted">null</span>'}</div>
             <div class="k">resolved contact</div><div class="v" dir="auto">${recipientName}${rr ? ` <span class="muted">(${esc(rr.contact.account || "")}, ${pct(rr.score)})</span>` : ""}</div>
           </div>
+          ${clarify}
           ${rawBlock(r)}`;
       } catch (err) {
         out.innerHTML = `<div class="err">${esc(err.message)}</div>`;

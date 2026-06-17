@@ -6,20 +6,13 @@ from decimal import Decimal
 
 from pydantic import ValidationError
 
-from app.config import DEFAULT_CURRENCY, settings
-from app.nlu import arabic, english
 from app.nlu.contacts import ContactMatcher, get_default_matcher
-from app.nlu.intents import classify_intent
-from app.nlu.lang import detect_language
-from app.nlu.semantic_intents import get_semantic_classifier
 from app.schemas import (
     Contact,
     ContactMatch,
-    Intent,
     Language,
     NLUResponse,
     SlotError,
-    TransferEntities,
     TransferRequest,
     ValidationResult,
 )
@@ -32,46 +25,16 @@ _SLOT_PROMPTS: dict[str, str] = {
 }
 
 
-def _classify(text: str, lang: Language) -> tuple[Intent, float, str]:
-    """Classify intent, preferring the semantic classifier with keyword fallback."""
-
-    classifier = get_semantic_classifier()
-    if classifier is not None:
-        intent, confidence = classifier.classify(text)
-        return intent, confidence, "semantic"
-
-    intent, confidence = classify_intent(text, lang)
-    if confidence < settings.intent_threshold:
-        intent = Intent.FALLBACK
-    return intent, confidence, "keyword"
-
-
 def parse(text: str, language: Language | None = None) -> NLUResponse:
-    """Run the full NLU pipeline over a single utterance."""
+    """Run the full NLU pipeline over a single utterance.
 
-    lang = language or detect_language(text)
-    intent, confidence, source = _classify(text, lang)
+    Delegates to the Haystack-orchestrated pipeline (which adds the LiteLLM
+    exception handler on top of the deterministic steps).
+    """
 
-    entities = TransferEntities()
-    resolved: ContactMatch | None = None
-    if intent is Intent.TRANSFER_MONEY:
-        module = arabic if lang is Language.AR else english
-        entities = module.extract_entities(text)
-        # Assume a default currency when an amount is given without one.
-        if entities.amount is not None and entities.currency is None:
-            entities.currency = DEFAULT_CURRENCY
-        if entities.recipient:
-            resolved, _ = get_default_matcher().resolve(entities.recipient)
+    from app.orchestration import run_pipeline
 
-    return NLUResponse(
-        text=text,
-        language=lang,
-        intent=intent,
-        confidence=confidence,
-        intent_source=source,
-        entities=entities,
-        resolved_recipient=resolved,
-    )
+    return run_pipeline(text, language)
 
 
 def resolve_contact(

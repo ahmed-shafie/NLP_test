@@ -75,6 +75,14 @@ class NLUResponse(BaseModel):
         default=None,
         description="Best contact-book match for the extracted recipient, if any.",
     )
+    llm_assisted: bool = Field(
+        default=False,
+        description="True when the LiteLLM exception handler filled or corrected slots.",
+    )
+    clarification: str | None = Field(
+        default=None,
+        description="A natural-language follow-up/clarification suggested by the LLM fallback.",
+    )
 
 
 class SimilarExampleSchema(BaseModel):

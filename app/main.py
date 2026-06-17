@@ -14,8 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.config import settings
 from app.embeddings import get_embedder
+from app.llm import get_llm_handler
 from app.nlu import arabic, english, pipeline
 from app.nlu.semantic_intents import get_semantic_classifier
+from app.orchestration import get_nlu_pipeline
 from app.schemas import (
     NLUResponse,
     ParseRequest,
@@ -38,6 +40,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         arabic._load_model()
         get_embedder()
         get_semantic_classifier()
+        get_nlu_pipeline()
+        get_llm_handler()
     yield
 
 

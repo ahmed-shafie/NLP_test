@@ -9,7 +9,9 @@ An NLU (Natural Language Understanding) microservice for a mobile-banking AI ass
 - **Cross-lingual contact matching** — resolves a spoken/typed recipient to an address-book contact across scripts (e.g. `Ahmed` → `أحمد حسن`); falls back to fuzzy string matching.
 - **Entity/slot extraction** — extracts `amount`, `currency`, `recipient`, `source_account`, `note`.
 - **Strict validation** — Pydantic schemas enforce business rules and produce human-friendly prompts for missing/invalid slots.
-- **Graceful degradation** — runs in regex/fuzzy-only mode when NLP/embedding models are not downloaded.
+- **Haystack orchestration** — the NLU steps are wired as Haystack components in a `Pipeline`, so the flow is explicit and extensible.
+- **LLM exception handling** — a LiteLLM-backed safety net (local LLM via Ollama by default) fires only when the deterministic path falls short (e.g. an unparsed Arabic word-amount like "ألف", or a fallback intent), filling missing slots and proposing a clarification.
+- **Graceful degradation** — runs in regex/fuzzy-only mode when NLP/embedding models are not downloaded, and skips the LLM entirely when no LLM server is reachable.
 
 ## Tech Stack
 
@@ -21,6 +23,8 @@ An NLU (Natural Language Understanding) microservice for a mobile-banking AI ass
 | Arabic NLU | Stanza |
 | Embeddings | sentence-transformers (`paraphrase-multilingual-MiniLM-L12-v2`) |
 | Vector DB | FAISS (in-process) |
+| Orchestration | Haystack (`haystack-ai`) |
+| LLM gateway | LiteLLM → local Ollama (`qwen2.5:3b`) |
 
 ## Quick Start
 
@@ -36,9 +40,34 @@ python -m spacy download en_core_web_sm
 python -c "import stanza; stanza.download('ar')"
 # The multilingual embedding model auto-downloads on first use (~470MB).
 
+# (optional) local LLM for the exception handler — offline, no API key
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5:3b   # ~2GB, strong Arabic; LiteLLM targets ollama/qwen2.5:3b
+
 # Run the server
 uvicorn app.main:app --reload --port 8000
 ```
+
+The LLM handler is optional and configurable via env vars (prefix `NLU_`):
+`NLU_LLM_ENABLED` (default `true`), `NLU_LLM_MODEL` (default `ollama/qwen2.5:3b`),
+`NLU_LLM_API_BASE` (default `http://localhost:11434`). Set `NLU_LLM_ENABLED=false`
+to disable it; if the server is unreachable the pipeline degrades automatically.
+
+## Orchestration & LLM fallback
+
+```
+text ─▶ LanguageDetector ─▶ IntentClassifier ─▶ EntityExtractor ─▶ ContactResolver ─▶ LLMExceptionHandler
+                                                                                         │ (only if intent=fallback
+                                                                                         │  or amount/recipient missing)
+                                                                                         ▼
+                                                                            LiteLLM → local LLM (JSON slots + clarification)
+```
+
+The Haystack pipeline (`app/orchestration.py`) threads a shared `state` through each
+component. The final `LLMExceptionHandler` runs the LiteLLM call (`app/llm.py`) only
+when the deterministic result is incomplete, then merges any slots it recovered
+(never overwriting values the rules already found) and attaches a `clarification`.
+The response gains two fields: `llm_assisted` (bool) and `clarification` (string).
 
 ## Web simulator
 

@@ -42,6 +42,22 @@ class Settings(BaseSettings):
     # Cosine-similarity floor for accepting a contact match.
     contact_match_threshold: float = 0.5
 
+    # ---- LiteLLM exception handler (local LLM via Ollama by default) ----
+    # Route the LLM fallback through LiteLLM. Disable to skip the LLM entirely.
+    llm_enabled: bool = True
+
+    # LiteLLM model string. Default targets a local Ollama model (offline, no key).
+    llm_model: str = "ollama/qwen2.5:3b"
+
+    # Base URL for the local LLM server (Ollama). Used for the reachability probe.
+    llm_api_base: str = "http://localhost:11434"
+
+    # Per-request timeout (seconds) for the LLM call.
+    llm_timeout: float = 30.0
+
+    # Sampling temperature; 0 for deterministic slot extraction.
+    llm_temperature: float = 0.0
+
 
 # Currencies the assistant understands, keyed by ISO-4217 code.
 SUPPORTED_CURRENCIES: dict[str, set[str]] = {
