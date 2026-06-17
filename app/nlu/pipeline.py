@@ -25,16 +25,21 @@ _SLOT_PROMPTS: dict[str, str] = {
 }
 
 
-def parse(text: str, language: Language | None = None) -> NLUResponse:
+def parse(
+    text: str,
+    language: Language | None = None,
+    account_number: str | None = None,
+) -> NLUResponse:
     """Run the full NLU pipeline over a single utterance.
 
-    Delegates to the Haystack-orchestrated pipeline (which adds the LiteLLM
-    exception handler on top of the deterministic steps).
+    Delegates to the Haystack-orchestrated pipeline (which adds the beneficiary
+    account lookup and the LiteLLM exception handler on top of the deterministic
+    steps).
     """
 
     from app.orchestration import run_pipeline
 
-    return run_pipeline(text, language)
+    return run_pipeline(text, language, account_number)
 
 
 def resolve_contact(

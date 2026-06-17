@@ -108,6 +108,8 @@
       <h2>Parse utterance <span class="ep">POST /nlu/parse</span></h2>
       <label for="parseText">Type what the user said (English or Arabic)</label>
       <textarea id="parseText" placeholder="e.g. send 500 dollars to Ahmed">send 500 dollars to Ahmed</textarea>
+      <label for="parseAccount" style="margin-top:10px">Destination account number (optional — resolves the beneficiary from the database)</label>
+      <input id="parseAccount" type="text" placeholder="e.g. EG1003" />
       <div class="samples" id="parseSamples"></div>
       <div class="row" style="margin-top:12px">
         <button id="parseBtn">Analyze</button>
@@ -205,24 +207,41 @@
 
     async function doParse() {
       const text = $("parseText").value.trim();
+      const account = $("parseAccount").value.trim();
       const out = $("parseResult");
       if (!text) { out.innerHTML = '<div class="err">Enter some text first.</div>'; return; }
       $("parseBtn").disabled = true; out.innerHTML = '<div class="muted">Analyzing…</div>';
       try {
+        const payload = { text };
+        if (account) payload.account_number = account;
         const r = await api("/nlu/parse", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify(payload),
         });
         const e = r.entities || {};
         const rr = r.resolved_recipient;
         const intentClass = r.intent === "transfer_money" ? "transfer" : "fallback";
         const recipientName = rr ? esc(rr.contact.name) : '<span class="muted">— none —</span>';
         const llmBadge = r.llm_assisted ? '<span class="badge llm" title="LiteLLM exception handler filled or corrected slots">LLM assisted</span>' : "";
+        const benBadge = r.beneficiary_source
+          ? `<span class="badge ${r.beneficiary_source === "database" ? "semantic" : "llm"}" title="How the beneficiary was resolved">beneficiary: ${esc(r.beneficiary_source)}</span>`
+          : "";
+        const b = r.resolved_beneficiary;
+        const benBlock = b
+          ? `<div class="kv" style="margin-top:10px">
+               <div class="k">beneficiary</div><div class="v" dir="auto"><b>${esc(b.name)}</b></div>
+               <div class="k">account</div><div class="v">${b.account ? esc(b.account) : '<span class="muted">null</span>'}</div>
+               <div class="k">bank</div><div class="v" dir="auto">${b.bank ? esc(b.bank) : '<span class="muted">null</span>'}</div>
+             </div>`
+          : (account
+              ? `<div class="clarify" style="background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.35)"><span class="lbl" style="color:var(--warn)">account ${esc(account)} not found in database</span><span dir="auto">Delegated to the LLM (see clarification below).</span></div>`
+              : "");
         const clarify = r.clarification ? `<div class="clarify"><span class="lbl">LLM clarification</span><span dir="auto">${esc(r.clarification)}</span></div>` : "";
         out.innerHTML = `
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <span class="badge ${intentClass}">${esc(r.intent)}</span>
             <span class="badge ${esc(r.intent_source)}">${esc(r.intent_source)}</span>
+            ${benBadge}
             ${llmBadge}
             <span class="muted">language: <b>${esc(r.language)}</b></span>
           </div>
@@ -237,6 +256,7 @@
             <div class="k">source account</div><div class="v">${e.source_account ?? '<span class="muted">null</span>'}</div>
             <div class="k">resolved contact</div><div class="v" dir="auto">${recipientName}${rr ? ` <span class="muted">(${esc(rr.contact.account || "")}, ${pct(rr.score)})</span>` : ""}</div>
           </div>
+          ${benBlock}
           ${clarify}
           ${rawBlock(r)}`;
       } catch (err) {
@@ -299,7 +319,7 @@
     renderChips($("parseSamples"), PARSE_SAMPLES, $("parseText"));
     renderChips($("resSamples"), RES_SAMPLES, $("resName"));
     $("parseBtn").onclick = doParse;
-    $("parseClear").onclick = () => { $("parseText").value = ""; $("parseResult").innerHTML = ""; };
+    $("parseClear").onclick = () => { $("parseText").value = ""; $("parseAccount").value = ""; $("parseResult").innerHTML = ""; };
     $("simBtn").onclick = doSimilar;
     $("resBtn").onclick = doResolve;
     $("parseText").addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") doParse(); });

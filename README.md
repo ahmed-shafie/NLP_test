@@ -10,6 +10,7 @@ An NLU (Natural Language Understanding) microservice for a mobile-banking AI ass
 - **Entity/slot extraction** — extracts `amount`, `currency`, `recipient`, `source_account`, `note`.
 - **Strict validation** — Pydantic schemas enforce business rules and produce human-friendly prompts for missing/invalid slots.
 - **Haystack orchestration** — the NLU steps are wired as Haystack components in a `Pipeline`, so the flow is explicit and extensible.
+- **Configurable beneficiary lookup** — when a request includes an `account_number`, the destination beneficiary is resolved by a SQL lookup against a database provider (PostgreSQL, Oracle, SQL Server, Impala, Hive, SQLite, …). The connection, query, and column mapping are all set from config, so switching providers needs no code changes.
 - **LLM exception handling** — a LiteLLM-backed safety net (local LLM via Ollama by default) fires only when the deterministic path falls short (e.g. an unparsed Arabic word-amount like "ألف", or a fallback intent), filling missing slots and proposing a clarification.
 - **Graceful degradation** — runs in regex/fuzzy-only mode when NLP/embedding models are not downloaded, and skips the LLM entirely when no LLM server is reachable.
 
@@ -24,6 +25,7 @@ An NLU (Natural Language Understanding) microservice for a mobile-banking AI ass
 | Embeddings | sentence-transformers (`paraphrase-multilingual-MiniLM-L12-v2`) |
 | Vector DB | FAISS (in-process) |
 | Orchestration | Haystack (`haystack-ai`) |
+| Beneficiary DB | SQLAlchemy (any dialect/provider) |
 | LLM gateway | LiteLLM → local Ollama (`qwen2.5:3b`) |
 
 ## Quick Start
@@ -53,14 +55,49 @@ The LLM handler is optional and configurable via env vars (prefix `NLU_`):
 `NLU_LLM_API_BASE` (default `http://localhost:11434`). Set `NLU_LLM_ENABLED=false`
 to disable it; if the server is unreachable the pipeline degrades automatically.
 
+## Beneficiary account lookup (configurable provider)
+
+When `POST /nlu/parse` receives an `account_number`, the pipeline resolves the
+destination **beneficiary** by querying a SQL database before building the response.
+The provider is selected purely by the SQLAlchemy URL, and the query and result
+column mapping are configuration — so you can switch between PostgreSQL, Oracle,
+SQL Server, Impala, Hive, SQLite, etc. **without code changes**:
+
+```bash
+NLU_DB_ENABLED=true
+NLU_DB_URL="postgresql+psycopg://user:pass@host:5432/bank"
+NLU_DB_QUERY="SELECT id, name, account, bank FROM beneficiaries WHERE account = :account_number"
+NLU_DB_ACCOUNT_PARAM="account_number"           # bind param name in the query
+NLU_DB_COLUMN_MAP='{"id":"id","name":"name","account":"account","bank":"bank"}'
+```
+
+The database drivers are optional installs (only the one you use is needed):
+
+| Provider | SQLAlchemy URL prefix | Driver to `pip install` |
+|----------|----------------------|--------------------------|
+| PostgreSQL | `postgresql+psycopg://` | `psycopg[binary]` |
+| Oracle | `oracle+oracledb://` | `oracledb` |
+| SQL Server | `mssql+pyodbc://` | `pyodbc` (+ ODBC driver) |
+| MySQL/MariaDB | `mysql+pymysql://` | `pymysql` |
+| Impala | `impala://` | `impyla` |
+| Hive | `hive://` | `pyhive[hive]` |
+| SQLite (dev/test) | `sqlite:///` | built in |
+
+If the account is **found**, the beneficiary is returned in `resolved_beneficiary`
+(`beneficiary_source="database"`) and fills the recipient slot. If it is **not found**
+(or the DB is disabled/unreachable), the request is delegated to the LiteLLM handler,
+which processes the query and generates a response (`beneficiary_source="llm"`). DB
+lookup is skipped entirely when no `account_number` is supplied.
+
 ## Orchestration & LLM fallback
 
 ```
-text ─▶ LanguageDetector ─▶ IntentClassifier ─▶ EntityExtractor ─▶ ContactResolver ─▶ LLMExceptionHandler
-                                                                                         │ (only if intent=fallback
-                                                                                         │  or amount/recipient missing)
-                                                                                         ▼
-                                                                            LiteLLM → local LLM (JSON slots + clarification)
+text ─▶ LanguageDetector ─▶ IntentClassifier ─▶ EntityExtractor ─▶ ContactResolver ─▶ BeneficiaryLookup ─▶ LLMExceptionHandler
+                                                                                          │ (account_number)        │ (only if intent=fallback,
+                                                                                          ▼                         │  slots missing, or the
+                                                                            DB provider (SQLAlchemy)                │  account was not found)
+                                                                                                                    ▼
+                                                                                                       LiteLLM → local LLM
 ```
 
 The Haystack pipeline (`app/orchestration.py`) threads a shared `state` through each
@@ -97,9 +134,9 @@ to the same contact. Set `NLU_USE_SEMANTIC_INTENT=false` to force the keyword pa
 
 Parse a user utterance into an intent and extracted entities.
 
-**Request:**
+**Request:** (`account_number` is optional; include it to resolve the beneficiary from the database)
 ```json
-{"text": "transfer 500 dollars to John"}
+{"text": "transfer 500 dollars to John", "account_number": "EG1003"}
 ```
 
 **Response:**
@@ -113,16 +150,25 @@ Parse a user utterance into an intent and extracted entities.
   "entities": {
     "amount": "500",
     "currency": "USD",
-    "recipient": "John",
+    "recipient": "Sara Adel",
     "source_account": null,
     "note": null
   },
   "resolved_recipient": {
     "contact": {"id": "c5", "name": "Sara Adel", "account": "EG1003"},
     "score": 0.71
-  }
+  },
+  "resolved_beneficiary": {
+    "id": "b1", "name": "Sara Adel", "account": "EG1003", "bank": "CIB"
+  },
+  "beneficiary_source": "database",
+  "llm_assisted": false,
+  "clarification": null
 }
 ```
+
+When the account number is **not found**, `resolved_beneficiary` is `null`,
+`beneficiary_source` is `"llm"`, and `clarification` holds the LLM-generated reply.
 
 ### `GET /nlu/similar`
 
@@ -186,10 +232,14 @@ pytest -v
 ```
 app/
   main.py         — FastAPI application
-  config.py       — Settings, supported currencies
-  schemas.py      — Pydantic models (request/response, validation)
+  config.py       — Settings, supported currencies, DB lookup config
+  schemas.py      — Pydantic models (request/response, validation, Beneficiary)
+  orchestration.py— Haystack pipeline (incl. BeneficiaryLookup + LLM handler)
+  llm.py          — LiteLLM exception handler & beneficiary-not-found responder
   embeddings.py   — Multilingual sentence-embedding wrapper (lazy, cached)
   vectorstore.py  — Generic FAISS cosine-similarity index
+  db/
+    beneficiary.py     — Configurable SQLAlchemy beneficiary repository
   nlu/
     pipeline.py        — Orchestration (lang detect → intent → entities → contact)
     lang.py            — Arabic vs. English language detection

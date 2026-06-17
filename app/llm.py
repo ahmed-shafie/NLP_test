@@ -38,6 +38,16 @@ _SYSTEM_PROMPT = (
     "Do not invent values that are not implied by the utterance. Output JSON only."
 )
 
+_RESPONSE_SYSTEM_PROMPT = (
+    "You are a bilingual (English/Arabic) mobile-banking assistant. A user asked to "
+    "make a money transfer or a related query, but the destination ACCOUNT NUMBER they "
+    "provided was NOT found in the bank's beneficiary records. Read their query and "
+    "write ONE short, helpful reply in the SAME language as the user. Politely tell "
+    "them the account could not be found and ask them to verify the account number or "
+    "the beneficiary, and address any other part of their request. Reply with plain "
+    "text only (no JSON, no preamble)."
+)
+
 
 def _parse_json_object(content: str) -> dict:
     """Extract the first JSON object from an LLM response (tolerates code fences)."""
@@ -133,6 +143,49 @@ class LLMExceptionHandler:
             source_account=str(source) if source else None,
             clarification=str(clarification) if clarification else None,
         )
+
+    def respond_unresolved(
+        self, text: str, language: str, account_number: str, known: TransferEntities
+    ) -> str | None:
+        """Generate a reply when the beneficiary account is not found in the database.
+
+        Returns a short natural-language response in the user's language, or ``None``
+        on any failure (so the caller can degrade gracefully).
+        """
+
+        import litellm
+
+        payload = json.dumps(
+            {
+                "utterance": text,
+                "language": language,
+                "unknown_account_number": account_number,
+                "known": {
+                    "amount": str(known.amount) if known.amount is not None else None,
+                    "currency": known.currency,
+                    "recipient": known.recipient,
+                },
+            },
+            ensure_ascii=False,
+        )
+        try:
+            response = litellm.completion(
+                model=self.model,
+                api_base=self.api_base,
+                timeout=self.timeout,
+                temperature=self.temperature,
+                max_tokens=200,
+                messages=[
+                    {"role": "system", "content": _RESPONSE_SYSTEM_PROMPT},
+                    {"role": "user", "content": payload},
+                ],
+            )
+            content = response["choices"][0]["message"]["content"] or ""
+        except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
+            logger.warning("LLM beneficiary delegation failed: %s", exc)
+            return None
+        content = content.strip()
+        return content or None
 
 
 def _server_reachable(api_base: str, timeout: float = 2.0) -> bool:

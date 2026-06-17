@@ -16,6 +16,7 @@ from functools import lru_cache
 from haystack import Pipeline, component
 
 from app.config import DEFAULT_CURRENCY, settings
+from app.db.beneficiary import get_beneficiary_repository
 from app.llm import get_llm_handler
 from app.nlu import arabic, english
 from app.nlu.contacts import get_default_matcher
@@ -23,6 +24,7 @@ from app.nlu.intents import classify_intent
 from app.nlu.lang import detect_language
 from app.nlu.semantic_intents import get_semantic_classifier
 from app.schemas import (
+    Beneficiary,
     ContactMatch,
     Intent,
     Language,
@@ -95,6 +97,42 @@ class ContactResolver:
         return {"state": state}
 
 
+@component
+class BeneficiaryLookup:
+    """Resolve the destination beneficiary by account number against the database.
+
+    When the request supplies an ``account_number``, look it up via the configured
+    provider. A hit populates ``resolved_beneficiary`` (authoritative) and fills the
+    recipient/currency slots; a miss (or an unavailable database) marks the request as
+    ``beneficiary_unresolved`` so the LLM handler can take over the response.
+    """
+
+    @component.output_types(state=dict)
+    def run(self, state: dict) -> dict:
+        state.setdefault("beneficiary", None)
+        state.setdefault("beneficiary_source", None)
+        state.setdefault("beneficiary_unresolved", False)
+
+        account = state.get("account_number")
+        if not account:
+            return {"state": state}
+
+        repo = get_beneficiary_repository()
+        beneficiary = repo.lookup(account) if repo is not None else None
+        if beneficiary is not None:
+            state["beneficiary"] = beneficiary
+            state["beneficiary_source"] = "database"
+            entities: TransferEntities = state["entities"]
+            if not entities.recipient:
+                entities.recipient = beneficiary.name
+            if beneficiary.currency and entities.currency is None:
+                entities.currency = beneficiary.currency
+        else:
+            # Account number given but not found (or DB unavailable) -> delegate to LLM.
+            state["beneficiary_unresolved"] = True
+        return {"state": state}
+
+
 def _needs_llm(state: dict) -> bool:
     """The LLM handler fires only when the deterministic path is incomplete."""
 
@@ -113,18 +151,32 @@ class LLMExceptionHandler:
         state.setdefault("llm_assisted", False)
         state.setdefault("clarification", None)
 
+        lang = state["language"]
+        lang_code = lang.value if isinstance(lang, Language) else str(lang)
+        handler = get_llm_handler()
+
+        # Beneficiary delegation takes priority: when an account number was supplied
+        # but not found in the database, let the LLM process the query and respond.
+        if state.get("beneficiary_unresolved"):
+            if handler is not None:
+                message = handler.respond_unresolved(
+                    state["text"],
+                    lang_code,
+                    str(state.get("account_number") or ""),
+                    state["entities"],
+                )
+                if message:
+                    state["clarification"] = message
+                    state["beneficiary_source"] = "llm"
+                    state["llm_assisted"] = True
+            return {"state": state}
+
         if not _needs_llm(state):
             return {"state": state}
-        handler = get_llm_handler()
         if handler is None:
             return {"state": state}
 
-        lang = state["language"]
-        result = handler.extract(
-            state["text"],
-            lang.value if isinstance(lang, Language) else str(lang),
-            state["entities"],
-        )
+        result = handler.extract(state["text"], lang_code, state["entities"])
         if result is None:
             return {"state": state}
 
@@ -163,21 +215,28 @@ def get_nlu_pipeline() -> Pipeline:
     pipe.add_component("intent", IntentClassifier())
     pipe.add_component("entities", EntityExtractor())
     pipe.add_component("contacts", ContactResolver())
+    pipe.add_component("beneficiary", BeneficiaryLookup())
     pipe.add_component("llm", LLMExceptionHandler())
 
     pipe.connect("detect.state", "intent.state")
     pipe.connect("intent.state", "entities.state")
     pipe.connect("entities.state", "contacts.state")
-    pipe.connect("contacts.state", "llm.state")
+    pipe.connect("contacts.state", "beneficiary.state")
+    pipe.connect("beneficiary.state", "llm.state")
     return pipe
 
 
-def run_pipeline(text: str, language: Language | None = None) -> NLUResponse:
+def run_pipeline(
+    text: str,
+    language: Language | None = None,
+    account_number: str | None = None,
+) -> NLUResponse:
     """Run the Haystack NLU pipeline over a single utterance."""
 
-    initial = {"text": text, "language": language}
+    initial = {"text": text, "language": language, "account_number": account_number}
     result = get_nlu_pipeline().run({"detect": {"state": initial}})
     state = result["llm"]["state"]
+    beneficiary: Beneficiary | None = state.get("beneficiary")
     return NLUResponse(
         text=text,
         language=state["language"],
@@ -186,6 +245,8 @@ def run_pipeline(text: str, language: Language | None = None) -> NLUResponse:
         intent_source=state["intent_source"],
         entities=state["entities"],
         resolved_recipient=state.get("resolved"),
+        resolved_beneficiary=beneficiary,
+        beneficiary_source=state.get("beneficiary_source"),
         llm_assisted=state.get("llm_assisted", False),
         clarification=state.get("clarification"),
     )

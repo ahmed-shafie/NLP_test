@@ -58,6 +58,40 @@ class Settings(BaseSettings):
     # Sampling temperature; 0 for deterministic slot extraction.
     llm_temperature: float = 0.0
 
+    # ---- Beneficiary account lookup (configurable database provider) ----
+    # Resolve the destination beneficiary by account number against a SQL database.
+    # Switching providers (PostgreSQL, Oracle, SQL Server, Impala, Hive, ...) is done
+    # entirely through these settings; no code changes are required.
+    db_enabled: bool = False
+
+    # SQLAlchemy database URL. The dialect+driver selects the provider, e.g.:
+    #   postgresql+psycopg://user:pass@host:5432/bank
+    #   oracle+oracledb://user:pass@host:1521/?service_name=ORCL
+    #   mssql+pyodbc://user:pass@host:1433/bank?driver=ODBC+Driver+18+for+SQL+Server
+    #   impala://host:21050/default          (needs the impyla SQLAlchemy dialect)
+    #   hive://host:10000/default            (needs the PyHive SQLAlchemy dialect)
+    #   sqlite:///./beneficiaries.db         (handy for local development/tests)
+    db_url: str | None = None
+
+    # Parameterized lookup query. Must accept a single bind parameter named after
+    # ``db_account_param`` (default ``account_number``).
+    db_query: str = (
+        "SELECT id, name, account, bank FROM beneficiaries "
+        "WHERE account = :account_number"
+    )
+
+    # Name of the bind parameter carrying the account number in ``db_query``.
+    db_account_param: str = "account_number"
+
+    # JSON mapping of result-set column names -> Beneficiary fields
+    # (id, name, account, bank, branch, currency). Example:
+    #   {"id": "ben_id", "name": "full_name", "account": "acct_no", "bank": "bank_name"}
+    # When empty, columns are read by their Beneficiary field names directly.
+    db_column_map: dict[str, str] = {}
+
+    # Per-query timeout (seconds) for the database lookup.
+    db_timeout: float = 10.0
+
 
 # Currencies the assistant understands, keyed by ISO-4217 code.
 SUPPORTED_CURRENCIES: dict[str, set[str]] = {

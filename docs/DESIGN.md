@@ -47,6 +47,7 @@ the pipeline and is only invoked on deterministic failure.
 - **spaCy / Stanza** — named-entity recognition for recipient names (EN / AR).
 - **Embeddings + FAISS** — `paraphrase-multilingual-MiniLM-L12-v2` vectors indexed for semantic intent
   classification and cross-lingual contact matching.
+- **Beneficiary DB (SQLAlchemy)** — configurable account-number lookup against any SQL provider; see §4b.
 - **LiteLLM + Ollama** — uniform LLM gateway to a local model for exception handling.
 - **Pydantic** — strict validation that converts slots into a ready transfer or actionable prompts.
 
@@ -66,7 +67,9 @@ The pipeline is five Haystack `@component`s wired in sequence, each enriching a 
    `amount`, `currency`, `source_account`; handles Arabic-Indic digits (٥٠٠) and currency words.
 4. **ContactResolver** — embeds the extracted recipient and matches it against the address book in
    vector space (cosine); `difflib` fuzzy matching is the fallback.
-5. **LLMExceptionHandler** — see §4.
+5. **BeneficiaryLookup** — when the request carries an `account_number`, resolves the destination
+   beneficiary from the configured database provider — see §4b.
+6. **LLMExceptionHandler** — see §4.
 
 `app/nlu/pipeline.py:parse()` is now a thin wrapper that delegates to `orchestration.run_pipeline()`,
 preserving the original public API.
@@ -100,6 +103,44 @@ the pure-rules path.
 This resolves the known limitation that the spelled-out Arabic amount `"ألف"` (one thousand) is not
 parsed by the regex extractor — the LLM recovers it as `1000`.
 
+The same handler also exposes `respond_unresolved(...)`, used by the beneficiary flow (§4b): a
+plain-text prompt that asks the model to reply (in the user's language) when an account number is not
+found in the database.
+
+---
+
+## 4b. Beneficiary Account Lookup (configurable provider)
+
+![Figure 6 — Beneficiary Account Lookup](figures/fig6_beneficiary.png)
+
+When a request includes an `account_number`, the **destination beneficiary** is resolved by a SQL
+lookup *before* the response is built. The provider is **fully configuration-driven** so it can switch
+between PostgreSQL, Oracle, SQL Server, Impala, Hive, SQLite, etc. **without code changes**:
+
+- `NLU_DB_URL` — SQLAlchemy URL selects the dialect/driver (the provider).
+- `NLU_DB_QUERY` — the parameterized lookup SQL (one bind param, `:account_number` by default).
+- `NLU_DB_COLUMN_MAP` — JSON mapping of result columns → `Beneficiary` fields (`id`, `name`, `account`,
+  `bank`, `branch`, `currency`), so any schema works.
+
+`BeneficiaryRepository` (`app/db/beneficiary.py`) wraps a single SQLAlchemy `Engine` and is built once
+via an `lru_cache`d factory. The DB drivers are optional installs (`psycopg`, `oracledb`, `pyodbc`,
+`impyla`, `pyhive`, …) — only the one in use is required.
+
+Decision logic (`BeneficiaryLookup` component):
+
+```text
+no account_number          → skip DB; name-based contact match only
+account found              → resolved_beneficiary set; beneficiary_source="database";
+                             fills the recipient (and currency) slot
+account not found / DB down → beneficiary_unresolved=True → delegate to LiteLLM:
+                             respond_unresolved() generates a reply;
+                             beneficiary_source="llm", clarification set
+```
+
+Every failure path degrades gracefully: a missing driver, an unreachable database, or a failing query
+returns `None` (logged, never raised), and the request falls through to the LLM responder. If the LLM
+is also unavailable, the response simply reports no beneficiary.
+
 ### Request flow example
 
 ![Figure 3 — Sequence for POST /nlu/parse](figures/fig3_sequence.png)
@@ -129,7 +170,7 @@ resolves to the **Arabic** contact `أحمد حسن`.
 
 | Method & path | Purpose | Key response fields |
 |---------------|---------|---------------------|
-| `POST /nlu/parse` | Parse an utterance | `language`, `intent`, `intent_source`, `confidence`, `entities`, `resolved_recipient`, `llm_assisted`, `clarification` |
+| `POST /nlu/parse` | Parse an utterance (optional `account_number`) | `language`, `intent`, `intent_source`, `confidence`, `entities`, `resolved_recipient`, `resolved_beneficiary`, `beneficiary_source`, `llm_assisted`, `clarification` |
 | `GET /nlu/similar?text=&k=` | Nearest labeled examples (debug) | list of `{text, intent, score}` (descending) |
 | `POST /contacts/resolve` | Resolve a name cross-lingual | `matched`, `candidates[]` |
 | `POST /transfer/validate` | Validate gathered slots | `valid`, `transfer`, `missing[]`, `errors[]` |
@@ -153,6 +194,7 @@ Each model is optional and the pipeline downgrades cleanly:
 | Intent | semantic (FAISS) | keyword rules | `intent_source` |
 | Entities | spaCy/Stanza NER | regex/lexicon | — |
 | Contact | FAISS cosine | `difflib` fuzzy | `resolved_recipient.score` |
+| Beneficiary | DB provider (SQLAlchemy) | LiteLLM responder | `beneficiary_source` |
 | Exception | LiteLLM/Ollama | skipped | `llm_assisted` |
 
 Set `NLU_LLM_ENABLED=false` to disable the LLM entirely; the spelled-out Arabic amount then stays
@@ -173,6 +215,11 @@ All settings are environment-overridable with the `NLU_` prefix (`app/config.py`
 | `NLU_LLM_ENABLED` | `true` | Enable the LLM exception handler |
 | `NLU_LLM_MODEL` | `ollama/qwen2.5:3b` | LiteLLM model string |
 | `NLU_LLM_API_BASE` | `http://localhost:11434` | Local LLM server |
+| `NLU_DB_ENABLED` | `false` | Enable beneficiary account lookup |
+| `NLU_DB_URL` | `None` | SQLAlchemy URL (selects the provider) |
+| `NLU_DB_QUERY` | `SELECT ... WHERE account = :account_number` | Parameterized lookup query |
+| `NLU_DB_ACCOUNT_PARAM` | `account_number` | Bind-param name in the query |
+| `NLU_DB_COLUMN_MAP` | `{}` | JSON: result columns → `Beneficiary` fields |
 
 ---
 
@@ -187,18 +234,22 @@ All settings are environment-overridable with the `NLU_` prefix (`app/config.py`
 | **Haystack 2.x** | Componentized, inspectable orchestration; easy to insert/remove stages (e.g. the LLM node). |
 | **LiteLLM** | Uniform interface to any LLM provider; swap local↔hosted by changing one model string. |
 | **Local Ollama `qwen2.5:3b`** | Offline, no API key, good Arabic; meets the "local LLM only" requirement. |
+| **SQLAlchemy (beneficiary DB)** | One Core API spans PostgreSQL, Oracle, SQL Server, Impala, Hive, SQLite, …; switch providers via the URL with no code changes. Drivers are optional installs. |
 
 ---
 
 ## 10. Testing
 
-- **Unit/integration:** `pytest` (62 tests). `tests/conftest.py` disables the live LLM for determinism;
+- **Unit/integration:** `pytest` (70 tests). `tests/conftest.py` disables the live LLM for determinism;
   semantic tests auto-skip if the embedder is unavailable. `tests/test_orchestration.py` and
-  `tests/test_llm.py` mock the LLM handler (no running Ollama needed).
+  `tests/test_llm.py` mock the LLM handler (no running Ollama needed). `tests/test_beneficiary.py`
+  exercises the repository against an in-memory SQLite database (lookup hit/miss, custom column
+  mapping, and failing-query degradation).
 - **Static analysis:** `ruff check` + `ruff format`; `mypy` on the new modules.
 - **Live verification** (web simulator): Arabic word-amount recovered to `1000` (LLM assisted), fallback
-  clarification rendered, and a complete English transfer resolved by rules with **no** LLM badge —
-  proving the LLM is gated to failures only.
+  clarification rendered, a complete English transfer resolved by rules with **no** LLM badge, a
+  beneficiary resolved from the database by account number, and an unknown account delegated to the
+  LLM for a bilingual reply — proving the LLM is gated to failures only.
 
 ---
 
@@ -208,7 +259,7 @@ All figures are generated from Graphviz DOT sources in `docs/figures/*.dot`:
 
 ```bash
 cd docs/figures
-for f in fig1_architecture fig2_pipeline fig3_sequence fig4_vector fig5_degradation; do
+for f in fig1_architecture fig2_pipeline fig3_sequence fig4_vector fig5_degradation fig6_beneficiary; do
   dot -Tpng -Gdpi=140 "$f.dot" -o "$f.png"
 done
 ```

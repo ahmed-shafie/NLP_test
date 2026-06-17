@@ -42,6 +42,24 @@ class ParseRequest(BaseModel):
         default=None,
         description="Optional language hint; auto-detected when omitted.",
     )
+    account_number: str | None = Field(
+        default=None,
+        description=(
+            "Destination account number. When provided, the beneficiary is resolved "
+            "by an account lookup against the configured database provider."
+        ),
+    )
+
+
+class Beneficiary(BaseModel):
+    """A beneficiary resolved from the configured database provider."""
+
+    id: str | None = None
+    name: str
+    account: str | None = None
+    bank: str | None = None
+    branch: str | None = None
+    currency: str | None = None
 
 
 class Contact(BaseModel):
@@ -74,6 +92,17 @@ class NLUResponse(BaseModel):
     resolved_recipient: ContactMatch | None = Field(
         default=None,
         description="Best contact-book match for the extracted recipient, if any.",
+    )
+    resolved_beneficiary: Beneficiary | None = Field(
+        default=None,
+        description=(
+            "Beneficiary resolved by account-number lookup against the database "
+            "provider. Takes precedence over the name-based contact match."
+        ),
+    )
+    beneficiary_source: str | None = Field(
+        default=None,
+        description="How the beneficiary was resolved: 'database', 'llm', or None.",
     )
     llm_assisted: bool = Field(
         default=False,

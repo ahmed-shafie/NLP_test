@@ -19,6 +19,11 @@ env/
 stanza_resources/
 *.spacy
 
+# Local databases (beneficiary demo / dev)
+*.db
+*.sqlite
+*.sqlite3
+
 # Env / secrets
 .env
 .env.*

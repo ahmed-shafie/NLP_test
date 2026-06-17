@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.config import settings
+from app.db.beneficiary import get_beneficiary_repository
 from app.embeddings import get_embedder
 from app.llm import get_llm_handler
 from app.nlu import arabic, english, pipeline
@@ -42,6 +43,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         get_semantic_classifier()
         get_nlu_pipeline()
         get_llm_handler()
+        get_beneficiary_repository()
     yield
 
 
@@ -67,9 +69,14 @@ def health() -> dict[str, str]:
 
 @app.post("/nlu/parse", response_model=NLUResponse)
 def nlu_parse(request: ParseRequest) -> NLUResponse:
-    """Parse raw text into an intent and transfer slots."""
+    """Parse raw text into an intent and transfer slots.
 
-    return pipeline.parse(request.text, request.language)
+    When ``account_number`` is supplied, the destination beneficiary is resolved by an
+    account lookup against the configured database provider; if the account is not
+    found, the LiteLLM handler processes the query and generates the response.
+    """
+
+    return pipeline.parse(request.text, request.language, request.account_number)
 
 
 @app.post("/transfer/validate", response_model=ValidationResult)
