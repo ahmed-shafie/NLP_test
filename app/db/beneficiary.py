@@ -93,21 +93,55 @@ class BeneficiaryRepository:
         return self._row_to_beneficiary(dict(row))
 
 
-@lru_cache(maxsize=1)
-def get_beneficiary_repository() -> BeneficiaryRepository | None:
-    """Build the configured repository once, or ``None`` if disabled/unavailable."""
+def _active_stored_config() -> tuple[str, str, str, dict[str, str]] | None:
+    """Return (url, query, account_param, column_map) for the active stored connection.
 
-    if not settings.db_enabled:
-        return None
-    if not settings.db_url:
-        logger.warning("NLU_DB_ENABLED is true but NLU_DB_URL is not set.")
+    Returns ``None`` when no active connection exists or the store is unavailable, so
+    the caller can fall back to the ``NLU_DB_*`` environment settings.
+    """
+
+    if not settings.use_stored_connection:
         return None
     try:
+        from app.admin.connections import get_active_connection
+
+        active = get_active_connection()
+    except Exception as exc:  # noqa: BLE001 - store optional; never break lookups
+        logger.debug("Admin store unavailable for connection resolution: %s", exc)
+        return None
+    if active is None:
+        return None
+    return active.url, active.query, active.account_param, dict(active.column_map)
+
+
+@lru_cache(maxsize=1)
+def get_beneficiary_repository() -> BeneficiaryRepository | None:
+    """Build the configured repository once, or ``None`` if disabled/unavailable.
+
+    The active connection from the admin store takes precedence; if none is set, the
+    ``NLU_DB_*`` environment settings are used (when ``NLU_DB_ENABLED`` is true).
+    """
+
+    stored = _active_stored_config()
+    if stored is not None:
+        url, query, account_param, column_map = stored
+    elif settings.db_enabled and settings.db_url:
+        url = settings.db_url
+        query = settings.db_query
+        account_param = settings.db_account_param
+        column_map = settings.db_column_map
+    elif settings.db_enabled and not settings.db_url:
+        logger.warning("NLU_DB_ENABLED is true but NLU_DB_URL is not set.")
+        return None
+    else:
+        return None
+
+    try:
         return BeneficiaryRepository(
-            url=settings.db_url,
-            query=settings.db_query,
-            account_param=settings.db_account_param,
-            column_map=settings.db_column_map,
+            url=url,
+            query=query,
+            account_param=account_param,
+            column_map=column_map,
             timeout=settings.db_timeout,
         )
     except Exception as exc:  # noqa: BLE001 - missing driver, bad URL, etc.
