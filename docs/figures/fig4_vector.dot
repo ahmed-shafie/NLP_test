@@ -1,0 +1,34 @@
+digraph vector {
+  rankdir=LR;
+  bgcolor="white";
+  node [fontname="Helvetica", fontsize=11, style="filled", color="#334155"];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+  graph [fontname="Helvetica", fontsize=12, labelloc="t",
+         label="Figure 4 — Semantic Vector Layer (FAISS): cross-lingual intent & contact matching"];
+
+  subgraph cluster_intent {
+    label="Intent classification";
+    style="rounded,filled"; color="#cbd5e1"; fillcolor="#f8fafc"; fontsize=11;
+    ex   [label="Labeled examples (EN+AR)\napp/nlu/examples.py", shape=note, fillcolor="#e0f2fe"];
+    emb1 [label="embed", shape=box, fillcolor="#e2e8f0"];
+    idx1 [label="FAISS IndexFlatIP\n(unit vectors = cosine)", shape=cylinder, fillcolor="#dbeafe"];
+    q1   [label="user utterance", shape=note, fillcolor="#dcfce7"];
+    knn1 [label="top-k neighbours\n→ aggregate score per intent", shape=box, fillcolor="#fef9c3"];
+    ex -> emb1 -> idx1;
+    q1 -> emb1;
+    idx1 -> knn1;
+  }
+
+  subgraph cluster_contact {
+    label="Cross-lingual contact matching";
+    style="rounded,filled"; color="#cbd5e1"; fillcolor="#f8fafc"; fontsize=11;
+    cb   [label="Address book\nconfig.DEMO_CONTACTS", shape=note, fillcolor="#e0f2fe"];
+    emb2 [label="embed", shape=box, fillcolor="#e2e8f0"];
+    idx2 [label="FAISS index\n(contact names)", shape=cylinder, fillcolor="#dbeafe"];
+    q2   [label="recipient name\ne.g. \"Ahmed\"", shape=note, fillcolor="#dcfce7"];
+    best [label="best match ≥ threshold\n\"Ahmed\" → أحمد حسن", shape=box, fillcolor="#fef9c3"];
+    cb -> emb2 -> idx2;
+    q2 -> emb2;
+    idx2 -> best;
+  }
+}

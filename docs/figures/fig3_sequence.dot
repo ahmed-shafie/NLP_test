@@ -1,0 +1,20 @@
+digraph sequence {
+  rankdir=TB;
+  bgcolor="white";
+  node [fontname="Helvetica", fontsize=10, shape=box, style="filled", fillcolor="#f1f5f9", color="#334155"];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+  graph [fontname="Helvetica", fontsize=12, labelloc="t",
+         label="Figure 3 — Request flow for POST /nlu/parse (\"حوّل ألف جنيه إلى محمد\")"];
+
+  n0 [label="1. Client → POST /nlu/parse  {text}", fillcolor="#e0f2fe"];
+  n1 [label="2. LanguageDetector → language = ar"];
+  n2 [label="3. IntentClassifier (FAISS) → transfer_money (semantic)"];
+  n3 [label="4. EntityExtractor (Stanza+regex) → recipient=محمد,\n    currency=EGP, amount=None  (word 'ألف' not parsed)"];
+  n4 [label="5. ContactResolver (FAISS) → محمد → محمد علي (0.91)"];
+  n5 [label="6. _needs_llm? amount is missing → YES", fillcolor="#fef9c3", shape=diamond];
+  n6 [label="7. LLMExceptionHandler → LiteLLM → Ollama qwen2.5:3b\n    returns JSON {amount: 1000, ...}", fillcolor="#f3e8ff"];
+  n7 [label="8. merge without overwriting rule values → amount=1000,\n    llm_assisted=true", fillcolor="#f3e8ff"];
+  n8 [label="9. NLUResponse → Client (200 OK)", fillcolor="#dcfce7"];
+
+  n0 -> n1 -> n2 -> n3 -> n4 -> n5 -> n6 -> n7 -> n8;
+}
