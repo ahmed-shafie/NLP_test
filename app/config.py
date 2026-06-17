@@ -92,6 +92,40 @@ class Settings(BaseSettings):
     # Per-query timeout (seconds) for the database lookup.
     db_timeout: float = 10.0
 
+    # ---- Admin config store (external resource connections + audit log) ----
+    # SQLAlchemy URL for the local store that persists configured connections and
+    # audit events. Defaults to a SQLite file next to the project.
+    admin_store_url: str = "sqlite:///./app_config.db"
+
+    # Prefer the active stored connection over the NLU_DB_* env settings for the
+    # beneficiary lookup. When no active connection exists, the env settings are used.
+    use_stored_connection: bool = True
+
+    # ---- Audit logging + ELK observability ----
+    # Record every system action (HTTP request + domain events) to the audit store.
+    audit_enabled: bool = True
+
+    # Where audit events are shipped: "elasticsearch" (direct), "logstash" (TCP), or
+    # "none". Events are always persisted to the local store regardless of this.
+    audit_sink: str = "elasticsearch"
+
+    # Ship audit events to Elasticsearch (ELK). Requires the elasticsearch client.
+    elk_enabled: bool = True
+
+    # Elasticsearch base URL.
+    elasticsearch_url: str = "http://localhost:9200"
+
+    # Optional Elasticsearch basic-auth credentials.
+    elasticsearch_username: str | None = None
+    elasticsearch_password: str | None = None
+
+    # Index that receives audit events.
+    elk_index: str = "nlu-audit"
+
+    # Logstash TCP endpoint (json_lines codec) used when audit_sink == "logstash".
+    logstash_host: str = "localhost"
+    logstash_port: int = 50000
+
 
 # Currencies the assistant understands, keyed by ISO-4217 code.
 SUPPORTED_CURRENCIES: dict[str, set[str]] = {

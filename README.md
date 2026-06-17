@@ -12,7 +12,9 @@ An NLU (Natural Language Understanding) microservice for a mobile-banking AI ass
 - **Haystack orchestration** — the NLU steps are wired as Haystack components in a `Pipeline`, so the flow is explicit and extensible.
 - **Configurable beneficiary lookup** — when a request includes an `account_number`, the destination beneficiary is resolved by a SQL lookup against a database provider (PostgreSQL, Oracle, SQL Server, Impala, Hive, SQLite, …). The connection, query, and column mapping are all set from config, so switching providers needs no code changes.
 - **LLM exception handling** — a LiteLLM-backed safety net (local LLM via Ollama by default) fires only when the deterministic path falls short (e.g. an unparsed Arabic word-amount like "ألف", or a fallback intent), filling missing slots and proposing a clarification.
-- **Graceful degradation** — runs in regex/fuzzy-only mode when NLP/embedding models are not downloaded, and skips the LLM entirely when no LLM server is reachable.
+- **Resource connection GUI** — a browser admin page (`/admin`) to add, edit, **test**, and **activate** external database & datalake connections without touching code. The active connection drives the beneficiary lookup.
+- **Audit log monitor + ELK** — every system action (HTTP request + domain events) is recorded and shipped to **Elasticsearch/Logstash/Kibana**, with a built-in observability dashboard (`/admin/audit`) of charts and reports that falls back to the local store when ELK is down.
+- **Graceful degradation** — runs in regex/fuzzy-only mode when NLP/embedding models are not downloaded, skips the LLM entirely when no LLM server is reachable, and keeps auditing locally when ELK is unavailable.
 
 ## Tech Stack
 
@@ -27,6 +29,8 @@ An NLU (Natural Language Understanding) microservice for a mobile-banking AI ass
 | Orchestration | Haystack (`haystack-ai`) |
 | Beneficiary DB | SQLAlchemy (any dialect/provider) |
 | LLM gateway | LiteLLM → local Ollama (`qwen2.5:3b`) |
+| Config store | SQLAlchemy (SQLite by default) |
+| Observability | Elasticsearch + Logstash + Kibana (ELK) + Chart.js dashboard |
 
 ## Quick Start
 
@@ -88,6 +92,56 @@ If the account is **found**, the beneficiary is returned in `resolved_beneficiar
 (or the DB is disabled/unreachable), the request is delegated to the LiteLLM handler,
 which processes the query and generates a response (`beneficiary_source="llm"`). DB
 lookup is skipped entirely when no `account_number` is supplied.
+
+## Resource connection GUI (`/admin`)
+
+Instead of editing `NLU_DB_*` env vars by hand, you can manage connections from a
+browser at <http://localhost:8000/admin>:
+
+- **Add / edit** a connection: name, provider (preset fills the URL template), the
+  SQLAlchemy URL, lookup query, account bind-parameter, and column map.
+- **Test connection** — opens the connection and (optionally) runs the lookup for a
+  sample account, reporting elapsed time and the result columns.
+- **Activate** — marks one connection as the active beneficiary provider. The
+  beneficiary lookup uses the **active stored connection** first, and only falls back
+  to the `NLU_DB_*` env settings when none is active (toggle with
+  `NLU_USE_STORED_CONNECTION`).
+
+Connections are persisted in a local SQLAlchemy store (`NLU_ADMIN_STORE_URL`,
+default `sqlite:///./app_config.db`). Datalake engines (Impala, Hive, Trino, Presto)
+appear alongside the relational databases as presets.
+
+## Audit log monitor + ELK observability (`/admin/audit`)
+
+Every system action is audited: an HTTP middleware records each request (method,
+path, status, latency, client, request id, actor) and domain code records events such
+as `nlu.parse`, `connection.test`, and `connection.activate`. Events are persisted to
+the local store **and** shipped to ELK.
+
+```bash
+# Bring up Elasticsearch + Logstash + Kibana locally
+docker compose -f deploy/elk/docker-compose.yml up -d
+# Install the index template + import Kibana data view, visualizations & dashboard
+bash deploy/elk/provision.sh
+```
+
+Relevant settings (prefix `NLU_`):
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `NLU_AUDIT_ENABLED` | `true` | Record audit events at all. |
+| `NLU_AUDIT_SINK` | `elasticsearch` | `elasticsearch` (direct), `logstash` (TCP), or `none`. |
+| `NLU_ELK_ENABLED` | `true` | Ship to Elasticsearch / power dashboard aggregations. |
+| `NLU_ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch endpoint. |
+| `NLU_ELK_INDEX` | `nlu-audit` | Target index. |
+| `NLU_LOGSTASH_HOST` / `NLU_LOGSTASH_PORT` | `localhost` / `50000` | Logstash TCP (json_lines). |
+
+The in-app dashboard at <http://localhost:8000/admin/audit> shows charts and reports
+(actions over time, status-code split, by category, top actions, latency, recent
+events). It reads aggregations from **Elasticsearch** when reachable and **falls back
+to the local store** otherwise, so observability keeps working even with ELK down. The
+same data is available in Kibana at <http://localhost:5601/app/dashboards> ("Banking
+NLU — Audit Observability").
 
 ## Orchestration & LLM fallback
 
@@ -240,6 +294,17 @@ app/
   vectorstore.py  — Generic FAISS cosine-similarity index
   db/
     beneficiary.py     — Configurable SQLAlchemy beneficiary repository
+  admin/
+    store.py           — SQLAlchemy config store (connections + audit events)
+    connections.py     — Connection CRUD / test / activate service
+    audit.py           — Audit middleware, recorder & store-backed stats
+    elk.py             — Elasticsearch client, shipping & aggregations
+    router.py          — /admin/api routes (connections + audit)
+    schemas.py         — Admin Pydantic models + provider presets
+  static/
+    index.html         — NLU simulator
+    connections.html   — Resource connection GUI
+    audit.html         — Audit monitor / observability dashboard
   nlu/
     pipeline.py        — Orchestration (lang detect → intent → entities → contact)
     lang.py            — Arabic vs. English language detection
@@ -259,6 +324,15 @@ tests/
   test_vectorstore.py
   test_semantic.py
   test_contacts_fuzzy.py
+  test_admin_connections.py
+  test_audit.py
+deploy/
+  elk/
+    docker-compose.yml — Elasticsearch + Logstash + Kibana stack
+    index-template.json— Elasticsearch mappings for nlu-audit*
+    provision.sh       — Install template + import Kibana dashboard
+    logstash/pipeline/logstash.conf
+    kibana/dashboards.ndjson
 ```
 
 ## License

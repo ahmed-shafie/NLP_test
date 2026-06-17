@@ -147,6 +147,45 @@ is also unavailable, the response simply reports no beneficiary.
 
 ---
 
+## 4c. Resource Connections & Audit Observability
+
+![Figure 7 — Connections admin & audit/ELK observability](figures/fig7_admin_elk.png)
+
+Two operational concerns are managed from a small **admin layer** (`app/admin/`) with its own GUI pages.
+
+**External resource connections (`/admin`).** Rather than only reading `NLU_DB_*` env vars, connections
+(database *and* datalake providers: PostgreSQL, Oracle, SQL Server, MySQL, Impala, Hive, Trino, Presto,
+SQLite) are managed through a browser page and persisted in a local SQLAlchemy **config store**
+(`NLU_ADMIN_STORE_URL`, SQLite by default). Each connection holds the SQLAlchemy URL, lookup query,
+account bind-parameter, and column map. The page supports **add / edit / delete**, **test connection**
+(opens the engine and optionally runs the lookup for a sample account), and **activate**. The beneficiary
+repository resolves its config in this order:
+
+```text
+active stored connection (if NLU_USE_STORED_CONNECTION) → NLU_DB_* env settings → disabled
+```
+
+Activating a connection clears the cached repository (`get_beneficiary_repository.cache_clear()`) so the
+next lookup rebuilds against the new provider — still **no code changes** to switch providers.
+
+**Audit log + ELK (`/admin/audit`).** An ASGI middleware (`AuditMiddleware`) records **every HTTP request**
+(method, path, status, latency, client IP, actor, request id, outcome); domain code adds semantic events
+via `audit.record(...)` (`nlu.parse`, `connection.test`, `connection.activate`, …). Each event is:
+
+1. **persisted** durably to the config store (`audit_events` table), and
+2. **shipped** to ELK via the configured `NLU_AUDIT_SINK`:
+   - `elasticsearch` — indexed directly into `nlu-audit` through the Elasticsearch client;
+   - `logstash` — sent as a JSON line over TCP (`json_lines`) to Logstash, which forwards to Elasticsearch;
+   - `none` — local store only.
+
+The dashboard (`/admin/audit`) renders charts/reports (actions over time, status-code split, by category,
+top actions, avg/p95 latency, recent events). Stats come from **Elasticsearch aggregations** when reachable
+and **fall back to store aggregations** otherwise, so observability never goes dark. The same data powers a
+provisioned **Kibana** dashboard (`deploy/elk/`). Auditing is wrapped in try/except throughout — a failing
+store write or unreachable ELK never breaks the request path.
+
+---
+
 ## 5. Semantic Vector Layer (FAISS)
 
 ![Figure 4 — Semantic Vector Layer](figures/fig4_vector.png)
@@ -175,9 +214,11 @@ resolves to the **Arabic** contact `أحمد حسن`.
 | `POST /contacts/resolve` | Resolve a name cross-lingual | `matched`, `candidates[]` |
 | `POST /transfer/validate` | Validate gathered slots | `valid`, `transfer`, `missing[]`, `errors[]` |
 | `GET /health` | Liveness | `{status, version}` |
-| `GET /` | Browser simulator | HTML |
+| `GET /` · `/admin` · `/admin/audit` | Browser pages (simulator, connections, audit monitor) | HTML |
+| `GET/POST /admin/api/connections` (+ `/{id}`, `/{id}/activate`, `/{id}/test`, `/test`, `/providers`, `/active`) | Manage external resource connections | `Connection`, `ConnectionTestResult` |
+| `GET /admin/api/audit/events` · `/stats` · `/elk-status` | Audit events, dashboard aggregations, ELK health | `AuditEvent[]`, `AuditStats`, `ElkStatus` |
 
-Schemas live in `app/schemas.py`. `TransferRequest` enforces `amount > 0` and an ISO-4217 currency from
+Schemas live in `app/schemas.py` (NLU) and `app/admin/schemas.py` (admin). `TransferRequest` enforces `amount > 0` and an ISO-4217 currency from
 `SUPPORTED_CURRENCIES`; failures are surfaced as `SlotError`s with human prompts (e.g. "Who should I
 send the money to?").
 
@@ -196,6 +237,9 @@ Each model is optional and the pipeline downgrades cleanly:
 | Contact | FAISS cosine | `difflib` fuzzy | `resolved_recipient.score` |
 | Beneficiary | DB provider (SQLAlchemy) | LiteLLM responder | `beneficiary_source` |
 | Exception | LiteLLM/Ollama | skipped | `llm_assisted` |
+| Connection | active stored connection | `NLU_DB_*` env settings | `/admin` active badge |
+| Audit stats | Elasticsearch aggregations | local store aggregations | `AuditStats.source` |
+| Audit ship | ELK (ES/Logstash) | local store only | `ElkStatus.reachable` |
 
 Set `NLU_LLM_ENABLED=false` to disable the LLM entirely; the spelled-out Arabic amount then stays
 `null` (expected), and no errors occur.
@@ -220,6 +264,14 @@ All settings are environment-overridable with the `NLU_` prefix (`app/config.py`
 | `NLU_DB_QUERY` | `SELECT ... WHERE account = :account_number` | Parameterized lookup query |
 | `NLU_DB_ACCOUNT_PARAM` | `account_number` | Bind-param name in the query |
 | `NLU_DB_COLUMN_MAP` | `{}` | JSON: result columns → `Beneficiary` fields |
+| `NLU_ADMIN_STORE_URL` | `sqlite:///./app_config.db` | Config store (connections + audit events) |
+| `NLU_USE_STORED_CONNECTION` | `true` | Prefer the active stored connection over `NLU_DB_*` |
+| `NLU_AUDIT_ENABLED` | `true` | Record audit events |
+| `NLU_AUDIT_SINK` | `elasticsearch` | `elasticsearch` / `logstash` / `none` |
+| `NLU_ELK_ENABLED` | `true` | Ship to / aggregate from Elasticsearch |
+| `NLU_ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch endpoint |
+| `NLU_ELK_INDEX` | `nlu-audit` | Audit index |
+| `NLU_LOGSTASH_HOST` / `NLU_LOGSTASH_PORT` | `localhost` / `50000` | Logstash TCP (json_lines) |
 
 ---
 
@@ -235,16 +287,22 @@ All settings are environment-overridable with the `NLU_` prefix (`app/config.py`
 | **LiteLLM** | Uniform interface to any LLM provider; swap local↔hosted by changing one model string. |
 | **Local Ollama `qwen2.5:3b`** | Offline, no API key, good Arabic; meets the "local LLM only" requirement. |
 | **SQLAlchemy (beneficiary DB)** | One Core API spans PostgreSQL, Oracle, SQL Server, Impala, Hive, SQLite, …; switch providers via the URL with no code changes. Drivers are optional installs. |
+| **SQLAlchemy config store** | Persists connections + a durable audit trail with the same dialect-agnostic API; SQLite by default, no extra service. |
+| **ELK (Elasticsearch/Logstash/Kibana)** | Industry-standard log analytics; powerful aggregations + Kibana dashboards. Decoupled via a sink setting, with a local-store fallback so the app never depends on ELK being up. |
+| **Chart.js (vendored)** | Lightweight in-app charts with no build step or CDN dependency; keeps the dashboard working offline. |
 
 ---
 
 ## 10. Testing
 
-- **Unit/integration:** `pytest` (70 tests). `tests/conftest.py` disables the live LLM for determinism;
+- **Unit/integration:** `pytest` (80 tests). `tests/conftest.py` disables the live LLM for determinism;
   semantic tests auto-skip if the embedder is unavailable. `tests/test_orchestration.py` and
   `tests/test_llm.py` mock the LLM handler (no running Ollama needed). `tests/test_beneficiary.py`
   exercises the repository against an in-memory SQLite database (lookup hit/miss, custom column
-  mapping, and failing-query degradation).
+  mapping, and failing-query degradation). `tests/test_admin_connections.py` covers connection
+  CRUD/test/activate and that the active connection drives the beneficiary repository;
+  `tests/test_audit.py` covers audit recording, filtering, store aggregations, and the
+  Elasticsearch→store stats fallback.
 - **Static analysis:** `ruff check` + `ruff format`; `mypy` on the new modules.
 - **Live verification** (web simulator): Arabic word-amount recovered to `1000` (LLM assisted), fallback
   clarification rendered, a complete English transfer resolved by rules with **no** LLM badge, a
@@ -259,7 +317,7 @@ All figures are generated from Graphviz DOT sources in `docs/figures/*.dot`:
 
 ```bash
 cd docs/figures
-for f in fig1_architecture fig2_pipeline fig3_sequence fig4_vector fig5_degradation fig6_beneficiary; do
+for f in fig1_architecture fig2_pipeline fig3_sequence fig4_vector fig5_degradation fig6_beneficiary fig7_admin_elk; do
   dot -Tpng -Gdpi=140 "$f.dot" -o "$f.png"
 done
 ```

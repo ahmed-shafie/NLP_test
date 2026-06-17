@@ -1,0 +1,46 @@
+digraph admin_elk {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=12, labelloc="t",
+         label="Figure 7 — Resource Connections (admin) & Audit / ELK Observability"];
+  node  [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", color="#334155", fillcolor="#e2e8f0"];
+  edge  [fontname="Helvetica", fontsize=10, color="#475569"];
+
+  subgraph cluster_gui {
+    label="Admin GUI (browser)"; style="rounded,filled"; color="#cbd5e1"; fillcolor="#f1f5f9";
+    conn_page [label="/admin\nConnections page\n(add · edit · test · activate)", fillcolor="#bae6fd"];
+    audit_page [label="/admin/audit\nAudit monitor\n(charts · reports)", fillcolor="#bae6fd"];
+  }
+
+  subgraph cluster_app {
+    label="FastAPI app"; style="rounded,filled"; color="#cbd5e1"; fillcolor="#f8fafc";
+    mw      [label="AuditMiddleware\n+ audit.record()", fillcolor="#fde68a"];
+    api     [label="/admin/api\nconnections · audit", fillcolor="#e2e8f0"];
+    repo    [label="BeneficiaryRepository\n(active connection)", fillcolor="#e2e8f0"];
+    store   [label="Config store\n(SQLAlchemy / SQLite)\nconnections + audit_events", shape=cylinder, fillcolor="#ddd6fe"];
+  }
+
+  subgraph cluster_ext {
+    label="External resources"; style="rounded,filled"; color="#cbd5e1"; fillcolor="#f8fafc";
+    providers [label="DB / datalake providers\nPostgreSQL · Oracle · SQL Server\nImpala · Hive · Trino · SQLite", shape=cylinder, fillcolor="#bbf7d0"];
+  }
+
+  subgraph cluster_elk {
+    label="ELK stack"; style="rounded,filled"; color="#cbd5e1"; fillcolor="#fef2f2";
+    logstash [label="Logstash\n(TCP json_lines)", fillcolor="#fecaca"];
+    es       [label="Elasticsearch\nnlu-audit", shape=cylinder, fillcolor="#fecaca"];
+    kibana   [label="Kibana\ndashboards", fillcolor="#fecaca"];
+  }
+
+  conn_page  -> api;
+  audit_page -> api;
+  api        -> store [label="CRUD / read"];
+  api        -> repo  [label="activate →\ncache_clear"];
+  repo       -> providers [label="lookup\nby account"];
+  mw         -> store [label="persist (durable)"];
+  mw         -> es    [label="sink=elasticsearch"];
+  mw         -> logstash [label="sink=logstash"];
+  logstash   -> es;
+  es         -> kibana;
+  es         -> audit_page [label="stats (preferred)", style=dashed];
+  store      -> audit_page [label="stats (fallback)", style=dashed, color="#b45309"];
+}

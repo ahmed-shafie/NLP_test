@@ -7,11 +7,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.admin import audit
+from app.admin.router import router as admin_router
+from app.admin.store import get_engine
 from app.config import settings
 from app.db.beneficiary import get_beneficiary_repository
 from app.embeddings import get_embedder
@@ -36,6 +39,8 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Optionally warm the NLP models so the first request is fast."""
 
+    # Ensure the admin store (connections + audit log) tables exist.
+    get_engine()
     if settings.preload_models:
         english._load_model()
         arabic._load_model()
@@ -49,6 +54,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
 
+if settings.audit_enabled:
+    app.add_middleware(audit.AuditMiddleware)
+
+app.include_router(admin_router)
+
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -60,6 +70,20 @@ def ui() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/admin", include_in_schema=False)
+def admin_connections_page() -> FileResponse:
+    """Serve the external-resource connections configuration page."""
+
+    return FileResponse(STATIC_DIR / "connections.html")
+
+
+@app.get("/admin/audit", include_in_schema=False)
+def admin_audit_page() -> FileResponse:
+    """Serve the audit log monitor / observability dashboard."""
+
+    return FileResponse(STATIC_DIR / "audit.html")
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """Liveness probe."""
@@ -68,7 +92,7 @@ def health() -> dict[str, str]:
 
 
 @app.post("/nlu/parse", response_model=NLUResponse)
-def nlu_parse(request: ParseRequest) -> NLUResponse:
+def nlu_parse(request: ParseRequest, http_request: Request) -> NLUResponse:
     """Parse raw text into an intent and transfer slots.
 
     When ``account_number`` is supplied, the destination beneficiary is resolved by an
@@ -76,7 +100,21 @@ def nlu_parse(request: ParseRequest) -> NLUResponse:
     found, the LiteLLM handler processes the query and generates the response.
     """
 
-    return pipeline.parse(request.text, request.language, request.account_number)
+    result = pipeline.parse(request.text, request.language, request.account_number)
+    audit.record(
+        "nlu.parse",
+        category="nlu",
+        actor=http_request.headers.get("x-actor") or "anonymous",
+        detail={
+            "language": result.language.value,
+            "intent": result.intent.value,
+            "intent_source": result.intent_source,
+            "account_number": request.account_number,
+            "beneficiary_source": result.beneficiary_source,
+            "llm_assisted": result.llm_assisted,
+        },
+    )
+    return result
 
 
 @app.post("/transfer/validate", response_model=ValidationResult)
