@@ -1,0 +1,7 @@
+# Optional voice layer (ASR + TTS). Install with:
+#   pip install -r requirements-voice.txt
+# The /conversation/voice endpoint degrades gracefully (HTTP 503) when these are
+# absent or a model can't be loaded.
+faster-whisper==1.1.0
+edge-tts==7.0.0
+pyttsx3==2.99

@@ -49,6 +49,10 @@ class RequestIdFilter(logging.Filter):
         return True
 
 
+# Verbose third-party loggers we keep at WARNING so app logs stay readable.
+_NOISY_LOGGERS = ("haystack", "httpx", "httpcore", "elastic_transport")
+
+
 def configure_logging() -> None:
     """Install the configured handler/formatter on the root logger."""
 
@@ -65,3 +69,5 @@ def configure_logging() -> None:
             )
         )
     root.handlers = [handler]
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)

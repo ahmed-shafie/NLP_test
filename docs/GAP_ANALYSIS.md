@@ -6,6 +6,15 @@ missing for a production deployment with a prioritized plan.
 
 Legend: ✅ implemented · ⚠️ partial / differs from brief · ❌ not implemented
 
+> **Update — production-hardening in progress.** The gaps below are being closed in stacked PRs:
+> **P0** (auth, CORS/security headers, error envelope, Docker, CI) — done (PR #3);
+> **P1** (structured logging, request-id, readiness, Prometheus metrics, async ELK shipping,
+> rate limiting, `/v1`) — done (PR #4);
+> **P2** (multi-turn conversation engine + voice layer, the brief's "largest gap") — done
+> (`app/conversation/`, `app/voice/`, `/conversation/text`, `/conversation/voice`,
+> Redis session store with in-memory fallback, `tests/test_conversation.py`). The ❌ marks
+> in §1.3 below reflect the *original* state at the time of analysis.
+
 ---
 
 ## 1. Brief vs. Reality — what the document claims vs. what exists

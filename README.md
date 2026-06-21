@@ -330,6 +330,30 @@ runs on every push/PR via `.github/workflows/ci.yml`.
 - **API versioning** — public endpoints are served under the canonical `/v1` prefix
   (e.g. `POST /v1/nlu/parse`) and the original unversioned paths (kept for back-compat).
 
+## Conversation & voice (multi-turn)
+
+Beyond the single-shot `/nlu/parse`, the service runs a multi-turn slot-filling dialogue
+that drives a transfer to confirmation, asking targeted follow-up questions for any
+missing slot (amount, currency, recipient) in English or Arabic.
+
+- `POST /conversation/text` — `{ "text": "...", "session_id"?, "language"? }` →
+  `{ session_id, reply, status, slots, pending_slot, complete, transfer? }`. Omit
+  `session_id` on the first turn; reuse the returned one to continue. `status` moves
+  `collecting → confirming → completed` (or `cancelled`).
+- `POST /conversation/voice` — multipart `audio` upload (+ optional `session_id`,
+  `language`). Transcribes with faster-whisper, runs the same dialogue, and returns the
+  transcript, reply, state, and base64 reply audio (TTS via edge-tts/pyttsx3).
+
+Sessions persist in Redis when `NLU_SESSION_BACKEND=redis` (auto-falls back to an
+in-process store if Redis is unreachable). The voice layer is optional:
+
+```bash
+pip install -r requirements-voice.txt   # faster-whisper + edge-tts + pyttsx3
+```
+
+When the voice libraries or model are unavailable, `/conversation/voice` returns
+`503` and the text endpoint is unaffected.
+
 ## Running Tests
 
 ```bash
@@ -350,6 +374,13 @@ app/
   logging_config.py  — Structured JSON logging
   metrics.py      — Prometheus metrics + middleware
   ratelimit.py    — In-process per-IP rate limiting
+  conversation/   — Multi-turn slot-filling dialogue
+    engine.py     —   state machine (collecting → confirming → completed)
+    state.py      —   serializable session state + slots
+    store.py      —   Redis / in-memory session store
+    templates.py  —   bilingual EN/AR prompts
+    router.py     —   /conversation/text + /conversation/voice
+  voice/          — Optional ASR (faster-whisper) + TTS (edge-tts/pyttsx3)
   schemas.py      — Pydantic models (request/response, validation, Beneficiary)
   orchestration.py— Haystack pipeline (incl. BeneficiaryLookup + LLM handler)
   llm.py          — LiteLLM exception handler & beneficiary-not-found responder
@@ -392,6 +423,7 @@ tests/
   test_beneficiary.py
   test_security.py
   test_observability.py
+  test_conversation.py
 deploy/
   elk/
     docker-compose.yml — Elasticsearch + Logstash + Kibana stack
