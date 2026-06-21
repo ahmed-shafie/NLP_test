@@ -167,6 +167,26 @@ class Settings(BaseSettings):
     # Maximum requests per client IP per window for the public NLU endpoints.
     rate_limit_per_minute: int = 120
 
+    # ---- Conversation (multi-turn slot filling) ----
+    conversation_enabled: bool = True
+
+    # Session backend: "redis" (shared, multi-instance) or "memory" (single process).
+    # Falls back to in-memory automatically when Redis is unavailable.
+    session_backend: str = "memory"
+    redis_url: str = "redis://localhost:6379/0"
+    session_ttl_seconds: int = 1800
+
+    # ---- Voice (ASR + TTS) ----
+    # Optional; requires faster-whisper (ASR) and edge-tts/pyttsx3 (TTS). When the
+    # libraries or model are unavailable the voice endpoint degrades gracefully (503).
+    voice_enabled: bool = True
+    whisper_model: str = "small"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
+    tts_engine: str = "edge-tts"
+    tts_voice_en: str = "en-US-AriaNeural"
+    tts_voice_ar: str = "ar-EG-SalmaNeural"
+
     def _split(self, raw: str) -> list[str]:
         return [item.strip() for item in raw.split(",") if item.strip()]
 

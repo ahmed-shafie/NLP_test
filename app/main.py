@@ -17,6 +17,7 @@ from app.admin import audit
 from app.admin.router import router as admin_router
 from app.admin.store import get_engine
 from app.config import settings
+from app.conversation.router import router as conversation_router
 from app.db.beneficiary import get_beneficiary_repository
 from app.embeddings import get_embedder
 from app.errors import register_exception_handlers
@@ -97,6 +98,13 @@ def ui() -> FileResponse:
     """Serve the browser-based simulation & testing page."""
 
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/voice", include_in_schema=False)
+def voice_page() -> FileResponse:
+    """Serve the live (microphone) voice assistant page."""
+
+    return FileResponse(STATIC_DIR / "voice.html")
 
 
 @app.get("/admin", include_in_schema=False)
@@ -227,7 +235,9 @@ def contacts_resolve(
     return ResolveContactResponse(matched=matched, candidates=candidates)
 
 
-# Public NLU endpoints are served at both the unversioned paths (kept for
+# Public endpoints are served at both the unversioned paths (kept for
 # back-compatibility) and under the canonical "/v1" prefix.
 app.include_router(nlu_router)
 app.include_router(nlu_router, prefix="/v1")
+app.include_router(conversation_router)
+app.include_router(conversation_router, prefix="/v1")
