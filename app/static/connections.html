@@ -113,17 +113,30 @@
     </section>
   </main>
 
-  <footer>FastAPI · provider-agnostic via SQLAlchemy · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a></footer>
+  <footer>
+    FastAPI · provider-agnostic via SQLAlchemy · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
+    <span style="margin-left:14px">Admin key: <input id="adminKeyInput" type="password" placeholder="only if auth enabled" style="width:180px"> <button type="button" onclick="saveAdminKey()">Save</button></span>
+  </footer>
 
   <script>
     const $ = (id) => document.getElementById(id);
     let PRESETS = [];
 
+    function adminKey() { return localStorage.getItem("nlu_admin_key") || ""; }
+    function saveAdminKey() { localStorage.setItem("nlu_admin_key", $("adminKeyInput").value); showMsg(true, "Admin key saved."); loadConnections(); }
+
     async function api(path, opts) {
-      const res = await fetch(path, opts);
+      opts = opts || {};
+      const headers = Object.assign({}, opts.headers || {});
+      const k = adminKey();
+      if (k) headers["X-Admin-Key"] = k;
+      const res = await fetch(path, Object.assign({}, opts, { headers }));
       let body = null;
       try { body = await res.json(); } catch (e) { body = null; }
-      if (!res.ok) throw new Error(body && body.detail ? JSON.stringify(body.detail) : ("HTTP " + res.status));
+      if (!res.ok) {
+        const msg = body && body.error ? body.error.message : (body && body.detail ? JSON.stringify(body.detail) : ("HTTP " + res.status));
+        throw new Error(msg);
+      }
       return body;
     }
     function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
@@ -261,6 +274,7 @@
     $("saveBtn").onclick = save;
     $("testFormBtn").onclick = testForm;
     $("clearBtn").onclick = clearForm;
+    $("adminKeyInput").value = adminKey();
     loadProviders().then(loadConnections);
   </script>
 </body>

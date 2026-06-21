@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _load_model() -> "SpacyPipeline | None":
+def _load_model() -> SpacyPipeline | None:
     """Load and cache the spaCy English model, or ``None`` if unavailable."""
 
     try:

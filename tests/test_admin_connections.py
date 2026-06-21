@@ -31,7 +31,10 @@ def _seed_bank(tmp_path) -> str:
     engine = create_engine(url)
     with engine.begin() as conn:
         conn.execute(
-            text("CREATE TABLE beneficiaries (id TEXT, name TEXT, account TEXT, bank TEXT)")
+            text(
+                "CREATE TABLE beneficiaries "
+                "(id TEXT, name TEXT, account TEXT, bank TEXT)"
+            )
         )
         conn.execute(
             text("INSERT INTO beneficiaries VALUES ('b1','Sara Adel','EG1003','CIB')")
@@ -83,7 +86,8 @@ def test_test_connection_success_and_failure(isolated_store, tmp_path):
     url = _seed_bank(tmp_path)
     ok = connections.test_connection(
         url,
-        "SELECT id, name, account, bank FROM beneficiaries WHERE account = :account_number",
+        "SELECT id, name, account, bank FROM beneficiaries "
+        "WHERE account = :account_number",
         "account_number",
         sample_account="EG1003",
     )

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
 
-from fastapi import FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -18,7 +19,9 @@ from app.admin.store import get_engine
 from app.config import settings
 from app.db.beneficiary import get_beneficiary_repository
 from app.embeddings import get_embedder
+from app.errors import register_exception_handlers
 from app.llm import get_llm_handler
+from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.nlu import arabic, english, pipeline
 from app.nlu.semantic_intents import get_semantic_classifier
 from app.orchestration import get_nlu_pipeline
@@ -31,6 +34,7 @@ from app.schemas import (
     ValidateRequest,
     ValidationResult,
 )
+from app.security import require_api_key
 
 logging.basicConfig(level=logging.INFO)
 
@@ -54,8 +58,22 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
 
+register_exception_handlers(app)
+
+# Middleware is applied outermost-first (last added runs first). Audit stays innermost
+# so it records the final status code; the body-size guard runs first to reject early.
 if settings.audit_enabled:
     app.add_middleware(audit.AuditMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+if settings.cors_origins_list():
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list(),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+app.add_middleware(BodySizeLimitMiddleware)
 
 app.include_router(admin_router)
 
@@ -92,7 +110,11 @@ def health() -> dict[str, str]:
 
 
 @app.post("/nlu/parse", response_model=NLUResponse)
-def nlu_parse(request: ParseRequest, http_request: Request) -> NLUResponse:
+def nlu_parse(
+    request: ParseRequest,
+    http_request: Request,
+    _: str = Depends(require_api_key),
+) -> NLUResponse:
     """Parse raw text into an intent and transfer slots.
 
     When ``account_number`` is supplied, the destination beneficiary is resolved by an
@@ -118,7 +140,9 @@ def nlu_parse(request: ParseRequest, http_request: Request) -> NLUResponse:
 
 
 @app.post("/transfer/validate", response_model=ValidationResult)
-def transfer_validate(request: ValidateRequest) -> ValidationResult:
+def transfer_validate(
+    request: ValidateRequest, _: str = Depends(require_api_key)
+) -> ValidationResult:
     """Validate gathered transfer slots, returning errors or a ready transfer."""
 
     return pipeline.validate_transfer(
@@ -136,6 +160,7 @@ def nlu_similar(
         ..., min_length=1, description="Utterance to find neighbours for."
     ),
     k: int = Query(default=5, ge=1, le=20),
+    _: str = Depends(require_api_key),
 ) -> list[SimilarExampleSchema]:
     """Return the nearest labeled example utterances (semantic debug/eval)."""
 
@@ -149,7 +174,9 @@ def nlu_similar(
 
 
 @app.post("/contacts/resolve", response_model=ResolveContactResponse)
-def contacts_resolve(request: ResolveContactRequest) -> ResolveContactResponse:
+def contacts_resolve(
+    request: ResolveContactRequest, _: str = Depends(require_api_key)
+) -> ResolveContactResponse:
     """Resolve a recipient name to an address-book contact (cross-lingual)."""
 
     matched, candidates = pipeline.resolve_contact(

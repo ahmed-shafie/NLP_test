@@ -274,6 +274,43 @@ Validate gathered slots and return a ready transfer or follow-up prompts.
 
 Returns `{"status": "ok", "version": "0.1.0"}`.
 
+## Security & access control
+
+Authentication is **opt-in** (off by default for local development). Enable it in any
+shared or production deployment:
+
+```bash
+export NLU_AUTH_ENABLED=true
+export NLU_API_KEYS="key-for-clients,another-key"     # public NLU endpoints
+export NLU_ADMIN_API_KEYS="separate-admin-key"        # /admin/api/* only
+export NLU_CORS_ALLOW_ORIGINS="https://app.example.com"
+```
+
+- Public endpoints (`/nlu/*`, `/transfer/*`, `/contacts/*`) require the `X-API-Key`
+  header; admin endpoints (`/admin/api/*`) require `X-Admin-Key`. The admin GUI pages
+  have an "Admin key" field (stored in `localStorage`) that attaches the header.
+- With auth enabled and **no keys configured**, requests fail closed (`HTTP 503`).
+- Every error returns a uniform envelope: `{"error": {"code", "message", "request_id"}}`.
+- Baseline security headers, a request body-size limit (`NLU_MAX_REQUEST_BYTES`), and
+  optional CORS are applied via middleware.
+
+See `.env.example` for the full configuration reference.
+
+## Deployment (Docker)
+
+```bash
+# Build & run the API (plus Redis for the conversation layer)
+docker compose up --build
+
+# Or just the API image
+docker build -t banking-nlu .
+docker run -p 8000:8000 -e NLU_AUTH_ENABLED=true -e NLU_API_KEYS=... banking-nlu
+```
+
+The image runs as a non-root user with a `/health` container healthcheck. The ELK stack
+is separate under `deploy/elk/`. CI (lint, format, type-check, tests, dependency audit)
+runs on every push/PR via `.github/workflows/ci.yml`.
+
 ## Running Tests
 
 ```bash
@@ -287,6 +324,9 @@ pytest -v
 app/
   main.py         — FastAPI application
   config.py       — Settings, supported currencies, DB lookup config
+  security.py     — API-key authentication (public + admin)
+  errors.py       — Uniform error envelope + global exception handlers
+  middleware.py   — Security headers + request body-size limit
   schemas.py      — Pydantic models (request/response, validation, Beneficiary)
   orchestration.py— Haystack pipeline (incl. BeneficiaryLookup + LLM handler)
   llm.py          — LiteLLM exception handler & beneficiary-not-found responder
@@ -326,6 +366,8 @@ tests/
   test_contacts_fuzzy.py
   test_admin_connections.py
   test_audit.py
+  test_beneficiary.py
+  test_security.py
 deploy/
   elk/
     docker-compose.yml — Elasticsearch + Logstash + Kibana stack

@@ -9,28 +9,69 @@ from pydantic import BaseModel, Field
 # Supported provider presets surfaced in the GUI. The value is the SQLAlchemy
 # dialect/driver prefix; ``kind`` groups databases vs. datalake engines.
 PROVIDER_PRESETS: list[dict[str, str]] = [
-    {"provider": "postgresql", "kind": "database", "label": "PostgreSQL",
-     "url_template": "postgresql+psycopg://user:pass@host:5432/dbname",
-     "driver": "psycopg[binary]"},
-    {"provider": "mysql", "kind": "database", "label": "MySQL / MariaDB",
-     "url_template": "mysql+pymysql://user:pass@host:3306/dbname",
-     "driver": "pymysql"},
-    {"provider": "oracle", "kind": "database", "label": "Oracle",
-     "url_template": "oracle+oracledb://user:pass@host:1521/?service_name=ORCL",
-     "driver": "oracledb"},
-    {"provider": "mssql", "kind": "database", "label": "SQL Server",
-     "url_template": "mssql+pyodbc://user:pass@host:1433/db?driver=ODBC+Driver+18+for+SQL+Server",
-     "driver": "pyodbc"},
-    {"provider": "sqlite", "kind": "database", "label": "SQLite (local)",
-     "url_template": "sqlite:///./beneficiaries.db", "driver": "(built in)"},
-    {"provider": "impala", "kind": "datalake", "label": "Impala",
-     "url_template": "impala://host:21050/default", "driver": "impyla"},
-    {"provider": "hive", "kind": "datalake", "label": "Hive",
-     "url_template": "hive://host:10000/default", "driver": "pyhive[hive]"},
-    {"provider": "trino", "kind": "datalake", "label": "Trino",
-     "url_template": "trino://user@host:8080/catalog/schema", "driver": "trino[sqlalchemy]"},
-    {"provider": "presto", "kind": "datalake", "label": "Presto",
-     "url_template": "presto://user@host:8080/catalog/schema", "driver": "pyhive[presto]"},
+    {
+        "provider": "postgresql",
+        "kind": "database",
+        "label": "PostgreSQL",
+        "url_template": "postgresql+psycopg://user:pass@host:5432/dbname",
+        "driver": "psycopg[binary]",
+    },
+    {
+        "provider": "mysql",
+        "kind": "database",
+        "label": "MySQL / MariaDB",
+        "url_template": "mysql+pymysql://user:pass@host:3306/dbname",
+        "driver": "pymysql",
+    },
+    {
+        "provider": "oracle",
+        "kind": "database",
+        "label": "Oracle",
+        "url_template": "oracle+oracledb://user:pass@host:1521/?service_name=ORCL",
+        "driver": "oracledb",
+    },
+    {
+        "provider": "mssql",
+        "kind": "database",
+        "label": "SQL Server",
+        "url_template": "mssql+pyodbc://user:pass@host:1433/db?driver=ODBC+Driver+18+for+SQL+Server",
+        "driver": "pyodbc",
+    },
+    {
+        "provider": "sqlite",
+        "kind": "database",
+        "label": "SQLite (local)",
+        "url_template": "sqlite:///./beneficiaries.db",
+        "driver": "(built in)",
+    },
+    {
+        "provider": "impala",
+        "kind": "datalake",
+        "label": "Impala",
+        "url_template": "impala://host:21050/default",
+        "driver": "impyla",
+    },
+    {
+        "provider": "hive",
+        "kind": "datalake",
+        "label": "Hive",
+        "url_template": "hive://host:10000/default",
+        "driver": "pyhive[hive]",
+    },
+    {
+        "provider": "trino",
+        "kind": "datalake",
+        "label": "Trino",
+        "url_template": "trino://user@host:8080/catalog/schema",
+        "driver": "trino[sqlalchemy]",
+    },
+    {
+        "provider": "presto",
+        "kind": "datalake",
+        "label": "Presto",
+        "url_template": "presto://user@host:8080/catalog/schema",
+        "driver": "pyhive[presto]",
+    },
 ]
 
 _DEFAULT_QUERY = (
@@ -43,9 +84,13 @@ class ConnectionBase(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=200)
     kind: str = Field(default="database", description="'database' or 'datalake'.")
-    provider: str = Field(..., min_length=1, description="SQLAlchemy dialect, e.g. postgresql.")
+    provider: str = Field(
+        ..., min_length=1, description="SQLAlchemy dialect, e.g. postgresql."
+    )
     url: str = Field(..., min_length=1, description="SQLAlchemy connection URL.")
-    query: str = Field(default=_DEFAULT_QUERY, description="Parameterized lookup query.")
+    query: str = Field(
+        default=_DEFAULT_QUERY, description="Parameterized lookup query."
+    )
     account_param: str = Field(default="account_number")
     column_map: dict[str, str] = Field(default_factory=dict)
 
@@ -105,7 +150,9 @@ class AuditEvent(BaseModel):
 class AuditStats(BaseModel):
     """Aggregated metrics powering the observability charts."""
 
-    source: str = Field(description="Where the stats came from: 'elasticsearch' or 'store'.")
+    source: str = Field(
+        description="Where the stats came from: 'elasticsearch' or 'store'."
+    )
     total: int = 0
     success: int = 0
     errors: int = 0

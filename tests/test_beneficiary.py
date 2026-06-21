@@ -36,7 +36,10 @@ def test_lookup_returns_beneficiary(tmp_path):
     )
     repo = BeneficiaryRepository(
         url=url,
-        query="SELECT id, name, account, bank FROM beneficiaries WHERE account = :account_number",
+        query=(
+            "SELECT id, name, account, bank FROM beneficiaries "
+            "WHERE account = :account_number"
+        ),
         account_param="account_number",
     )
 
@@ -56,7 +59,10 @@ def test_lookup_missing_returns_none(tmp_path):
     )
     repo = BeneficiaryRepository(
         url=url,
-        query="SELECT id, name, account, bank FROM beneficiaries WHERE account = :account_number",
+        query=(
+            "SELECT id, name, account, bank FROM beneficiaries "
+            "WHERE account = :account_number"
+        ),
         account_param="account_number",
     )
 
@@ -67,7 +73,8 @@ def test_column_map_translates_columns(tmp_path):
     # A schema whose column names differ from Beneficiary fields.
     url = _seed(
         tmp_path / "bank.db",
-        "CREATE TABLE beneficiaries (ben_id TEXT, full_name TEXT, acct_no TEXT, bank_name TEXT)",
+        "CREATE TABLE beneficiaries "
+        "(ben_id TEXT, full_name TEXT, acct_no TEXT, bank_name TEXT)",
         [
             {
                 "ben_id": "x9",
@@ -79,7 +86,10 @@ def test_column_map_translates_columns(tmp_path):
     )
     repo = BeneficiaryRepository(
         url=url,
-        query="SELECT ben_id, full_name, acct_no, bank_name FROM beneficiaries WHERE acct_no = :account_number",
+        query=(
+            "SELECT ben_id, full_name, acct_no, bank_name FROM beneficiaries "
+            "WHERE acct_no = :account_number"
+        ),
         account_param="account_number",
         column_map={
             "id": "ben_id",
