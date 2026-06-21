@@ -157,10 +157,13 @@
 
   <footer>
     FastAPI + spaCy + Stanza + FAISS · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
+    <span style="margin-left:14px">API key: <input id="apiKeyInput" type="password" placeholder="only if auth enabled" style="width:180px"> <button type="button" onclick="saveApiKey()">Save</button></span>
   </footer>
 
   <script>
     const $ = (id) => document.getElementById(id);
+    function apiKey() { return localStorage.getItem("nlu_api_key") || ""; }
+    function saveApiKey() { localStorage.setItem("nlu_api_key", $("apiKeyInput").value); checkHealth(); doParse(); }
     const PARSE_SAMPLES = [
       { t: "send 500 dollars to Ahmed" },
       { t: "transfer 1,500 EUR to Sara from my savings account" },
@@ -189,9 +192,16 @@
     }
 
     async function api(path, opts) {
-      const res = await fetch(path, opts);
+      opts = opts || {};
+      const headers = Object.assign({}, opts.headers || {});
+      const k = apiKey();
+      if (k) headers["X-API-Key"] = k;
+      const res = await fetch(path, Object.assign({}, opts, { headers }));
       const body = await res.json();
-      if (!res.ok) throw new Error(body.detail ? JSON.stringify(body.detail) : ("HTTP " + res.status));
+      if (!res.ok) {
+        const msg = body && body.error ? body.error.message : (body && body.detail ? JSON.stringify(body.detail) : ("HTTP " + res.status));
+        throw new Error(msg);
+      }
       return body;
     }
 
@@ -328,6 +338,7 @@
     $("simBtn").onclick = doSimilar;
     $("resBtn").onclick = doResolve;
     $("parseText").addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") doParse(); });
+    $("apiKeyInput").value = apiKey();
     checkHealth();
     doParse();
   </script>

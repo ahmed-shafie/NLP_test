@@ -28,8 +28,9 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Paths whose requests are not worth auditing (static assets, liveness probes).
-_SKIP_PREFIXES = ("/static", "/favicon")
+# Paths whose requests are not worth auditing (static assets, liveness/readiness
+# probes). Skipping /health avoids container healthchecks flooding the audit log.
+_SKIP_PREFIXES = ("/static", "/favicon", "/health")
 
 
 def _utcnow() -> datetime:

@@ -61,10 +61,12 @@ app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
 register_exception_handlers(app)
 
 # Middleware is applied outermost-first (last added runs first). Audit stays innermost
-# so it records the final status code; the body-size guard runs first to reject early.
+# so it records the final status code. CORS must be outermost so that even early
+# rejections (e.g. the 413 from the body-size guard) carry CORS headers to browsers.
 if settings.audit_enabled:
     app.add_middleware(audit.AuditMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(BodySizeLimitMiddleware)
 if settings.cors_origins_list():
     app.add_middleware(
         CORSMiddleware,
@@ -73,7 +75,6 @@ if settings.cors_origins_list():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-app.add_middleware(BodySizeLimitMiddleware)
 
 app.include_router(admin_router)
 
