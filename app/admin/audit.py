@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
+import threading
 import time
-import uuid
 from collections import Counter
 from datetime import UTC, datetime
 
@@ -25,6 +26,7 @@ from app.admin import elk
 from app.admin.schemas import AuditEvent, AuditStats
 from app.admin.store import AuditEventRow, get_sessionmaker
 from app.config import settings
+from app.request_context import get_request_id, new_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,54 @@ def _ship(event: AuditEvent) -> None:
         elk.ship_event_via_logstash(json.dumps(document, default=str))
     else:
         elk.ship_event(document)
+
+
+# --------------------------------------------------------------------------- #
+# Asynchronous shipping: keep slow network I/O off the request path.
+# --------------------------------------------------------------------------- #
+_SHIP_QUEUE_MAXSIZE = 10_000
+_ship_queue: queue.Queue[AuditEvent] | None = None
+_ship_lock = threading.Lock()
+
+
+def _ship_worker_loop(work: queue.Queue[AuditEvent]) -> None:
+    while True:
+        event = work.get()
+        try:
+            _ship(event)
+        except Exception as exc:  # noqa: BLE001 - shipping must never crash the worker
+            logger.warning("Failed to ship audit event %s: %s", event.action, exc)
+        finally:
+            work.task_done()
+
+
+def _ensure_shipper() -> queue.Queue[AuditEvent]:
+    global _ship_queue
+    if _ship_queue is None:
+        with _ship_lock:
+            if _ship_queue is None:
+                _ship_queue = queue.Queue(maxsize=_SHIP_QUEUE_MAXSIZE)
+                threading.Thread(
+                    target=_ship_worker_loop,
+                    args=(_ship_queue,),
+                    name="audit-shipper",
+                    daemon=True,
+                ).start()
+    return _ship_queue
+
+
+def _dispatch_ship(event: AuditEvent) -> None:
+    """Ship an event, asynchronously by default to avoid blocking the request."""
+
+    if settings.audit_sink == "none":
+        return
+    if not settings.audit_async:
+        _ship(event)
+        return
+    try:
+        _ensure_shipper().put_nowait(event)
+    except queue.Full:
+        logger.warning("Audit ship queue full; dropping event %s", event.action)
 
 
 def record(
@@ -122,7 +172,7 @@ def record(
             session.commit()
     except Exception as exc:  # noqa: BLE001 - auditing must never break the app
         logger.warning("Failed to persist audit event %s: %s", action, exc)
-    _ship(event)
+    _dispatch_ship(event)
 
 
 class AuditMiddleware(BaseHTTPMiddleware):
@@ -133,7 +183,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if not settings.audit_enabled or path.startswith(_SKIP_PREFIXES):
             return await call_next(request)
 
-        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
+        request_id = (
+            get_request_id() or request.headers.get("x-request-id") or new_request_id()
+        )
         actor = request.headers.get("x-actor") or "anonymous"
         client_ip = request.client.host if request.client else None
         started = time.perf_counter()

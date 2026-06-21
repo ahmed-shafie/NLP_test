@@ -311,6 +311,25 @@ The image runs as a non-root user with a `/health` container healthcheck. The EL
 is separate under `deploy/elk/`. CI (lint, format, type-check, tests, dependency audit)
 runs on every push/PR via `.github/workflows/ci.yml`.
 
+## Observability & operations
+
+- **Structured logging** — JSON logs (`NLU_LOG_JSON=true`) with a `request_id` on every
+  record, correlated with the matching audit event. Set `NLU_LOG_JSON=false` for
+  human-readable local logs.
+- **Request correlation** — every response carries an `X-Request-ID` header (an inbound
+  one is honoured), shared by logs and audit.
+- **Health probes** — `GET /health` (liveness) and `GET /health/ready` (readiness:
+  checks the config/audit store, reports the embedder; returns 503 when not ready).
+- **Metrics** — Prometheus exposition at `GET /metrics` (`nlu_http_requests_total`,
+  `nlu_http_request_duration_seconds`), toggled by `NLU_METRICS_ENABLED`.
+- **Async audit shipping** — events ship to ELK on a background worker thread so network
+  I/O never blocks the request path (`NLU_AUDIT_ASYNC=true`).
+- **Rate limiting** — opt-in per-IP fixed-window limiter on the public NLU endpoints
+  (`NLU_RATE_LIMIT_ENABLED`, `NLU_RATE_LIMIT_PER_MINUTE`); returns `429` with the
+  standard error envelope.
+- **API versioning** — public endpoints are served under the canonical `/v1` prefix
+  (e.g. `POST /v1/nlu/parse`) and the original unversioned paths (kept for back-compat).
+
 ## Running Tests
 
 ```bash
@@ -327,6 +346,10 @@ app/
   security.py     — API-key authentication (public + admin)
   errors.py       — Uniform error envelope + global exception handlers
   middleware.py   — Security headers + request body-size limit
+  request_context.py — Per-request id (logs + audit correlation)
+  logging_config.py  — Structured JSON logging
+  metrics.py      — Prometheus metrics + middleware
+  ratelimit.py    — In-process per-IP rate limiting
   schemas.py      — Pydantic models (request/response, validation, Beneficiary)
   orchestration.py— Haystack pipeline (incl. BeneficiaryLookup + LLM handler)
   llm.py          — LiteLLM exception handler & beneficiary-not-found responder
@@ -368,6 +391,7 @@ tests/
   test_audit.py
   test_beneficiary.py
   test_security.py
+  test_observability.py
 deploy/
   elk/
     docker-compose.yml — Elasticsearch + Logstash + Kibana stack
