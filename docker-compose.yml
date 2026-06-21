@@ -1,0 +1,28 @@
+# Full application stack: the NLU API plus its operational dependencies.
+# The ELK stack lives separately under deploy/elk/docker-compose.yml; point the app
+# at it via NLU_ELASTICSEARCH_URL when running both.
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Security: enable auth and provide keys in a real deployment.
+      NLU_AUTH_ENABLED: "${NLU_AUTH_ENABLED:-false}"
+      NLU_API_KEYS: "${NLU_API_KEYS:-}"
+      NLU_ADMIN_API_KEYS: "${NLU_ADMIN_API_KEYS:-}"
+      NLU_CORS_ALLOW_ORIGINS: "${NLU_CORS_ALLOW_ORIGINS:-}"
+      # Conversation session store (P2). Falls back to in-memory if unreachable.
+      REDIS_URL: "redis://redis:6379/0"
+      # LLM + ELK are optional; the service degrades gracefully when absent.
+      NLU_LLM_ENABLED: "${NLU_LLM_ENABLED:-false}"
+      NLU_ELK_ENABLED: "${NLU_ELK_ENABLED:-false}"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped

@@ -29,7 +29,8 @@ _SYSTEM_PROMPT = (
     "assistant that only handles MONEY TRANSFERS. You receive a user utterance and "
     "any slots already extracted. Return ONLY a JSON object with these keys:\n"
     '  "intent": "transfer_money" or "fallback"\n'
-    '  "amount": number or null (resolve spelled-out amounts, e.g. Arabic "ألف"=1000, "مليون"=1000000)\n'
+    '  "amount": number or null (resolve spelled-out amounts, e.g. Arabic '
+    '"ألف"=1000, "مليون"=1000000)\n'
     '  "currency": ISO-4217 code (USD, EUR, GBP, EGP, SAR, AED, KWD, QAR) or null\n'
     '  "recipient": the beneficiary name as written, or null\n'
     '  "source_account": e.g. "savings"/"checking", or null\n'

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def get_client() -> "Elasticsearch | None":
+def get_client() -> Elasticsearch | None:
     """Return a cached Elasticsearch client, or ``None`` if unavailable."""
 
     if not settings.elk_enabled:
@@ -80,8 +80,12 @@ def ship_event_via_logstash(line: str) -> bool:
 def status() -> ElkStatus:
     """Probe the ELK pipeline for the observability page."""
 
-    base = ElkStatus(enabled=settings.elk_enabled, sink=settings.audit_sink,
-                     reachable=False, index=settings.elk_index)
+    base = ElkStatus(
+        enabled=settings.elk_enabled,
+        sink=settings.audit_sink,
+        reachable=False,
+        index=settings.elk_index,
+    )
     client = get_client()
     if client is None:
         base.message = "Elasticsearch client unavailable or disabled."
@@ -106,7 +110,7 @@ def fetch_stats(window_minutes: int = 1440) -> AuditStats | None:
     client = get_client()
     if client is None:
         return None
-    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
     gte = now_ms - window_minutes * 60 * 1000
     query: dict[str, dict] = {
         "range": {"timestamp": {"gte": gte, "lte": now_ms, "format": "epoch_millis"}}
@@ -128,9 +132,7 @@ def fetch_stats(window_minutes: int = 1440) -> AuditStats | None:
         },
     }
     try:
-        resp = client.search(
-            index=settings.elk_index, query=query, aggs=aggs, size=0
-        )
+        resp = client.search(index=settings.elk_index, query=query, aggs=aggs, size=0)
     except Exception as exc:  # noqa: BLE001 - index missing / cluster down
         logger.debug("Elasticsearch stats query failed: %s", exc)
         return None

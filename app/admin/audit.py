@@ -14,7 +14,7 @@ import logging
 import time
 import uuid
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -28,12 +28,13 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Paths whose requests are not worth auditing (static assets, liveness probes).
-_SKIP_PREFIXES = ("/static", "/favicon")
+# Paths whose requests are not worth auditing (static assets, liveness/readiness
+# probes). Skipping /health avoids container healthchecks flooding the audit log.
+_SKIP_PREFIXES = ("/static", "/favicon", "/health")
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _to_document(event: AuditEvent) -> dict:
@@ -212,7 +213,7 @@ def stats_from_store(window_minutes: int = 1440) -> AuditStats:
             select(AuditEventRow).order_by(AuditEventRow.id.desc()).limit(5000)
         ).all()
 
-    rows = [r for r in rows if r.timestamp.replace(tzinfo=timezone.utc).timestamp() >= cutoff]
+    rows = [r for r in rows if r.timestamp.replace(tzinfo=UTC).timestamp() >= cutoff]
     total = len(rows)
     durations = sorted(r.duration_ms for r in rows if r.duration_ms is not None)
     by_status: Counter = Counter()
@@ -233,7 +234,7 @@ def stats_from_store(window_minutes: int = 1440) -> AuditStats:
             success += 1
         else:
             errors += 1
-        ts = row.timestamp.replace(tzinfo=timezone.utc)
+        ts = row.timestamp.replace(tzinfo=UTC)
         timeline[ts.strftime(bucket)] += 1
 
     avg = sum(durations) / len(durations) if durations else 0.0
@@ -254,7 +255,7 @@ def stats_from_store(window_minutes: int = 1440) -> AuditStats:
 
 
 def get_stats(window_minutes: int = 1440) -> AuditStats:
-    """Return dashboard stats, preferring Elasticsearch and falling back to the store."""
+    """Return dashboard stats, preferring Elasticsearch, falling back to the store."""
 
     if settings.audit_sink == "elasticsearch":
         es_stats = elk.fetch_stats(window_minutes)

@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.db
+tests
+docs
+deploy
+test-plan-*.md
+.agents
+build_pdf.py

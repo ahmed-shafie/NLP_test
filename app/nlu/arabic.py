@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
-def _load_model() -> "StanzaPipeline | None":
+def _load_model() -> StanzaPipeline | None:
     """Load and cache the Stanza Arabic pipeline, or ``None`` if unavailable.
 
     Stanza models are downloaded separately (see README). When absent, the

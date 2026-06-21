@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.admin import audit, connections, elk
 from app.admin.schemas import (
@@ -15,8 +15,11 @@ from app.admin.schemas import (
     ConnectionUpdate,
     ElkStatus,
 )
+from app.security import require_admin_key
 
-router = APIRouter(prefix="/admin/api", tags=["admin"])
+router = APIRouter(
+    prefix="/admin/api", tags=["admin"], dependencies=[Depends(require_admin_key)]
+)
 
 
 def _actor(request: Request) -> str:
@@ -73,7 +76,11 @@ def test_adhoc(payload: ConnectionCreate, request: Request) -> ConnectionTestRes
         category="admin",
         actor=_actor(request),
         outcome="success" if result.ok else "error",
-        detail={"provider": payload.provider, "ok": result.ok, "message": result.message},
+        detail={
+            "provider": payload.provider,
+            "ok": result.ok,
+            "message": result.message,
+        },
     )
     return result
 
@@ -179,7 +186,9 @@ def audit_events(
 
 
 @router.get("/audit/stats", response_model=AuditStats)
-def audit_stats(window_minutes: int = Query(default=1440, ge=1, le=43200)) -> AuditStats:
+def audit_stats(
+    window_minutes: int = Query(default=1440, ge=1, le=43200),
+) -> AuditStats:
     """Return aggregated metrics for the observability charts."""
 
     return audit.get_stats(window_minutes)

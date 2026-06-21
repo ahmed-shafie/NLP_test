@@ -106,11 +106,15 @@ class NLUResponse(BaseModel):
     )
     llm_assisted: bool = Field(
         default=False,
-        description="True when the LiteLLM exception handler filled or corrected slots.",
+        description=(
+            "True when the LiteLLM exception handler filled or corrected slots."
+        ),
     )
     clarification: str | None = Field(
         default=None,
-        description="A natural-language follow-up/clarification suggested by the LLM fallback.",
+        description=(
+            "A natural-language follow-up/clarification suggested by the LLM fallback."
+        ),
     )
 
 
@@ -200,7 +204,7 @@ class ValidationResult(BaseModel):
     errors: list[SlotError] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _consistency(self) -> "ValidationResult":
+    def _consistency(self) -> ValidationResult:
         if self.valid and self.transfer is None:
             raise ValueError("A valid result must include a transfer.")
         return self

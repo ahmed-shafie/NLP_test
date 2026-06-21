@@ -47,7 +47,9 @@ def test_list_filters(isolated_audit):
 def test_stats_from_store(isolated_audit):
     audit.record("GET /x", category="http", status_code=200, duration_ms=10.0)
     audit.record("GET /x", category="http", status_code=200, duration_ms=30.0)
-    audit.record("GET /y", category="http", status_code=404, outcome="error", duration_ms=20.0)
+    audit.record(
+        "GET /y", category="http", status_code=404, outcome="error", duration_ms=20.0
+    )
 
     stats = audit.stats_from_store()
     assert stats.source == "store"

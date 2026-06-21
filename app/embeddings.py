@@ -24,9 +24,12 @@ logger = logging.getLogger(__name__)
 class Embedder:
     """Thin wrapper around a SentenceTransformer producing L2-normalised vectors."""
 
-    def __init__(self, model: "SentenceTransformer") -> None:
+    def __init__(self, model: SentenceTransformer) -> None:
         self._model = model
-        self.dimension: int = int(model.get_sentence_embedding_dimension())
+        dim = model.get_sentence_embedding_dimension()
+        if dim is None:
+            dim = int(model.encode(["x"]).shape[-1])
+        self.dimension: int = int(dim)
 
     def encode(self, texts: list[str]) -> np.ndarray:
         """Return a ``(len(texts), dimension)`` float32 array of unit vectors."""

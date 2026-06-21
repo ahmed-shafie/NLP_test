@@ -9,7 +9,7 @@ is unavailable.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 
 from sqlalchemy import (
@@ -28,7 +28,7 @@ from app.config import settings
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):
@@ -75,7 +75,9 @@ class AuditEventRow(Base):
     duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     actor: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    request_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     outcome: Mapped[str] = mapped_column(String(16), default="success", index=True)
     # JSON-encoded extra detail (request/response summary).
     detail: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
