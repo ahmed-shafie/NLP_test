@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Banking NLU Brain — Live Voice</title>
+  <style>
+    :root {
+      --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --border: #334155;
+      --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --accent-2: #22c55e;
+      --warn: #f59e0b; --danger: #f87171; --purple: #a855f7;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.5; }
+    header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex;
+      align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    header h1 { font-size: 20px; margin: 0; }
+    header .sub { color: var(--muted); font-size: 13px; }
+    nav { display: flex; gap: 14px; font-size: 13px; }
+    header .status { margin-left: auto; font-size: 13px; color: var(--muted); }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+      background: var(--muted); margin-right: 6px; vertical-align: middle; }
+    .dot.ok { background: var(--accent-2); } .dot.bad { background: var(--danger); }
+    main { max-width: 820px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+    .card h2 .ep { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent);
+      background: var(--panel-2); padding: 2px 8px; border-radius: 6px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    input[type=text], select { background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; font-size: 14px; font-family: inherit; }
+    input[type=text] { width: 100%; }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    button { background: var(--accent); color: #04293a; border: none; border-radius: 8px;
+      padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    button:hover { filter: brightness(1.08); } button:disabled { opacity: .5; cursor: not-allowed; }
+    button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+
+    .mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 8px 0 4px; }
+    .mic { width: 96px; height: 96px; border-radius: 50%; background: var(--accent); color: #04293a;
+      font-size: 38px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+      border: none; transition: transform .1s ease, background .2s ease; box-shadow: 0 6px 24px rgba(56,189,248,.25); }
+    .mic:hover { transform: scale(1.04); }
+    .mic.recording { background: var(--danger); color: #fff; animation: pulse 1.2s infinite;
+      box-shadow: 0 0 0 0 rgba(248,113,113,.5); }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,.5); }
+      70% { box-shadow: 0 0 0 18px rgba(248,113,113,0); } 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0); } }
+    .mic-hint { font-size: 13px; color: var(--muted); min-height: 18px; text-align: center; }
+
+    .controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+    .controls > div { min-width: 120px; }
+
+    .chat { display: flex; flex-direction: column; gap: 12px; min-height: 120px; }
+    .bubble { max-width: 80%; padding: 10px 14px; border-radius: 14px; font-size: 14.5px; white-space: pre-wrap; word-break: break-word; }
+    .bubble.user { align-self: flex-end; background: var(--accent); color: #04293a; border-bottom-right-radius: 4px; }
+    .bubble.bot { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .bubble[dir=rtl] { text-align: right; }
+    .bubble .tag { display: block; font-size: 11px; opacity: .7; margin-bottom: 3px; }
+
+    .statusbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.collecting { background: rgba(56,189,248,.15); color: var(--accent); border: 1px solid rgba(56,189,248,.4); }
+    .badge.confirming { background: rgba(245,158,11,.15); color: var(--warn); border: 1px solid rgba(245,158,11,.4); }
+    .badge.completed { background: rgba(34,197,94,.15); color: var(--accent-2); border: 1px solid rgba(34,197,94,.4); }
+    .badge.cancelled { background: rgba(248,113,113,.15); color: var(--danger); border: 1px solid rgba(248,113,113,.4); }
+    .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .slot { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+    .slot .k { color: var(--muted); font-size: 11px; display: block; }
+    .slot .v { font-weight: 600; } .slot.filled { border-color: rgba(34,197,94,.5); }
+    .err { color: var(--danger); font-size: 13px; margin-top: 10px; }
+    .row-text { display: flex; gap: 10px; margin-top: 6px; }
+    .row-text input { flex: 1; }
+    footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Banking NLU Brain</h1>
+    <span class="sub">Live voice assistant · English &amp; Arabic</span>
+    <nav>
+      <a style="color:var(--muted)" href="/">Simulator</a>
+      <a style="color:var(--accent)" href="/voice">Voice</a>
+      <a style="color:var(--muted)" href="/admin">Connections</a>
+      <a style="color:var(--muted)" href="/admin/audit">Audit monitor</a>
+    </nav>
+    <span class="status"><span id="healthDot" class="dot"></span><span id="healthText">checking…</span></span>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Talk to the assistant <span class="ep">POST /conversation/voice</span></h2>
+      <div class="mic-wrap">
+        <button id="micBtn" class="mic" title="Click to start / stop recording">&#127908;</button>
+        <div id="micHint" class="mic-hint">Click the mic, speak a transfer (e.g. “send 500 dollars to Ahmed”), click again to send.</div>
+      </div>
+      <div class="controls">
+        <div>
+          <label for="langSel">Language</label>
+          <select id="langSel">
+            <option value="">Auto-detect</option>
+            <option value="en">English</option>
+            <option value="ar">العربية</option>
+          </select>
+        </div>
+        <div style="flex:0 0 auto"><button class="ghost" id="newBtn">New conversation</button></div>
+        <div style="flex:0 0 auto"><label>&nbsp;</label><label style="font-size:12px"><input type="checkbox" id="autoplay" checked style="width:auto"> Auto-play reply</label></div>
+      </div>
+      <div class="err" id="err" style="display:none"></div>
+    </section>
+
+    <section class="card">
+      <h2>Conversation</h2>
+      <div class="statusbar">
+        <span>Status: <span id="stateBadge" class="badge collecting">—</span></span>
+        <span id="pendingInfo"></span>
+        <span style="margin-left:auto">session: <code id="sessId">new</code></span>
+      </div>
+      <div class="slots" id="slots"></div>
+      <div class="chat" id="chat" style="margin-top:14px">
+        <div class="bubble bot">Hi! I can set up a money transfer. Tap the mic and tell me the amount, currency, and who to send it to.</div>
+      </div>
+      <div class="row-text">
+        <input type="text" id="textInput" placeholder="…or type a message and press Enter (uses /conversation/text)" />
+        <button id="sendTextBtn">Send</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    FastAPI · faster-whisper (ASR) + edge-tts (TTS) · <a href="/docs">OpenAPI docs</a>
+    <span style="margin-left:14px">API key: <input id="apiKeyInput" type="password" placeholder="only if auth enabled" style="width:170px"> <button type="button" onclick="saveApiKey()">Save</button></span>
+  </footer>
+
+  <audio id="player" style="display:none"></audio>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let sessionId = null;
+    let mediaRecorder = null;
+    let chunks = [];
+    let recording = false;
+
+    function apiKey() { return localStorage.getItem("nlu_api_key") || ""; }
+    function saveApiKey() { localStorage.setItem("nlu_api_key", $("apiKeyInput").value); checkHealth(); }
+    function authHeaders(h = {}) { const k = apiKey(); if (k) h["X-API-Key"] = k; return h; }
+    function showErr(m) { const e = $("err"); e.textContent = m; e.style.display = m ? "block" : "none"; }
+
+    async function checkHealth() {
+      try {
+        const r = await fetch("/health/ready");
+        const ok = r.status === 200;
+        $("healthDot").className = "dot " + (ok ? "ok" : "bad");
+        $("healthText").textContent = ok ? "ready" : "degraded";
+      } catch { $("healthDot").className = "dot bad"; $("healthText").textContent = "offline"; }
+    }
+
+    function addBubble(text, who, lang) {
+      const b = document.createElement("div");
+      b.className = "bubble " + who;
+      if (lang === "ar") b.setAttribute("dir", "rtl");
+      b.textContent = text;
+      $("chat").appendChild(b);
+      b.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+
+    function renderState(d) {
+      sessionId = d.session_id || sessionId;
+      $("sessId").textContent = sessionId ? sessionId.slice(0, 8) : "new";
+      const st = d.status || "collecting";
+      const badge = $("stateBadge");
+      badge.className = "badge " + st;
+      badge.textContent = st;
+      $("pendingInfo").textContent = d.pending_slot ? ("waiting for: " + d.pending_slot) : "";
+      const s = d.slots || {};
+      const fields = [["amount", s.amount], ["currency", s.currency], ["recipient", s.recipient]];
+      $("slots").innerHTML = fields.map(([k, v]) =>
+        `<div class="slot ${v ? "filled" : ""}"><span class="k">${k}</span><span class="v">${v ?? "—"}</span></div>`
+      ).join("");
+    }
+
+    function playAudio(b64, mime) {
+      if (!b64 || !$("autoplay").checked) return;
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime || "audio/mpeg" }));
+      const p = $("player"); p.src = url; p.play().catch(() => {});
+    }
+
+    async function sendText() {
+      const txt = $("textInput").value.trim();
+      if (!txt) return;
+      $("textInput").value = "";
+      addBubble(txt, "user");
+      showErr("");
+      try {
+        const r = await fetch("/conversation/text", {
+          method: "POST",
+          headers: authHeaders({ "content-type": "application/json" }),
+          body: JSON.stringify({ text: txt, session_id: sessionId, language: $("langSel").value || null }),
+        });
+        const d = await r.json();
+        if (!r.ok) { showErr(d.detail || d.error?.message || ("HTTP " + r.status)); return; }
+        renderState(d);
+        addBubble(d.reply, "bot", d.language);
+      } catch (e) { showErr(String(e)); }
+    }
+
+    async function sendAudio(blob) {
+      $("micHint").textContent = "Transcribing & thinking…";
+      showErr("");
+      const fd = new FormData();
+      fd.append("audio", blob, "recording.webm");
+      if (sessionId) fd.append("session_id", sessionId);
+      if ($("langSel").value) fd.append("language", $("langSel").value);
+      try {
+        const r = await fetch("/conversation/voice", { method: "POST", headers: authHeaders(), body: fd });
+        const d = await r.json();
+        if (!r.ok) { showErr(d.detail || d.error?.message || ("HTTP " + r.status)); $("micHint").textContent = "Click the mic to try again."; return; }
+        if (d.transcript) addBubble(d.transcript, "user", d.language);
+        renderState(d);
+        addBubble(d.reply, "bot", d.language);
+        playAudio(d.audio_base64, d.audio_mime);
+        $("micHint").textContent = d.audio_base64 ? "🔊 Playing reply… click the mic for your next turn." : "Click the mic for your next turn.";
+      } catch (e) { showErr(String(e)); $("micHint").textContent = "Click the mic to try again."; }
+    }
+
+    async function toggleRecord() {
+      if (recording) { mediaRecorder.stop(); return; }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
+                   : (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
+        mediaRecorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        chunks = [];
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          recording = false;
+          $("micBtn").classList.remove("recording");
+          const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
+          if (blob.size > 0) sendAudio(blob);
+        };
+        mediaRecorder.start();
+        recording = true;
+        $("micBtn").classList.add("recording");
+        $("micHint").textContent = "Listening… click the mic again to stop & send.";
+      } catch (e) {
+        showErr("Microphone access failed: " + e + " (allow mic permission, use http://localhost).");
+      }
+    }
+
+    function newConversation() {
+      sessionId = null;
+      $("sessId").textContent = "new";
+      $("chat").innerHTML = '<div class="bubble bot">New conversation started. Tap the mic and tell me about your transfer.</div>';
+      renderState({ status: "collecting", slots: {} });
+      $("micHint").textContent = "Click the mic, speak a transfer, click again to send.";
+    }
+
+    $("micBtn").addEventListener("click", toggleRecord);
+    $("newBtn").addEventListener("click", newConversation);
+    $("sendTextBtn").addEventListener("click", sendText);
+    $("textInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
+    $("apiKeyInput").value = apiKey();
+    renderState({ status: "collecting", slots: {} });
+    checkHealth();
+  </script>
+</body>
+</html>

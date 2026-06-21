@@ -7,6 +7,7 @@ import os
 import tempfile
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.conversation.engine import ConversationResult, get_engine
@@ -80,7 +81,9 @@ async def conversation_voice(
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(data)
             tmp_path = tmp.name
-        transcript = asr.transcribe(tmp_path, language)
+        # ASR is blocking (and TTS below runs its own event loop), so both run in a
+        # worker thread to avoid blocking the request loop and the asyncio.run() clash.
+        transcript = await run_in_threadpool(asr.transcribe, tmp_path, language)
     finally:
         if tmp_path is not None:
             os.unlink(tmp_path)
@@ -91,12 +94,16 @@ async def conversation_voice(
             detail="Could not transcribe the supplied audio.",
         )
 
-    result = get_engine().handle(transcript, session_id, language)
+    result = await run_in_threadpool(
+        get_engine().handle, transcript, session_id, language
+    )
     base_response = _to_response(result)
 
     audio_b64: str | None = None
     audio_mime: str | None = None
-    synthesized = tts.synthesize(result.reply, result.state.language)
+    synthesized = await run_in_threadpool(
+        tts.synthesize, result.reply, result.state.language
+    )
     if synthesized is not None:
         audio_b64 = base64.b64encode(synthesized[0]).decode("ascii")
         audio_mime = synthesized[1]

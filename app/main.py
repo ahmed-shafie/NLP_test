@@ -100,6 +100,13 @@ def ui() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/voice", include_in_schema=False)
+def voice_page() -> FileResponse:
+    """Serve the live (microphone) voice assistant page."""
+
+    return FileResponse(STATIC_DIR / "voice.html")
+
+
 @app.get("/admin", include_in_schema=False)
 def admin_connections_page() -> FileResponse:
     """Serve the external-resource connections configuration page."""

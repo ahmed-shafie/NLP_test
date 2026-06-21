@@ -198,3 +198,34 @@ def test_tts_disabled_returns_none(monkeypatch: pytest.MonkeyPatch):
 def test_asr_transcribe_none_when_model_missing(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(asr, "_get_model", lambda: None)
     assert asr.transcribe("/tmp/does-not-exist.wav") is None
+
+
+def test_voice_endpoint_returns_transcript_and_audio(monkeypatch: pytest.MonkeyPatch):
+    """Happy path: the async endpoint offloads ASR/TTS so a spoken reply is produced.
+
+    The fake TTS calls ``asyncio.run`` like edge-tts does; this regresses the bug
+    where synthesis ran inside the request's event loop and raised "asyncio.run()
+    cannot be called from a running event loop".
+    """
+    import asyncio
+
+    monkeypatch.setattr(asr, "asr_available", lambda: True)
+    monkeypatch.setattr(asr, "transcribe", lambda *a, **k: "send 500 USD to Ahmed")
+
+    def fake_synthesize(text: str, language: Language) -> tuple[bytes, str]:
+        async def _run() -> bytes:
+            return b"audio-bytes"
+
+        return asyncio.run(_run()), "audio/mpeg"
+
+    monkeypatch.setattr("app.conversation.router.tts.synthesize", fake_synthesize)
+
+    resp = client.post(
+        "/conversation/voice",
+        files={"audio": ("clip.webm", b"\x00\x00", "audio/webm")},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["transcript"] == "send 500 USD to Ahmed"
+    assert body["audio_base64"]
+    assert body["audio_mime"] == "audio/mpeg"
