@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     # "none". Events are always persisted to the local store regardless of this.
     audit_sink: str = "elasticsearch"
 
+    # Ship audit events on a background worker thread so slow network I/O never blocks
+    # the request path. Disable for fully synchronous, deterministic shipping.
+    audit_async: bool = True
+
     # Ship audit events to Elasticsearch (ELK). Requires the elasticsearch client.
     elk_enabled: bool = True
 
@@ -146,6 +150,22 @@ class Settings(BaseSettings):
 
     # Maximum accepted request body size in bytes (rejects larger with HTTP 413).
     max_request_bytes: int = 1_000_000
+
+    # ---- Observability (logging, metrics) ----
+    # Root log level.
+    log_level: str = "INFO"
+
+    # Emit structured JSON logs (recommended for production / ELK ingestion).
+    log_json: bool = True
+
+    # Expose Prometheus metrics at GET /metrics.
+    metrics_enabled: bool = True
+
+    # ---- Rate limiting (in-process, fixed window per client IP) ----
+    rate_limit_enabled: bool = False
+
+    # Maximum requests per client IP per window for the public NLU endpoints.
+    rate_limit_per_minute: int = 120
 
     def _split(self, raw: str) -> list[str]:
         return [item.strip() for item in raw.split(",") if item.strip()]

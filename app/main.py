@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app import __version__
 from app.admin import audit
@@ -21,10 +21,14 @@ from app.db.beneficiary import get_beneficiary_repository
 from app.embeddings import get_embedder
 from app.errors import register_exception_handlers
 from app.llm import get_llm_handler
+from app.logging_config import configure_logging
+from app.metrics import MetricsMiddleware, metrics_response
 from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.nlu import arabic, english, pipeline
 from app.nlu.semantic_intents import get_semantic_classifier
 from app.orchestration import get_nlu_pipeline
+from app.ratelimit import RateLimitMiddleware
+from app.request_context import RequestContextMiddleware
 from app.schemas import (
     NLUResponse,
     ParseRequest,
@@ -36,7 +40,7 @@ from app.schemas import (
 )
 from app.security import require_api_key
 
-logging.basicConfig(level=logging.INFO)
+configure_logging()
 
 
 @asynccontextmanager
@@ -60,13 +64,18 @@ app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
 
 register_exception_handlers(app)
 
-# Middleware is applied outermost-first (last added runs first). Audit stays innermost
-# so it records the final status code. CORS must be outermost so that even early
-# rejections (e.g. the 413 from the body-size guard) carry CORS headers to browsers.
+# Middleware is applied outermost-first (last added runs first). The intended order,
+# outermost -> innermost: request-context (assigns the request id used by logs, errors
+# and audit) -> CORS -> metrics -> security headers -> rate limit -> body-size guard ->
+# audit. Outer placement of CORS/security-headers ensures even early rejections (429,
+# 413) carry those headers; audit stays innermost so it records the final status code.
 if settings.audit_enabled:
     app.add_middleware(audit.AuditMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+if settings.metrics_enabled:
+    app.add_middleware(MetricsMiddleware)
 if settings.cors_origins_list():
     app.add_middleware(
         CORSMiddleware,
@@ -75,6 +84,7 @@ if settings.cors_origins_list():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(admin_router)
 
@@ -105,12 +115,43 @@ def admin_audit_page() -> FileResponse:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    """Liveness probe."""
+    """Liveness probe: the process is up and serving."""
 
     return {"status": "ok", "version": __version__}
 
 
-@app.post("/nlu/parse", response_model=NLUResponse)
+@app.get("/health/ready")
+def readiness() -> JSONResponse:
+    """Readiness probe: report dependency health and gate on the audit/config store."""
+
+    checks: dict[str, str] = {}
+    try:
+        with get_engine().connect() as conn:
+            conn.execute(text("SELECT 1"))
+        checks["store"] = "ok"
+    except Exception:  # noqa: BLE001 - readiness must report, not raise
+        checks["store"] = "error"
+    # Informational only: the service degrades gracefully without the embedder.
+    checks["embedder"] = "ok" if get_embedder() is not None else "unavailable"
+
+    ready = checks["store"] == "ok"
+    body = {"status": "ready" if ready else "not_ready", "checks": checks}
+    return JSONResponse(body, status_code=200 if ready else 503)
+
+
+if settings.metrics_enabled:
+
+    @app.get("/metrics", include_in_schema=False)
+    def metrics() -> Response:
+        """Prometheus metrics exposition."""
+
+        return metrics_response()
+
+
+nlu_router = APIRouter(tags=["nlu"])
+
+
+@nlu_router.post("/nlu/parse", response_model=NLUResponse)
 def nlu_parse(
     request: ParseRequest,
     http_request: Request,
@@ -140,7 +181,7 @@ def nlu_parse(
     return result
 
 
-@app.post("/transfer/validate", response_model=ValidationResult)
+@nlu_router.post("/transfer/validate", response_model=ValidationResult)
 def transfer_validate(
     request: ValidateRequest, _: str = Depends(require_api_key)
 ) -> ValidationResult:
@@ -155,7 +196,7 @@ def transfer_validate(
     )
 
 
-@app.get("/nlu/similar", response_model=list[SimilarExampleSchema])
+@nlu_router.get("/nlu/similar", response_model=list[SimilarExampleSchema])
 def nlu_similar(
     text: str = Query(
         ..., min_length=1, description="Utterance to find neighbours for."
@@ -174,7 +215,7 @@ def nlu_similar(
     ]
 
 
-@app.post("/contacts/resolve", response_model=ResolveContactResponse)
+@nlu_router.post("/contacts/resolve", response_model=ResolveContactResponse)
 def contacts_resolve(
     request: ResolveContactRequest, _: str = Depends(require_api_key)
 ) -> ResolveContactResponse:
@@ -184,3 +225,9 @@ def contacts_resolve(
         request.name, request.contacts, request.top_k
     )
     return ResolveContactResponse(matched=matched, candidates=candidates)
+
+
+# Public NLU endpoints are served at both the unversioned paths (kept for
+# back-compatibility) and under the canonical "/v1" prefix.
+app.include_router(nlu_router)
+app.include_router(nlu_router, prefix="/v1")

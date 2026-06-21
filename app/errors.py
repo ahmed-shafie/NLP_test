@@ -33,6 +33,12 @@ _CODE_BY_STATUS = {
 
 
 def _request_id(request: Request) -> str | None:
+    try:
+        state_id = request.state.request_id
+    except AttributeError:
+        state_id = None
+    if isinstance(state_id, str):
+        return state_id
     return request.headers.get("x-request-id")
 
 
