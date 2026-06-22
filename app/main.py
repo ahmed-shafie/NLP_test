@@ -23,6 +23,8 @@ from app.embeddings import get_embedder
 from app.errors import register_exception_handlers
 from app.llm import get_llm_handler
 from app.logging_config import configure_logging
+from app.memory.router import router as memory_router
+from app.memory.store import get_memory_store
 from app.metrics import MetricsMiddleware, metrics_response
 from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.nlu import arabic, english, pipeline
@@ -50,6 +52,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     # Ensure the admin store (connections + audit log) tables exist.
     get_engine()
+    # Ensure the Memory Brain store (habits + shortcuts) tables exist.
+    if settings.memory_enabled:
+        get_memory_store()
     if settings.preload_models:
         english._load_model()
         arabic._load_model()
@@ -98,13 +103,6 @@ def ui() -> FileResponse:
     """Serve the browser-based simulation & testing page."""
 
     return FileResponse(STATIC_DIR / "index.html")
-
-
-@app.get("/voice", include_in_schema=False)
-def voice_page() -> FileResponse:
-    """Serve the live (microphone) voice assistant page."""
-
-    return FileResponse(STATIC_DIR / "voice.html")
 
 
 @app.get("/admin", include_in_schema=False)
@@ -241,3 +239,5 @@ app.include_router(nlu_router)
 app.include_router(nlu_router, prefix="/v1")
 app.include_router(conversation_router)
 app.include_router(conversation_router, prefix="/v1")
+app.include_router(memory_router)
+app.include_router(memory_router, prefix="/v1")

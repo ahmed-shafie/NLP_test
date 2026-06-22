@@ -14,6 +14,8 @@ An NLU (Natural Language Understanding) microservice for a mobile-banking AI ass
 - **LLM exception handling** — a LiteLLM-backed safety net (local LLM via Ollama by default) fires only when the deterministic path falls short (e.g. an unparsed Arabic word-amount like "ألف", or a fallback intent), filling missing slots and proposing a clarification.
 - **Resource connection GUI** — a browser admin page (`/admin`) to add, edit, **test**, and **activate** external database & datalake connections without touching code. The active connection drives the beneficiary lookup.
 - **Audit log monitor + ELK** — every system action (HTTP request + domain events) is recorded and shipped to **Elasticsearch/Logstash/Kibana**, with a built-in observability dashboard (`/admin/audit`) of charts and reports that falls back to the local store when ELK is down.
+- **Multi-turn conversation** — a slot-filling dialogue engine (`/conversation/text`) drives a transfer to confirmation over several turns, asking targeted follow-ups in English or Arabic; sessions persist in Redis (in-memory fallback).
+- **Memory Brain** — per-user **habits** (favourite recipient, usual currency, default source account, recent amounts — learned automatically) and **shortcuts** (named transfer templates like `rent`), backed by SQL (durable) + a Redis cache. Supplying a `user_id` lets the assistant pre-fill slots and expand shortcuts.
 - **Graceful degradation** — runs in regex/fuzzy-only mode when NLP/embedding models are not downloaded, skips the LLM entirely when no LLM server is reachable, and keeps auditing locally when ELK is unavailable.
 
 ## Tech Stack
@@ -298,8 +300,8 @@ See `.env.example` for the full configuration reference.
 
 ## Deployment (Docker)
 
-The container ships the **web client** — no Flutter/app install needed. Bring up the
-whole stack with one command and open the assistant in any browser (desktop or phone):
+The container ships the **web client** — no app install needed. Bring up the whole
+stack with one command and open the assistant in any browser (desktop or phone):
 
 ```bash
 docker compose up --build
@@ -307,22 +309,17 @@ docker compose up --build
 
 Then open:
 
-- **http://localhost:8000/voice** — chat assistant with **tap-to-talk mic** + text, live
-  slots/status, English & Arabic (this is the non-Flutter mobile client).
 - **http://localhost:8000/** — the simulator (parse / similar / resolve).
-- **http://localhost:8000/docs** — OpenAPI/Swagger.
+- **http://localhost:8000/docs** — OpenAPI/Swagger (text conversation + Memory Brain).
 
 **Use it from your phone:** make sure the phone is on the same Wi-Fi, find the host's
 LAN IP (`ipconfig` / `ip addr`, e.g. `192.168.1.20`), then browse to
-`http://192.168.1.20:8000/voice`. (Browsers only allow microphone capture over
-`http://localhost` or `https://`; for mic access from a phone, put the app behind HTTPS
-or use a tunnel such as `ngrok`/Cloudflare Tunnel. Text chat works over plain HTTP.)
+`http://192.168.1.20:8000/`.
 
-The voice image bundles the ASR/TTS stack (`ffmpeg`, `faster-whisper`, `edge-tts`). The
-spaCy English model is baked in; the multilingual sentence-transformer, Stanza Arabic
-model, and the Whisper model download on first use into a persisted `model_cache` volume
-(so they're fetched only once). For a smaller text-only image, build with
-`--build-arg INSTALL_VOICE=0`.
+The spaCy English model is baked in; the multilingual sentence-transformer and Stanza
+Arabic model download on first use into a persisted `model_cache` volume (so they're
+fetched only once). The same volume holds the Memory Brain SQLite store and Redis backs
+both conversation sessions and the memory cache.
 
 ```bash
 # Optional: also run the local LLM exception handler (Ollama)
@@ -357,29 +354,48 @@ runs on every push/PR via `.github/workflows/ci.yml`.
 - **API versioning** — public endpoints are served under the canonical `/v1` prefix
   (e.g. `POST /v1/nlu/parse`) and the original unversioned paths (kept for back-compat).
 
-## Conversation & voice (multi-turn)
+## Conversation (multi-turn)
 
 Beyond the single-shot `/nlu/parse`, the service runs a multi-turn slot-filling dialogue
 that drives a transfer to confirmation, asking targeted follow-up questions for any
 missing slot (amount, currency, recipient) in English or Arabic.
 
-- `POST /conversation/text` — `{ "text": "...", "session_id"?, "language"? }` →
-  `{ session_id, reply, status, slots, pending_slot, complete, transfer? }`. Omit
+- `POST /conversation/text` — `{ "text": "...", "session_id"?, "language"?, "user_id"? }`
+  → `{ session_id, reply, status, slots, pending_slot, complete, transfer? }`. Omit
   `session_id` on the first turn; reuse the returned one to continue. `status` moves
-  `collecting → confirming → completed` (or `cancelled`).
-- `POST /conversation/voice` — multipart `audio` upload (+ optional `session_id`,
-  `language`). Transcribes with faster-whisper, runs the same dialogue, and returns the
-  transcript, reply, state, and base64 reply audio (TTS via edge-tts/pyttsx3).
+  `collecting → confirming → completed` (or `cancelled`). Pass `user_id` to engage the
+  **Memory Brain** (below).
 
 Sessions persist in Redis when `NLU_SESSION_BACKEND=redis` (auto-falls back to an
-in-process store if Redis is unreachable). The voice layer is optional:
+in-process store if Redis is unreachable).
 
-```bash
-pip install -r requirements-voice.txt   # faster-whisper + edge-tts + pyttsx3
-```
+## Memory Brain (per-user habits + shortcuts)
 
-When the voice libraries or model are unavailable, `/conversation/voice` returns
-`503` and the text endpoint is unaffected.
+When a `user_id` is supplied, the assistant remembers each user across conversations so
+it can pre-fill slots and offer shortcuts. It is backed by **SQL** (durable source of
+truth, any SQLAlchemy provider) plus a **Redis cache** for fast reads, with an in-memory
+fallback when Redis is down.
+
+- **Habits (learned automatically)** — on every completed transfer the brain records the
+  favourite recipient, usual currency, default source account, preferred language and
+  recent amounts. These then fill missing slots on later turns, e.g. a user whose habit
+  currency is `EGP` can say *"send 50 to Ahmed"* and skip the currency question, or
+  *"send 20 to my usual"* to reuse their favourite recipient.
+- **Shortcuts (user-defined)** — named transfer templates, e.g. `rent` → 5000 EGP to
+  Landlord. Saying *"pay rent"* expands the shortcut and jumps straight to confirmation.
+
+API surface:
+
+- `GET /memory/{user_id}` — read a user's habits + shortcuts.
+- `PUT /memory/{user_id}/habits` — set habit defaults (currency, source account,
+  favourite recipient, language).
+- `PUT /memory/{user_id}/shortcuts` — create/update a shortcut
+  `{ name, amount?, currency?, recipient?, source_account?, note? }`.
+- `DELETE /memory/{user_id}/shortcuts/{name}` — remove a shortcut.
+
+Configure via `NLU_MEMORY_*` (see `.env.example`): `NLU_MEMORY_STORE_URL` (durable SQL),
+`NLU_MEMORY_CACHE_BACKEND` (`memory`/`redis`), and `NLU_MEMORY_FAVORITE_MIN_COUNT`.
+The whole feature degrades gracefully and is a no-op when `user_id` is omitted.
 
 ## Running Tests
 
@@ -406,8 +422,12 @@ app/
     state.py      —   serializable session state + slots
     store.py      —   Redis / in-memory session store
     templates.py  —   bilingual EN/AR prompts
-    router.py     —   /conversation/text + /conversation/voice
-  voice/          — Optional ASR (faster-whisper) + TTS (edge-tts/pyttsx3)
+    router.py     —   /conversation/text
+  memory/         — Memory Brain (per-user habits + shortcuts)
+    store.py      —   SQL durable store + Redis/in-memory cache
+    service.py    —   learn habits, resolve shortcuts, apply defaults
+    schemas.py    —   habits/shortcuts Pydantic models
+    router.py     —   /memory/{user_id} (+ habits, shortcuts)
   schemas.py      — Pydantic models (request/response, validation, Beneficiary)
   orchestration.py— Haystack pipeline (incl. BeneficiaryLookup + LLM handler)
   llm.py          — LiteLLM exception handler & beneficiary-not-found responder

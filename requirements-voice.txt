@@ -1,9 +1,0 @@
-# Optional voice layer (ASR + TTS). Install with:
-#   pip install -r requirements-voice.txt
-# The /conversation/voice endpoint degrades gracefully (HTTP 503) when these are
-# absent or a model can't be loaded.
-faster-whisper==1.1.0
-# >=7.2.8: earlier releases fail with HTTP 403 after Microsoft changed the
-# Sec-MS-GEC auth token used by the edge TTS service.
-edge-tts==7.2.8
-pyttsx3==2.99
