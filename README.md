@@ -298,13 +298,40 @@ See `.env.example` for the full configuration reference.
 
 ## Deployment (Docker)
 
-```bash
-# Build & run the API (plus Redis for the conversation layer)
-docker compose up --build
+The container ships the **web client** — no Flutter/app install needed. Bring up the
+whole stack with one command and open the assistant in any browser (desktop or phone):
 
-# Or just the API image
+```bash
+docker compose up --build
+```
+
+Then open:
+
+- **http://localhost:8000/voice** — chat assistant with **tap-to-talk mic** + text, live
+  slots/status, English & Arabic (this is the non-Flutter mobile client).
+- **http://localhost:8000/** — the simulator (parse / similar / resolve).
+- **http://localhost:8000/docs** — OpenAPI/Swagger.
+
+**Use it from your phone:** make sure the phone is on the same Wi-Fi, find the host's
+LAN IP (`ipconfig` / `ip addr`, e.g. `192.168.1.20`), then browse to
+`http://192.168.1.20:8000/voice`. (Browsers only allow microphone capture over
+`http://localhost` or `https://`; for mic access from a phone, put the app behind HTTPS
+or use a tunnel such as `ngrok`/Cloudflare Tunnel. Text chat works over plain HTTP.)
+
+The voice image bundles the ASR/TTS stack (`ffmpeg`, `faster-whisper`, `edge-tts`). The
+spaCy English model is baked in; the multilingual sentence-transformer, Stanza Arabic
+model, and the Whisper model download on first use into a persisted `model_cache` volume
+(so they're fetched only once). For a smaller text-only image, build with
+`--build-arg INSTALL_VOICE=0`.
+
+```bash
+# Optional: also run the local LLM exception handler (Ollama)
+docker compose --profile llm up --build
+docker compose exec ollama ollama pull qwen2.5:3b   # one-time model pull
+
+# Just the API image (no compose)
 docker build -t banking-nlu .
-docker run -p 8000:8000 -e NLU_AUTH_ENABLED=true -e NLU_API_KEYS=... banking-nlu
+docker run -p 8000:8000 -v banking_nlu_cache:/home/appuser/.cache banking-nlu
 ```
 
 The image runs as a non-root user with a `/health` container healthcheck. The ELK stack
