@@ -64,6 +64,8 @@ _CANCEL = {
     "توقف",
     "خروج",
 }
+# Leading words that mean "delete the named shortcut" (e.g. "forget laila").
+_FORGET = {"forget", "remove", "delete", "احذف", "امسح"}
 
 
 def _tokens(text: str) -> set[str]:
@@ -72,6 +74,17 @@ def _tokens(text: str) -> set[str]:
 
 def _matches(text: str, vocabulary: set[str]) -> bool:
     return bool(_tokens(text) & vocabulary)
+
+
+def _forget_target(text: str) -> str | None:
+    """If the message is 'forget <name>', return <name>; otherwise ``None``."""
+
+    words = text.split()
+    if len(words) < 2:
+        return None
+    if words[0].strip(".,!؟،").lower() not in _FORGET:
+        return None
+    return " ".join(words[1:]).strip(".,!؟، ")
 
 
 class ConversationResult:
@@ -120,7 +133,11 @@ class ConversationEngine:
             state.reset()
             state.language = lang
 
-        if _matches(text, _CANCEL):
+        forget_name = _forget_target(text)
+        if forget_name:
+            with tracer.block("orchestrator"):
+                result = self._forget_shortcut(state, forget_name, lang)
+        elif _matches(text, _CANCEL):
             with tracer.block("orchestrator"):
                 state.reset()
                 state.status = ConversationStatus.CANCELLED
@@ -307,23 +324,45 @@ class ConversationEngine:
         state.status = ConversationStatus.COMPLETED
         state.pending_slot = None
         transfer = result.transfer
-        self._learn(state, transfer)
+        created = self._learn(state, transfer)
         reply = templates.completed(
             self._fmt_amount(transfer.amount),
             transfer.currency,
             transfer.recipient,
             lang,
         )
+        for shortcut in created:
+            reply = f"{reply} {templates.alias_created(shortcut.name, lang)}"
         return self._finish(state, reply, transfer)
 
-    def _learn(self, state: ConversationState, transfer: TransferRequest) -> None:
+    def _learn(
+        self, state: ConversationState, transfer: TransferRequest
+    ) -> list[Shortcut]:
         brain = self._memory(state)
         if brain is None:
-            return
+            return []
         try:
-            brain.learn_from_transfer(state.user_id, transfer)
+            return brain.learn_from_transfer(state.user_id, transfer)
         except Exception:  # noqa: BLE001 - learning must never break a transfer
             logger.warning("Memory Brain failed to learn from transfer", exc_info=True)
+            return []
+
+    def _forget_shortcut(
+        self, state: ConversationState, name: str, lang: Language
+    ) -> ConversationResult:
+        brain = self._memory(state)
+        removed = False
+        if brain is not None:
+            try:
+                removed = brain.delete_shortcut(state.user_id, name)
+            except Exception:  # noqa: BLE001 - never break the turn on a delete
+                logger.warning("Memory Brain failed to delete shortcut", exc_info=True)
+        reply = (
+            templates.alias_forgotten(name, lang)
+            if removed
+            else templates.alias_not_found(name, lang)
+        )
+        return self._finish(state, reply)
 
     def _confirm_text(self, state: ConversationState, lang: Language) -> str:
         slots = state.slots

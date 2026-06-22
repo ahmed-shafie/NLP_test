@@ -70,3 +70,29 @@ def completed(amount: str, currency: str, recipient: str, language: Language) ->
     if language is Language.AR:
         return f"تم تجهيز التحويل: {amount} {currency} إلى {recipient}."
     return f"Done — your transfer of {amount} {currency} to {recipient} is ready."
+
+
+def alias_created(name: str, language: Language) -> str:
+    """Tell the customer an alias was auto-created, with how to undo/rename it."""
+
+    if language is Language.AR:
+        return (
+            f"✓ حفظت اختصارًا باسم '{name}' — في المرة القادمة يكفي أن تقول "
+            f"'حوّل إلى {name}'. أرسل 'احذف {name}' لإلغائه."
+        )
+    return (
+        f"✓ Saved a shortcut '{name}' — next time just say 'send to {name}'. "
+        f"Reply 'forget {name}' to remove it."
+    )
+
+
+def alias_forgotten(name: str, language: Language) -> str:
+    if language is Language.AR:
+        return f"تم حذف الاختصار '{name}'."
+    return f"Removed the shortcut '{name}'."
+
+
+def alias_not_found(name: str, language: Language) -> str:
+    if language is Language.AR:
+        return f"لا يوجد اختصار باسم '{name}'."
+    return f"You don't have a shortcut named '{name}'."

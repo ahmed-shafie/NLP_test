@@ -160,8 +160,14 @@ class MemoryBrain:
 
     # ------------------------------ learning ------------------------------ #
 
-    def learn_from_transfer(self, user_id: str, transfer: TransferRequest) -> None:
-        """Update habits from a completed transfer (favourite, currency, amounts)."""
+    def learn_from_transfer(
+        self, user_id: str, transfer: TransferRequest
+    ) -> list[Shortcut]:
+        """Update habits from a completed transfer (favourite, currency, amounts).
+
+        Returns any shortcuts that were auto-created from a repeated pattern so the
+        caller can tell the customer about them.
+        """
 
         memory = self._store.get(user_id)
         habits = memory.habits
@@ -171,6 +177,8 @@ class MemoryBrain:
         habits.recipient_counts[recipient] = (
             habits.recipient_counts.get(recipient, 0) + 1
         )
+        combo_key = self._combo_key(recipient, transfer.amount, transfer.currency)
+        habits.combo_counts[combo_key] = habits.combo_counts.get(combo_key, 0) + 1
         habits.last_recipient = recipient
         habits.favorite_recipient = self._pick_favorite(habits)
 
@@ -185,6 +193,86 @@ class MemoryBrain:
         )
 
         self._store.save_habits(user_id, habits)
+        return self._maybe_auto_create_aliases(user_id, memory.shortcuts, transfer)
+
+    # --------------------------- auto-create alias ------------------------- #
+
+    @staticmethod
+    def _combo_key(recipient: str, amount: Decimal, currency: str) -> str:
+        return f"{recipient}|{amount.normalize():f}|{currency}"
+
+    @staticmethod
+    def _first_name(recipient: str) -> str:
+        token = recipient.strip().split()[0] if recipient.strip() else recipient
+        cleaned = "".join(ch for ch in token if ch.isalnum()).lower()
+        return cleaned or "contact"
+
+    @staticmethod
+    def _unique_name(base: str, taken: set[str]) -> str:
+        if base not in taken:
+            return base
+        i = 2
+        while f"{base}{i}" in taken:
+            i += 1
+        return f"{base}{i}"
+
+    def _maybe_auto_create_aliases(
+        self,
+        user_id: str,
+        existing: list[Shortcut],
+        transfer: TransferRequest,
+    ) -> list[Shortcut]:
+        if not settings.memory_auto_alias_enabled:
+            return []
+
+        # Re-read so counts reflect the just-saved transfer.
+        habits = self._store.get(user_id).habits
+        threshold = settings.memory_auto_alias_min_count
+        recipient = transfer.recipient
+        taken = {s.name.lower() for s in existing}
+        created: list[Shortcut] = []
+
+        # Rule B: same recipient (any amount) reached the threshold -> recipient alias.
+        has_recipient_alias = any(
+            (s.recipient or "").strip().lower() == recipient.strip().lower()
+            and s.amount is None
+            for s in existing
+        )
+        if (
+            habits.recipient_counts.get(recipient, 0) >= threshold
+            and not has_recipient_alias
+        ):
+            name = self._unique_name(self._first_name(recipient), taken)
+            shortcut = Shortcut(name=name, recipient=recipient)
+            self._store.upsert_shortcut(user_id, shortcut)
+            taken.add(name.lower())
+            created.append(shortcut)
+
+        # Rule A: identical recipient+amount+currency reached the threshold ->
+        # full template alias.
+        combo_key = self._combo_key(recipient, transfer.amount, transfer.currency)
+        has_template_alias = any(
+            (s.recipient or "").strip().lower() == recipient.strip().lower()
+            and s.amount == transfer.amount
+            and (s.currency or "") == transfer.currency
+            for s in existing
+        )
+        combo_count = habits.combo_counts.get(combo_key, 0)
+        if combo_count >= threshold and not has_template_alias:
+            base = f"{self._first_name(recipient)}-{transfer.amount.normalize():f}"
+            base = f"{base}{transfer.currency.lower()}"
+            name = self._unique_name(base, taken)
+            shortcut = Shortcut(
+                name=name,
+                recipient=recipient,
+                amount=transfer.amount,
+                currency=transfer.currency,
+            )
+            self._store.upsert_shortcut(user_id, shortcut)
+            taken.add(name.lower())
+            created.append(shortcut)
+
+        return created
 
     def _pick_favorite(self, habits: Habits) -> str | None:
         if not habits.recipient_counts:

@@ -233,3 +233,91 @@ def test_overview_disabled_returns_503(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "memory_enabled", False)
     resp = client.get("/memory")
     assert resp.status_code == 503
+
+
+# --------------------------- auto-created aliases -------------------------- #
+
+
+def _transfer(amount: str, recipient: str, currency: str = "USD") -> TransferRequest:
+    return TransferRequest(
+        amount=Decimal(amount), currency=currency, recipient=recipient
+    )
+
+
+def test_auto_alias_recipient_after_three_transfers(memory):
+    # Rule B: same recipient (different amounts) three times -> recipient alias.
+    assert memory.learn_from_transfer("ua", _transfer("100", "Ahmed")) == []
+    assert memory.learn_from_transfer("ua", _transfer("200", "Ahmed")) == []
+    created = memory.learn_from_transfer("ua", _transfer("300", "Ahmed"))
+
+    assert [s.name for s in created] == ["ahmed"]
+    shortcuts = memory.get_memory("ua").shortcuts
+    ahmed = next(s for s in shortcuts if s.name == "ahmed")
+    assert ahmed.recipient == "Ahmed"
+    assert ahmed.amount is None
+    # The new alias is immediately usable.
+    resolved = memory.resolve_shortcut("ua", "send to ahmed")
+    assert resolved is not None and resolved.recipient == "Ahmed"
+
+
+def test_auto_alias_template_after_three_identical_transfers(memory):
+    # Rule A: identical recipient+amount+currency three times -> template alias
+    # (Rule B also fires on the same turn, producing the recipient alias too).
+    t = _transfer("50", "Sara", "USD")
+    memory.learn_from_transfer("ub", t)
+    memory.learn_from_transfer("ub", t)
+    created = memory.learn_from_transfer("ub", t)
+
+    names = {s.name for s in created}
+    assert "sara" in names
+    assert "sara-50usd" in names
+    template = next(
+        s for s in memory.get_memory("ub").shortcuts if s.name == "sara-50usd"
+    )
+    assert template.recipient == "Sara"
+    assert template.amount == Decimal("50")
+    assert template.currency == "USD"
+
+
+def test_auto_alias_skips_existing_recipient_alias(memory):
+    memory.upsert_shortcut("uc", Shortcut(name="mom", recipient="Laila"))
+    for _ in range(3):
+        memory.learn_from_transfer("uc", _transfer("10", "Laila"))
+
+    recipient_aliases = [
+        s
+        for s in memory.get_memory("uc").shortcuts
+        if s.recipient == "Laila" and s.amount is None
+    ]
+    # Only the pre-existing 'mom' — no duplicate recipient alias was auto-created.
+    assert [s.name for s in recipient_aliases] == ["mom"]
+
+
+def test_auto_alias_disabled(memory, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "memory_auto_alias_enabled", False)
+    for _ in range(4):
+        created = memory.learn_from_transfer("ud", _transfer("10", "Omar"))
+    assert created == []
+    assert memory.get_memory("ud").shortcuts == []
+
+
+def test_engine_announces_auto_alias_then_forget(memory):
+    engine = ConversationEngine()
+    reply = ""
+    for i in range(3):
+        engine.handle("send 100 dollars to Ahmed", f"sa-{i}", user_id="ue")
+        result = engine.handle("yes", f"sa-{i}", user_id="ue")
+        reply = result.reply
+
+    assert "Saved a shortcut" in reply
+    assert any(s.name == "ahmed" for s in memory.get_memory("ue").shortcuts)
+
+    forget = engine.handle("forget ahmed", "sa-forget", user_id="ue")
+    assert "Removed" in forget.reply
+    assert not any(s.name == "ahmed" for s in memory.get_memory("ue").shortcuts)
+
+
+def test_engine_forget_unknown_alias(memory):
+    engine = ConversationEngine()
+    result = engine.handle("forget nobody", "sf", user_id="uf")
+    assert "don't have a shortcut" in result.reply

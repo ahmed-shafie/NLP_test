@@ -172,6 +172,14 @@ class Settings(BaseSettings):
     # learned "favourite" default.
     memory_favorite_min_count: int = 2
 
+    # Automatically create a shortcut (alias) once a transfer pattern repeats.
+    # Rule B: same recipient (any amount) completed ``memory_auto_alias_min_count``
+    # times -> a recipient-only alias. Rule A: the same recipient+amount+currency
+    # completed that many times -> a full template alias. Existing aliases are never
+    # overwritten and each pattern is only auto-created once.
+    memory_auto_alias_enabled: bool = True
+    memory_auto_alias_min_count: int = 3
+
     # ---- Active Learning (passive review queue + nightly index rebuild) ----
     # Log LLM-assisted / low-confidence cases to a review queue, auto-approve the
     # confident ones, and feed approved examples back into the semantic intent index.
