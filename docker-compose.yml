@@ -1,9 +1,21 @@
-# Full application stack: the NLU API plus its operational dependencies.
-# The ELK stack lives separately under deploy/elk/docker-compose.yml; point the app
-# at it via NLU_ELASTICSEARCH_URL when running both.
+# Full application stack: the NLU API (with the web client at /voice and /) plus
+# its operational dependencies. One command brings it up:
+#
+#   docker compose up --build
+#
+# Then open http://localhost:8000/voice (chat + microphone) or http://localhost:8000/.
+# From a phone on the same network, use http://<this-host-LAN-IP>:8000/voice.
+#
+# The ELK stack lives separately under deploy/elk/docker-compose.yml; point the
+# app at it via NLU_ELASTICSEARCH_URL when running both. To enable the local LLM
+# exception handler, run with the "llm" profile: docker compose --profile llm up.
 services:
   api:
-    build: .
+    build:
+      context: .
+      args:
+        # Set to 0 for a smaller, text-only image (the /voice mic path returns 503).
+        INSTALL_VOICE: "1"
     ports:
       - "8000:8000"
     environment:
@@ -12,11 +24,21 @@ services:
       NLU_API_KEYS: "${NLU_API_KEYS:-}"
       NLU_ADMIN_API_KEYS: "${NLU_ADMIN_API_KEYS:-}"
       NLU_CORS_ALLOW_ORIGINS: "${NLU_CORS_ALLOW_ORIGINS:-}"
+      # Voice layer (ASR/TTS). The image ships with the deps; the Whisper model
+      # downloads on first use into the cached volume below.
+      NLU_VOICE_ENABLED: "${NLU_VOICE_ENABLED:-true}"
       # Conversation session store (P2). Falls back to in-memory if unreachable.
       REDIS_URL: "redis://redis:6379/0"
-      # LLM + ELK are optional; the service degrades gracefully when absent.
+      # Optional local LLM exception handler (enabled by the "llm" profile).
       NLU_LLM_ENABLED: "${NLU_LLM_ENABLED:-false}"
+      NLU_LLM_MODEL: "${NLU_LLM_MODEL:-ollama/qwen2.5:3b}"
+      NLU_LLM_API_BASE: "${NLU_LLM_API_BASE:-http://ollama:11434}"
+      # ELK is optional; the service degrades gracefully when absent.
       NLU_ELK_ENABLED: "${NLU_ELK_ENABLED:-false}"
+    volumes:
+      # Persist downloaded models (sentence-transformers, Stanza, Whisper) so they
+      # are fetched only once, not on every container start.
+      - model_cache:/home/appuser/.cache
     depends_on:
       - redis
     restart: unless-stopped
@@ -26,3 +48,18 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
+
+  # Optional local LLM. Enable with: docker compose --profile llm up --build
+  # then (once) pull the model: docker compose exec ollama ollama pull qwen2.5:3b
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  model_cache:
+  ollama_models:
