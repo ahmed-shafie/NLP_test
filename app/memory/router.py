@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.config import settings
-from app.memory.schemas import HabitsUpdate, Shortcut, UserMemory
+from app.memory.schemas import HabitsUpdate, MemoryOverview, Shortcut, UserMemory
 from app.memory.service import get_memory_brain
 from app.security import require_api_key
 
@@ -18,6 +18,14 @@ def _require_memory() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The Memory Brain is disabled.",
         )
+
+
+@router.get("", response_model=MemoryOverview)
+def memory_overview(_: str = Depends(require_api_key)) -> MemoryOverview:
+    """Aggregate stats + per-user summaries for the monitoring dashboard."""
+
+    _require_memory()
+    return get_memory_brain().overview()
 
 
 @router.get("/{user_id}", response_model=UserMemory)

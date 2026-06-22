@@ -252,6 +252,34 @@ class MemoryStore:
             shortcuts=[_shortcut_from_row(r) for r in shortcut_rows],
         )
 
+    def list_memories(self) -> list[UserMemory]:
+        """Return memory for every known user (read straight from SQL).
+
+        Combines users that have habits, shortcuts, or both. This bypasses the
+        per-user cache since it is a full scan used by the monitoring dashboard.
+        """
+
+        with self._sessionmaker() as session:
+            habit_rows = session.execute(select(UserHabitsRow)).scalars().all()
+            shortcut_rows = session.execute(select(UserShortcutRow)).scalars().all()
+
+        habits_by_user = {row.user_id: row for row in habit_rows}
+        shortcuts_by_user: dict[str, list[Shortcut]] = {}
+        for row in shortcut_rows:
+            shortcuts_by_user.setdefault(row.user_id, []).append(
+                _shortcut_from_row(row)
+            )
+
+        user_ids = sorted(set(habits_by_user) | set(shortcuts_by_user))
+        return [
+            UserMemory(
+                user_id=user_id,
+                habits=_habits_from_row(habits_by_user.get(user_id)),
+                shortcuts=shortcuts_by_user.get(user_id, []),
+            )
+            for user_id in user_ids
+        ]
+
     # ------------------------------- writes ------------------------------- #
 
     def save_habits(self, user_id: str, habits: Habits) -> None:

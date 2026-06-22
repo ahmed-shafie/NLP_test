@@ -187,3 +187,49 @@ def test_memory_disabled_returns_503(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "memory_enabled", False)
     resp = client.get("/memory/anyone")
     assert resp.status_code == 503
+
+
+# -------------------------------- monitoring ------------------------------- #
+
+
+def test_overview_aggregates_across_users(memory):
+    memory.upsert_shortcut("u1", Shortcut(name="rent", recipient="Landlord"))
+    memory.learn_from_transfer(
+        "u1", TransferRequest(amount=Decimal("75"), currency="EGP", recipient="Mona")
+    )
+    memory.learn_from_transfer(
+        "u1", TransferRequest(amount=Decimal("75"), currency="EGP", recipient="Mona")
+    )
+    memory.learn_from_transfer(
+        "u2", TransferRequest(amount=Decimal("10"), currency="USD", recipient="Mona")
+    )
+
+    overview = memory.overview()
+    stats = overview.stats
+    assert stats.total_users == 2
+    assert stats.users_with_habits == 2
+    assert stats.total_transfers == 3
+    assert stats.total_shortcuts == 1
+    assert stats.currency_distribution == {"EGP": 1, "USD": 1}
+    # Mona is the top recipient with 3 transfers aggregated across users.
+    assert stats.top_recipients[0].recipient == "Mona"
+    assert stats.top_recipients[0].count == 3
+    # Users are sorted by transfer volume (u1 has more).
+    assert overview.users[0].user_id == "u1"
+    assert overview.users[0].total_transfers == 2
+
+
+def test_overview_endpoint(memory):
+    client.put("/memory/ovu/shortcuts", json={"name": "rent", "recipient": "L"})
+    resp = client.get("/memory")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["stats"]["total_users"] == 1
+    assert body["stats"]["total_shortcuts"] == 1
+    assert body["users"][0]["user_id"] == "ovu"
+
+
+def test_overview_disabled_returns_503(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "memory_enabled", False)
+    resp = client.get("/memory")
+    assert resp.status_code == 503
