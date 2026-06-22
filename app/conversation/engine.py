@@ -6,9 +6,12 @@ import logging
 import uuid
 from decimal import Decimal
 
+from app.config import DEFAULT_CURRENCY, settings
 from app.conversation import templates
 from app.conversation.state import ConversationState, ConversationStatus
 from app.conversation.store import get_session_store
+from app.memory.schemas import Shortcut
+from app.memory.service import get_memory_brain
 from app.nlu import entities, pipeline
 from app.nlu.lang import detect_language
 from app.schemas import Intent, Language, TransferRequest
@@ -93,10 +96,13 @@ class ConversationEngine:
         text: str,
         session_id: str | None = None,
         language: Language | None = None,
+        user_id: str | None = None,
     ) -> ConversationResult:
         sid = session_id or uuid.uuid4().hex
         state = self._store.load(sid) or ConversationState(session_id=sid)
         state.turns += 1
+        if user_id:
+            state.user_id = user_id
         lang = language or detect_language(text)
         state.language = lang
 
@@ -135,6 +141,9 @@ class ConversationEngine:
         parsed = pipeline.parse(text, lang)
         slots = state.slots
 
+        # Memory Brain: a saved shortcut ("pay rent") pre-fills the transfer template.
+        self._apply_shortcut(state, text)
+
         if parsed.intent is Intent.TRANSFER_MONEY:
             state.intent = Intent.TRANSFER_MONEY
 
@@ -145,8 +154,11 @@ class ConversationEngine:
         ent = parsed.entities
         if slots.amount is None and ent.amount is not None:
             slots.amount = ent.amount
-        if not slots.currency and ent.currency:
-            slots.currency = ent.currency
+        # Only adopt a currency the user *explicitly* stated this turn; the generic
+        # USD default is deferred below so a learned habit currency can win first.
+        explicit_currency = entities.extract_currency(text)
+        if not slots.currency and explicit_currency:
+            slots.currency = explicit_currency
         if not slots.recipient and ent.recipient:
             slots.recipient = ent.recipient
         if not slots.source_account and ent.source_account:
@@ -156,6 +168,14 @@ class ConversationEngine:
         # the bare answer (e.g. "Ahmed" for recipient, "five" is out of scope).
         if state.pending_slot:
             self._fill_pending_from_raw(state, text, lang)
+
+        # Memory Brain: fall back to learned habits for any still-empty slot
+        # ("send my usual" -> favourite recipient; default currency / source account).
+        self._apply_memory_defaults(state, text)
+
+        # Generic currency default (mirrors the parser) once habits have had a say.
+        if slots.currency is None and slots.amount is not None:
+            slots.currency = DEFAULT_CURRENCY
 
         missing = slots.first_missing_required()
         if missing is not None:
@@ -185,6 +205,59 @@ class ConversationEngine:
             if candidate:
                 slots.recipient = candidate
 
+    def _memory(self, state: ConversationState):
+        """Return the Memory Brain when it is enabled and scoped to a user."""
+
+        if not settings.memory_enabled or not state.user_id:
+            return None
+        return get_memory_brain()
+
+    def _apply_shortcut(self, state: ConversationState, text: str) -> None:
+        brain = self._memory(state)
+        if brain is None:
+            return
+        # Only expand a shortcut at the start of a transfer, not mid slot-filling.
+        if state.pending_slot is not None:
+            return
+        shortcut = brain.resolve_shortcut(state.user_id, text)
+        if shortcut is None:
+            return
+        state.intent = Intent.TRANSFER_MONEY
+        self._fill_from_shortcut(state, shortcut)
+
+    @staticmethod
+    def _fill_from_shortcut(state: ConversationState, shortcut: Shortcut) -> None:
+        slots = state.slots
+        if slots.amount is None and shortcut.amount is not None:
+            slots.amount = shortcut.amount
+        if not slots.currency and shortcut.currency:
+            slots.currency = shortcut.currency
+        if not slots.recipient and shortcut.recipient:
+            slots.recipient = shortcut.recipient
+        if not slots.source_account and shortcut.source_account:
+            slots.source_account = shortcut.source_account
+        if not slots.note and shortcut.note:
+            slots.note = shortcut.note
+
+    def _apply_memory_defaults(self, state: ConversationState, text: str) -> None:
+        brain = self._memory(state)
+        if brain is None:
+            return
+        uid = state.user_id
+        slots = state.slots
+        if not slots.recipient and brain.wants_usual_recipient(text):
+            favorite = brain.favorite_recipient(uid)
+            if favorite:
+                slots.recipient = favorite
+        if not slots.currency:
+            currency = brain.default_currency(uid)
+            if currency:
+                slots.currency = currency
+        if not slots.source_account:
+            source = brain.default_source_account(uid)
+            if source:
+                slots.source_account = source
+
     def _complete(self, state: ConversationState, lang: Language) -> ConversationResult:
         slots = state.slots
         result = pipeline.validate_transfer(
@@ -205,6 +278,7 @@ class ConversationEngine:
         state.status = ConversationStatus.COMPLETED
         state.pending_slot = None
         transfer = result.transfer
+        self._learn(state, transfer)
         reply = templates.completed(
             self._fmt_amount(transfer.amount),
             transfer.currency,
@@ -212,6 +286,15 @@ class ConversationEngine:
             lang,
         )
         return self._finish(state, reply, transfer)
+
+    def _learn(self, state: ConversationState, transfer: TransferRequest) -> None:
+        brain = self._memory(state)
+        if brain is None:
+            return
+        try:
+            brain.learn_from_transfer(state.user_id, transfer)
+        except Exception:  # noqa: BLE001 - learning must never break a transfer
+            logger.warning("Memory Brain failed to learn from transfer", exc_info=True)
 
     def _confirm_text(self, state: ConversationState, lang: Language) -> str:
         slots = state.slots

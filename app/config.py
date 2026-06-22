@@ -176,16 +176,25 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     session_ttl_seconds: int = 1800
 
-    # ---- Voice (ASR + TTS) ----
-    # Optional; requires faster-whisper (ASR) and edge-tts/pyttsx3 (TTS). When the
-    # libraries or model are unavailable the voice endpoint degrades gracefully (503).
-    voice_enabled: bool = True
-    whisper_model: str = "small"
-    whisper_device: str = "cpu"
-    whisper_compute_type: str = "int8"
-    tts_engine: str = "edge-tts"
-    tts_voice_en: str = "en-US-AriaNeural"
-    tts_voice_ar: str = "ar-EG-SalmaNeural"
+    # ---- Memory Brain (per-user habits + shortcuts) ----
+    # Remember each user's habits (favourite recipients, usual currency, common
+    # amounts, default source account, preferred language) and user-defined shortcuts
+    # (named transfer templates). SQL is the durable source of truth; Redis caches
+    # reads for speed and falls back to an in-memory cache when unavailable.
+    memory_enabled: bool = True
+
+    # SQLAlchemy URL for the durable memory store. Any provider works
+    # (PostgreSQL/Oracle/SQL Server/...); defaults to a local SQLite file.
+    memory_store_url: str = "sqlite:///./memory_brain.db"
+
+    # Cache backend for memory reads: "redis" or "memory" (process-local). Falls back
+    # to in-memory automatically when Redis is unavailable. Reuses ``redis_url``.
+    memory_cache_backend: str = "memory"
+    memory_cache_ttl_seconds: int = 900
+
+    # Minimum number of completed transfers to a recipient before it is offered as a
+    # learned "favourite" default.
+    memory_favorite_min_count: int = 2
 
     def _split(self, raw: str) -> list[str]:
         return [item.strip() for item in raw.split(",") if item.strip()]

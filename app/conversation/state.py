@@ -48,6 +48,7 @@ class ConversationState(BaseModel):
     """Full per-session state, persisted to the session store between turns."""
 
     session_id: str
+    user_id: str | None = None
     language: Language = Language.EN
     intent: Intent | None = None
     status: ConversationStatus = ConversationStatus.COLLECTING

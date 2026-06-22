@@ -1,10 +1,10 @@
-# Full application stack: the NLU API (with the web client at /voice and /) plus
-# its operational dependencies. One command brings it up:
+# Full application stack: the NLU API (with the web client at /) plus its
+# operational dependencies. One command brings it up:
 #
 #   docker compose up --build
 #
-# Then open http://localhost:8000/voice (chat + microphone) or http://localhost:8000/.
-# From a phone on the same network, use http://<this-host-LAN-IP>:8000/voice.
+# Then open http://localhost:8000/ (simulator) or http://localhost:8000/docs (API).
+# From a phone on the same network, use http://<this-host-LAN-IP>:8000/.
 #
 # The ELK stack lives separately under deploy/elk/docker-compose.yml; point the
 # app at it via NLU_ELASTICSEARCH_URL when running both. To enable the local LLM
@@ -13,9 +13,6 @@ services:
   api:
     build:
       context: .
-      args:
-        # Set to 0 for a smaller, text-only image (the /voice mic path returns 503).
-        INSTALL_VOICE: "1"
     ports:
       - "8000:8000"
     environment:
@@ -24,11 +21,13 @@ services:
       NLU_API_KEYS: "${NLU_API_KEYS:-}"
       NLU_ADMIN_API_KEYS: "${NLU_ADMIN_API_KEYS:-}"
       NLU_CORS_ALLOW_ORIGINS: "${NLU_CORS_ALLOW_ORIGINS:-}"
-      # Voice layer (ASR/TTS). The image ships with the deps; the Whisper model
-      # downloads on first use into the cached volume below.
-      NLU_VOICE_ENABLED: "${NLU_VOICE_ENABLED:-true}"
-      # Conversation session store (P2). Falls back to in-memory if unreachable.
-      REDIS_URL: "redis://redis:6379/0"
+      # Conversation sessions + Memory Brain cache. Falls back to in-memory if
+      # Redis is unreachable.
+      NLU_REDIS_URL: "redis://redis:6379/0"
+      NLU_SESSION_BACKEND: "${NLU_SESSION_BACKEND:-redis}"
+      NLU_MEMORY_CACHE_BACKEND: "${NLU_MEMORY_CACHE_BACKEND:-redis}"
+      # Memory Brain durable store + conversation sessions persisted on the volume.
+      NLU_MEMORY_STORE_URL: "sqlite:////home/appuser/.cache/memory_brain.db"
       # Optional local LLM exception handler (enabled by the "llm" profile).
       NLU_LLM_ENABLED: "${NLU_LLM_ENABLED:-false}"
       NLU_LLM_MODEL: "${NLU_LLM_MODEL:-ollama/qwen2.5:3b}"
@@ -36,8 +35,8 @@ services:
       # ELK is optional; the service degrades gracefully when absent.
       NLU_ELK_ENABLED: "${NLU_ELK_ENABLED:-false}"
     volumes:
-      # Persist downloaded models (sentence-transformers, Stanza, Whisper) so they
-      # are fetched only once, not on every container start.
+      # Persist downloaded models (sentence-transformers, Stanza) and the Memory
+      # Brain SQLite store so they survive container restarts.
       - model_cache:/home/appuser/.cache
     depends_on:
       - redis

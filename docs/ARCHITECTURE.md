@@ -3,14 +3,14 @@
 **Project:** `ahmed-shafie/NLP_test`
 **What it is:** a bilingual (English + Arabic) Natural-Language Understanding "brain" for a
 mobile-banking AI assistant, focused on the **money-transfer** journey — from a single free-text
-utterance all the way to a validated, ready-to-execute transfer, including a multi-turn voice/chat
-conversation, configurable beneficiary lookup, and full production operations (auth, observability,
-audit/ELK).
+utterance all the way to a validated, ready-to-execute transfer, including a multi-turn chat
+conversation, a per-user Memory Brain, configurable beneficiary lookup, and full production
+operations (auth, observability, audit/ELK).
 **Audience:** engineers and reviewers integrating, operating, or extending the service.
 
 > This document is the end-to-end ("A to Z") companion to `DESIGN.md`. `DESIGN.md` covers the NLU
 > core in depth; this document covers the **whole system as it stands today**, including the security
-> (P0), observability (P1), and conversation/voice (P2) layers.
+> (P0), observability (P1), and the conversation + Memory Brain (P2) layers.
 
 ---
 
@@ -25,7 +25,7 @@ audit/ELK).
 7. [LLM exception handling](#7-llm-exception-handling)
 8. [Beneficiary account lookup (configurable provider)](#8-beneficiary-account-lookup-configurable-provider)
 9. [Multi-turn conversation engine](#9-multi-turn-conversation-engine)
-10. [Voice layer (ASR + TTS)](#10-voice-layer-asr--tts)
+10. [Memory Brain (per-user habits + shortcuts)](#10-memory-brain-per-user-habits--shortcuts)
 11. [Admin layer: connections + audit/ELK](#11-admin-layer-connections--auditelk)
 12. [Security & access control](#12-security--access-control)
 13. [Observability: logging, metrics, readiness, rate limiting, versioning](#13-observability)
@@ -55,7 +55,7 @@ It is built as **independent, optional layers** so that every capability degrade
 - a local-**LLM safety net** (LiteLLM → Ollama) for the long tail,
 - a configurable **beneficiary database lookup** (any SQL provider),
 - a **multi-turn conversation engine** (slot filling, bilingual prompts, Redis/in-memory sessions),
-- an optional **voice layer** (speech-to-text + text-to-speech),
+- a **Memory Brain** (per-user habits + shortcuts; SQL durable store + Redis cache),
 - an **admin layer** (connection management GUI + audit/ELK observability),
 - and a **production envelope** (API-key auth, CORS, security headers, rate limiting, structured
   logging, Prometheus metrics, readiness probe, Docker, CI).
@@ -77,7 +77,7 @@ out.
 | Beneficiary DB lookup | `app/db/beneficiary.py` | off (`NLU_DB_ENABLED`) | any SQLAlchemy provider, config-driven |
 | LLM exception handler | `app/llm.py` | on (`NLU_LLM_ENABLED`) | local Ollama; gated to failures only |
 | Multi-turn conversation | `app/conversation/` | on | slot-filling state machine, bilingual |
-| Voice (ASR + TTS) | `app/voice/` | on (libs optional) | faster-whisper + edge-tts/pyttsx3 |
+| Memory Brain (habits + shortcuts) | `app/memory/` | on (`NLU_MEMORY_ENABLED`) | per `user_id`; SQL + Redis cache |
 | Connection management GUI | `app/admin/connections.py` | on | switch DB providers without code |
 | Audit + ELK observability | `app/admin/audit.py`, `elk.py` | on | every action; Kibana dashboards |
 | API-key authentication | `app/security.py` | off (`NLU_AUTH_ENABLED`) | public + admin tiers, fail-closed |
@@ -326,29 +326,43 @@ language, intent, pending slot, the accumulated slots, and the final `transfer` 
 
 ---
 
-## 10. Voice layer (ASR + TTS)
+## 10. Memory Brain (per-user habits + shortcuts)
 
-The optional voice layer (`app/voice/`) lets a client speak a turn and hear the reply. The endpoint
-`POST /conversation/voice` accepts an uploaded audio clip (multipart), transcribes it, runs the same
-conversation engine, and returns the text reply plus synthesized audio (base64).
+The Memory Brain (`app/memory/`) gives the assistant a per-user long-term memory so it can pre-fill
+slots and expand shortcuts. It engages whenever `/conversation/text` is called with a `user_id` (and
+is fully exposed for direct CRUD under `/memory/{user_id}`). It has two complementary parts:
+
+- **Habits** — learned *automatically* every time a transfer completes: the favourite recipient
+  (by frequency, gated by `NLU_MEMORY_FAVORITE_MIN_COUNT`), the usual currency, the default source
+  account, the preferred language, and the most recent amounts.
+- **Shortcuts** — *user-defined* named transfer templates (e.g. `rent` → 5000 EGP to Landlord) that
+  are matched against the utterance before slot filling.
+
+**Storage** is a two-layer design that mirrors the conversation session store:
 
 ```
-audio upload ─► ASR (faster-whisper) ─► transcript ─► ConversationEngine.handle()
-                                                              │
-                                          reply text ◄────────┘
-                                                              │
-                              TTS (edge-tts / pyttsx3) ─► audio_base64 + mime
+read  ─► cache (Redis │ in-memory)  ──hit──► UserMemory
+                        │ miss
+                        └──► SQL store (SQLAlchemy; source of truth) ─► fill cache
+
+write ─► SQL store (durable) ─► invalidate cache entry
 ```
 
-- **ASR** (`asr.py`) uses **faster-whisper**, lazily loaded and cached. `transcribe()` returns `None`
-  on any failure; `asr_available()` gates the endpoint (returns **503** when speech recognition is
-  unavailable). Model/device/compute-type are configurable (`NLU_WHISPER_*`).
-- **TTS** (`tts.py`) prefers **edge-tts** (`NLU_TTS_ENGINE=edge-tts`, neural voices per language),
-  falling back to **pyttsx3** for fully offline synthesis. `synthesize()` returns `None` when no
-  engine is available — the voice response then simply omits the audio rather than failing.
+- `app/memory/store.py` — durable SQL store (`user_habits`, `user_shortcuts` tables, any SQLAlchemy
+  provider via `NLU_MEMORY_STORE_URL`) plus a TTL read cache. `NLU_MEMORY_CACHE_BACKEND=redis` shares
+  the cache across workers (reusing `NLU_REDIS_URL`); it falls back to a process-local cache when
+  Redis is unreachable.
+- `app/memory/service.py` — `MemoryBrain`: `resolve_shortcut()`, habit defaults
+  (`default_currency` / `default_source_account` / `favorite_recipient`), and `learn_from_transfer()`.
+- `app/memory/router.py` — `GET /memory/{user_id}`, `PUT …/habits`, `PUT …/shortcuts`,
+  `DELETE …/shortcuts/{name}`.
 
-The whole layer is optional: the libraries are not hard dependencies, and when they (or their models)
-are missing the text conversation continues to work normally.
+**Engine integration** (`app/conversation/engine.py`): on each `collecting` turn a saved shortcut is
+expanded first; then explicit slots are merged; then learned habits fill any still-empty slot
+(*"send to my usual"* → favourite recipient; the habit currency wins over the generic USD default).
+On completion, `learn_from_transfer()` updates the user's habits. The whole layer is a no-op when
+`user_id` is omitted or `NLU_MEMORY_ENABLED=false`, and learning never breaks a transfer (failures
+are swallowed and logged).
 
 ---
 
@@ -462,8 +476,8 @@ Each capability is optional and downgrades cleanly:
 | Exception | LiteLLM/Ollama | skipped | `llm_assisted` |
 | Connection | active stored connection | `NLU_DB_*` env settings | `/admin` active badge |
 | Conversation sessions | Redis | in-memory | automatic on Redis failure |
-| Voice ASR | faster-whisper | 503 (endpoint) | `asr_available()` |
-| Voice TTS | edge-tts | pyttsx3 → omit audio | `audio_base64` present? |
+| Memory cache | Redis | in-memory | automatic on Redis failure |
+| Memory store | SQL (source of truth) | continue without learned prefs | learning failures swallowed |
 | Audit stats | Elasticsearch aggregations | local store aggregations | `AuditStats.source` |
 | Audit ship | ELK (ES/Logstash) | local store only | `ElkStatus.reachable` |
 
@@ -477,8 +491,11 @@ Each capability is optional and downgrades cleanly:
 | `POST /transfer/validate` | public | Validate gathered slots → errors or a ready transfer |
 | `GET /nlu/similar?text=&k=` | public | Nearest labeled examples (semantic debug/eval) |
 | `POST /contacts/resolve` | public | Resolve a name cross-lingual |
-| `POST /conversation/text` | public | Advance a multi-turn dialogue with one text message |
-| `POST /conversation/voice` | public | Transcribe audio → advance dialogue → synthesize reply |
+| `POST /conversation/text` | public | Advance a multi-turn dialogue with one text message (optional `user_id`) |
+| `GET /memory/{user_id}` | public | Read a user's learned habits + saved shortcuts |
+| `PUT /memory/{user_id}/habits` | public | Set habit defaults (currency, source, favourite, language) |
+| `PUT /memory/{user_id}/shortcuts` | public | Create/update a named transfer shortcut |
+| `DELETE /memory/{user_id}/shortcuts/{name}` | public | Delete a shortcut |
 | `GET /health` | none | Liveness `{status, version}` |
 | `GET /health/ready` | none | Readiness (store/embedder checks) |
 | `GET /metrics` | none | Prometheus exposition |
@@ -487,8 +504,8 @@ Each capability is optional and downgrades cleanly:
 | `GET /admin/api/audit/events` · `/stats` · `/elk-status` | admin | Audit events, dashboard aggregations, ELK health |
 
 All public endpoints are also available under `/v1/...`. Schemas live in `app/schemas.py` (NLU),
-`app/conversation/schemas.py` (conversation/voice), and `app/admin/schemas.py` (admin). OpenAPI docs
-are served at `/docs`.
+`app/conversation/schemas.py` (conversation), `app/memory/schemas.py` (Memory Brain), and
+`app/admin/schemas.py` (admin). OpenAPI docs are served at `/docs`.
 
 ---
 
@@ -557,7 +574,7 @@ All settings are environment-overridable with the `NLU_` prefix (`app/config.py`
 | `NLU_ELK_INDEX` | `nlu-audit` | Audit index |
 | `NLU_LOGSTASH_HOST` / `NLU_LOGSTASH_PORT` | `localhost` / `50000` | Logstash TCP (json_lines) |
 
-### Conversation / Voice
+### Conversation
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
@@ -565,10 +582,16 @@ All settings are environment-overridable with the `NLU_` prefix (`app/config.py`
 | `NLU_SESSION_BACKEND` | `memory` | `redis` or `memory` (auto-fallback) |
 | `NLU_REDIS_URL` | `redis://localhost:6379/0` | Redis URL |
 | `NLU_SESSION_TTL_SECONDS` | `1800` | Session TTL |
-| `NLU_VOICE_ENABLED` | `true` | Enable the voice endpoint |
-| `NLU_WHISPER_MODEL` / `NLU_WHISPER_DEVICE` / `NLU_WHISPER_COMPUTE_TYPE` | `small` / `cpu` / `int8` | ASR config |
-| `NLU_TTS_ENGINE` | `edge-tts` | `edge-tts` or `pyttsx3` |
-| `NLU_TTS_VOICE_EN` / `NLU_TTS_VOICE_AR` | `en-US-AriaNeural` / `ar-EG-SalmaNeural` | TTS voices |
+
+### Memory Brain
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `NLU_MEMORY_ENABLED` | `true` | Enable the Memory Brain (habits + shortcuts) |
+| `NLU_MEMORY_STORE_URL` | `sqlite:///./memory_brain.db` | Durable SQL store (any SQLAlchemy provider) |
+| `NLU_MEMORY_CACHE_BACKEND` | `memory` | `redis` or `memory` (auto-fallback); Redis reuses `NLU_REDIS_URL` |
+| `NLU_MEMORY_CACHE_TTL_SECONDS` | `900` | Read-cache TTL |
+| `NLU_MEMORY_FAVORITE_MIN_COUNT` | `2` | Completed transfers to a recipient before it is a learned favourite |
 
 See `.env.example` for a copy-pasteable template.
 
@@ -632,8 +655,8 @@ app/
     beneficiary.py        # Configurable SQLAlchemy beneficiary lookup
   conversation/
     state.py · store.py · templates.py · engine.py · schemas.py · router.py
-  voice/
-    asr.py · tts.py
+  memory/
+    store.py · service.py · schemas.py · router.py   # habits + shortcuts (SQL + cache)
   admin/
     store.py · connections.py · audit.py · elk.py · schemas.py · router.py
   static/                 # Browser UIs (index.html, connections.html, audit.html)
@@ -650,8 +673,9 @@ tests/                    # pytest suite
   semantic tests auto-skip if the embedder is unavailable; LLM tests mock the handler (no running
   Ollama needed). Coverage spans the NLU core, beneficiary repository (in-memory SQLite, hit/miss,
   custom column maps, failing-query degradation), admin connection CRUD/test/activate, audit
-  recording + ES→store stats fallback, the security/observability envelope, and the conversation
-  engine + session store + voice endpoint degradation.
+  recording + ES→store stats fallback, the security/observability envelope, the conversation
+  engine + session store, and the Memory Brain (store CRUD, shortcut resolution, habit learning,
+  and engine integration).
 - **Static analysis:** `ruff check` + `ruff format`; `mypy`.
 - **Security:** `pip-audit` in CI.
 - **Live verification (web simulator):** Arabic word-amount recovered to `1000` (LLM-assisted),
@@ -674,7 +698,7 @@ tests/                    # pytest suite
 | **Local Ollama `qwen2.5:3b`** | Offline, no API key, good Arabic; meets the "local LLM only" requirement. |
 | **SQLAlchemy (beneficiary + config store)** | One Core API spans many providers; switch via the URL with no code changes. |
 | **Redis sessions (optional)** | Shared multi-instance state with TTL; in-memory fallback keeps single-node simple. |
-| **faster-whisper / edge-tts** | Strong multilingual ASR and natural TTS; both optional and lazily loaded. |
+| **Memory Brain: SQL + Redis cache** | SQL is the durable source of truth (any provider); Redis caches reads, with an in-memory fallback — same graceful pattern as sessions. |
 | **ELK + Kibana** | Industry-standard log analytics; decoupled via a sink setting with a local-store fallback. |
 | **Prometheus** | De-facto metrics standard; trivial to scrape `/metrics`. |
 

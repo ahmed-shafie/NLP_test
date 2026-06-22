@@ -17,7 +17,6 @@ from app.conversation.state import (
 from app.conversation.store import InMemorySessionStore, get_session_store
 from app.main import app
 from app.schemas import Intent, Language
-from app.voice import asr, tts
 
 client = TestClient(app)
 
@@ -176,56 +175,3 @@ def test_conversation_disabled_returns_503(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "conversation_enabled", False)
     resp = client.post("/conversation/text", json={"text": "hi"})
     assert resp.status_code == 503
-
-
-def test_voice_endpoint_503_when_asr_unavailable(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(asr, "asr_available", lambda: False)
-    resp = client.post(
-        "/conversation/voice",
-        files={"audio": ("clip.wav", b"\x00\x00", "audio/wav")},
-    )
-    assert resp.status_code == 503
-
-
-# ----------------------------------- voice --------------------------------- #
-
-
-def test_tts_disabled_returns_none(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(settings, "voice_enabled", False)
-    assert tts.synthesize("hello", Language.EN) is None
-
-
-def test_asr_transcribe_none_when_model_missing(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(asr, "_get_model", lambda: None)
-    assert asr.transcribe("/tmp/does-not-exist.wav") is None
-
-
-def test_voice_endpoint_returns_transcript_and_audio(monkeypatch: pytest.MonkeyPatch):
-    """Happy path: the async endpoint offloads ASR/TTS so a spoken reply is produced.
-
-    The fake TTS calls ``asyncio.run`` like edge-tts does; this regresses the bug
-    where synthesis ran inside the request's event loop and raised "asyncio.run()
-    cannot be called from a running event loop".
-    """
-    import asyncio
-
-    monkeypatch.setattr(asr, "asr_available", lambda: True)
-    monkeypatch.setattr(asr, "transcribe", lambda *a, **k: "send 500 USD to Ahmed")
-
-    def fake_synthesize(text: str, language: Language) -> tuple[bytes, str]:
-        async def _run() -> bytes:
-            return b"audio-bytes"
-
-        return asyncio.run(_run()), "audio/mpeg"
-
-    monkeypatch.setattr("app.conversation.router.tts.synthesize", fake_synthesize)
-
-    resp = client.post(
-        "/conversation/voice",
-        files={"audio": ("clip.webm", b"\x00\x00", "audio/webm")},
-    )
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["transcript"] == "send 500 USD to Ahmed"
-    assert body["audio_base64"]
-    assert body["audio_mime"] == "audio/mpeg"

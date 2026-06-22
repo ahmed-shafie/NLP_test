@@ -1,4 +1,4 @@
-"""Request/response schemas for the conversation and voice endpoints."""
+"""Request/response schemas for the conversation endpoint."""
 
 from __future__ import annotations
 
@@ -19,6 +19,13 @@ class ConversationRequest(BaseModel):
     language: Language | None = Field(
         default=None, description="Optional language hint; auto-detected otherwise."
     )
+    user_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional user identifier; scopes the Memory Brain (habits + shortcuts) "
+            "so known preferences pre-fill slots and completed transfers are learned."
+        ),
+    )
 
 
 class ConversationResponse(BaseModel):
@@ -33,15 +40,3 @@ class ConversationResponse(BaseModel):
     complete: bool = False
     slots: ConversationSlots
     transfer: TransferRequest | None = None
-
-
-class VoiceResponse(ConversationResponse):
-    """Conversation response plus the recognised transcript and synthesized audio."""
-
-    transcript: str
-    audio_base64: str | None = Field(
-        default=None, description="Base64-encoded reply audio (None if TTS is off)."
-    )
-    audio_mime: str | None = Field(
-        default=None, description="MIME type of the audio payload."
-    )
