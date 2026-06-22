@@ -321,3 +321,30 @@ def test_engine_forget_unknown_alias(memory):
     engine = ConversationEngine()
     result = engine.handle("forget nobody", "sf", user_id="uf")
     assert "don't have a shortcut" in result.reply
+
+
+def test_recipient_alias_reuses_template_amount(memory):
+    engine = ConversationEngine()
+    # Three identical transfers auto-create both 'mona' and 'mona-75egp'.
+    for i in range(3):
+        engine.handle("send 75 EGP to Mona", f"sg-{i}", user_id="ug")
+        engine.handle("yes", f"sg-{i}", user_id="ug")
+
+    # The recipient-only alias now fills the amount from the template alias.
+    result = engine.handle("send to mona", "sg-reuse", user_id="ug")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.amount == Decimal("75")
+    assert result.state.slots.currency == "EGP"
+    assert result.state.slots.recipient == "Mona"
+
+
+def test_recipient_alias_explicit_amount_wins(memory):
+    engine = ConversationEngine()
+    for i in range(3):
+        engine.handle("send 75 EGP to Mona", f"sh-{i}", user_id="uh")
+        engine.handle("yes", f"sh-{i}", user_id="uh")
+
+    # An explicit amount overrides the remembered template amount.
+    result = engine.handle("send 100 to mona", "sh-reuse", user_id="uh")
+    assert result.state.slots.amount == Decimal("100")
+    assert result.state.slots.recipient == "Mona"

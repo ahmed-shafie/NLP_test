@@ -293,6 +293,14 @@ class ConversationEngine:
             favorite = brain.favorite_recipient(uid)
             if favorite:
                 slots.recipient = favorite
+        # A recipient-only alias ("send to mona") reuses the remembered amount
+        # from that recipient's template alias when the customer gave none.
+        if slots.amount is None and slots.recipient:
+            template = brain.template_for_recipient(uid, slots.recipient)
+            if template is not None:
+                slots.amount = template.amount
+                if not slots.currency and template.currency:
+                    slots.currency = template.currency
         if not slots.currency:
             currency = brain.default_currency(uid)
             if currency:

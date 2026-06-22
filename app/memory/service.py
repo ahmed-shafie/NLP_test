@@ -158,6 +158,29 @@ class MemoryBrain:
         habits = self._store.get(user_id).habits
         return habits.favorite_recipient or habits.last_recipient
 
+    def template_for_recipient(self, user_id: str, recipient: str) -> Shortcut | None:
+        """Return the customer's saved template for ``recipient`` (amount +
+        currency) when it is unambiguous.
+
+        Lets a recipient-only alias ("send to mona") reuse the remembered amount
+        from the matching template alias ("mona-75egp"). Returns ``None`` when no
+        template exists or several templates disagree on the amount/currency.
+        """
+
+        if not recipient.strip():
+            return None
+        rec = recipient.strip().lower()
+        templates = [
+            s
+            for s in self._store.get(user_id).shortcuts
+            if s.amount is not None and (s.recipient or "").strip().lower() == rec
+        ]
+        if not templates:
+            return None
+        if len({(s.amount, s.currency) for s in templates}) != 1:
+            return None
+        return templates[0]
+
     # ------------------------------ learning ------------------------------ #
 
     def learn_from_transfer(
