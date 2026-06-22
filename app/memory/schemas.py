@@ -51,3 +51,41 @@ class HabitsUpdate(BaseModel):
     preferred_source_account: str | None = None
     preferred_language: Language | None = None
     favorite_recipient: str | None = None
+
+
+class RecipientCount(BaseModel):
+    """An aggregate count of completed transfers to a recipient."""
+
+    recipient: str
+    count: int
+
+
+class UserSummary(BaseModel):
+    """A compact per-user view used by the monitoring dashboard."""
+
+    user_id: str
+    total_transfers: int = 0
+    favorite_recipient: str | None = None
+    preferred_currency: str | None = None
+    last_recipient: str | None = None
+    shortcut_count: int = 0
+
+
+class MemoryStats(BaseModel):
+    """Aggregate statistics across all users with memory."""
+
+    total_users: int = 0
+    users_with_habits: int = 0
+    total_transfers: int = 0
+    total_shortcuts: int = 0
+    # preferred currency -> number of users who default to it.
+    currency_distribution: dict[str, int] = Field(default_factory=dict)
+    # recipients ranked by total completed transfers across all users.
+    top_recipients: list[RecipientCount] = Field(default_factory=list)
+
+
+class MemoryOverview(BaseModel):
+    """The payload for ``GET /memory`` — aggregate stats plus per-user summaries."""
+
+    stats: MemoryStats = Field(default_factory=MemoryStats)
+    users: list[UserSummary] = Field(default_factory=list)

@@ -6,7 +6,16 @@ import logging
 from decimal import Decimal
 
 from app.config import settings
-from app.memory.schemas import Habits, HabitsUpdate, Shortcut, UserMemory
+from app.memory.schemas import (
+    Habits,
+    HabitsUpdate,
+    MemoryOverview,
+    MemoryStats,
+    RecipientCount,
+    Shortcut,
+    UserMemory,
+    UserSummary,
+)
 from app.memory.store import get_memory_store
 from app.schemas import TransferRequest
 
@@ -45,6 +54,59 @@ class MemoryBrain:
 
     def get_memory(self, user_id: str) -> UserMemory:
         return self._store.get(user_id)
+
+    def overview(self, top_n: int = 10) -> MemoryOverview:
+        """Aggregate stats + per-user summaries for the monitoring dashboard."""
+
+        memories = self._store.list_memories()
+
+        currency_distribution: dict[str, int] = {}
+        recipient_totals: dict[str, int] = {}
+        total_transfers = 0
+        total_shortcuts = 0
+        users_with_habits = 0
+        users: list[UserSummary] = []
+
+        for memory in memories:
+            habits = memory.habits
+            total_transfers += habits.total_transfers
+            total_shortcuts += len(memory.shortcuts)
+            if habits.total_transfers > 0:
+                users_with_habits += 1
+            if habits.preferred_currency:
+                currency_distribution[habits.preferred_currency] = (
+                    currency_distribution.get(habits.preferred_currency, 0) + 1
+                )
+            for recipient, count in habits.recipient_counts.items():
+                recipient_totals[recipient] = recipient_totals.get(recipient, 0) + count
+            users.append(
+                UserSummary(
+                    user_id=memory.user_id,
+                    total_transfers=habits.total_transfers,
+                    favorite_recipient=habits.favorite_recipient,
+                    preferred_currency=habits.preferred_currency,
+                    last_recipient=habits.last_recipient,
+                    shortcut_count=len(memory.shortcuts),
+                )
+            )
+
+        users.sort(key=lambda u: u.total_transfers, reverse=True)
+        top_recipients = [
+            RecipientCount(recipient=name, count=count)
+            for name, count in sorted(
+                recipient_totals.items(), key=lambda kv: kv[1], reverse=True
+            )[:top_n]
+        ]
+
+        stats = MemoryStats(
+            total_users=len(memories),
+            users_with_habits=users_with_habits,
+            total_transfers=total_transfers,
+            total_shortcuts=total_shortcuts,
+            currency_distribution=currency_distribution,
+            top_recipients=top_recipients,
+        )
+        return MemoryOverview(stats=stats, users=users)
 
     # ------------------------------- habits ------------------------------- #
 

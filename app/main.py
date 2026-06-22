@@ -105,6 +105,20 @@ def ui() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/brain", include_in_schema=False)
+def brain_simulator_page() -> FileResponse:
+    """Serve the Memory Brain simulator (chat + habits/shortcuts inspector)."""
+
+    return FileResponse(STATIC_DIR / "brain.html")
+
+
+@app.get("/brain/monitor", include_in_schema=False)
+def brain_monitor_page() -> FileResponse:
+    """Serve the Memory Brain behavior monitoring dashboard."""
+
+    return FileResponse(STATIC_DIR / "brain_monitor.html")
+
+
 @app.get("/admin", include_in_schema=False)
 def admin_connections_page() -> FileResponse:
     """Serve the external-resource connections configuration page."""
