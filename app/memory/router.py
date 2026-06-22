@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
 from app.config import settings
 from app.memory.schemas import HabitsUpdate, MemoryOverview, Shortcut, UserMemory
 from app.memory.service import get_memory_brain
-from app.security import require_api_key
 
 router = APIRouter(tags=["memory"], prefix="/memory")
 
@@ -21,7 +20,7 @@ def _require_memory() -> None:
 
 
 @router.get("", response_model=MemoryOverview)
-def memory_overview(_: str = Depends(require_api_key)) -> MemoryOverview:
+def memory_overview() -> MemoryOverview:
     """Aggregate stats + per-user summaries for the monitoring dashboard."""
 
     _require_memory()
@@ -29,7 +28,7 @@ def memory_overview(_: str = Depends(require_api_key)) -> MemoryOverview:
 
 
 @router.get("/{user_id}", response_model=UserMemory)
-def get_memory(user_id: str, _: str = Depends(require_api_key)) -> UserMemory:
+def get_memory(user_id: str) -> UserMemory:
     """Return a user's learned habits and saved shortcuts."""
 
     _require_memory()
@@ -37,9 +36,7 @@ def get_memory(user_id: str, _: str = Depends(require_api_key)) -> UserMemory:
 
 
 @router.put("/{user_id}/habits", response_model=UserMemory)
-def update_habits(
-    user_id: str, update: HabitsUpdate, _: str = Depends(require_api_key)
-) -> UserMemory:
+def update_habits(user_id: str, update: HabitsUpdate) -> UserMemory:
     """Manually set habit defaults (currency, source account, favourite, language)."""
 
     _require_memory()
@@ -47,9 +44,7 @@ def update_habits(
 
 
 @router.put("/{user_id}/shortcuts", response_model=UserMemory)
-def upsert_shortcut(
-    user_id: str, shortcut: Shortcut, _: str = Depends(require_api_key)
-) -> UserMemory:
+def upsert_shortcut(user_id: str, shortcut: Shortcut) -> UserMemory:
     """Create or update a named transfer shortcut for the user."""
 
     _require_memory()
@@ -57,9 +52,7 @@ def upsert_shortcut(
 
 
 @router.delete("/{user_id}/shortcuts/{name}", response_model=UserMemory)
-def delete_shortcut(
-    user_id: str, name: str, _: str = Depends(require_api_key)
-) -> UserMemory:
+def delete_shortcut(user_id: str, name: str) -> UserMemory:
     """Delete a shortcut by name."""
 
     _require_memory()

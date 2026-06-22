@@ -144,14 +144,11 @@
 
   <footer>
     FastAPI + Memory Brain · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
-    <span style="margin-left:14px">API key: <input id="apiKeyInput" type="password" placeholder="only if auth enabled" style="width:170px"> <button type="button" class="sm" onclick="saveApiKey()">Save</button></span>
   </footer>
 
   <script>
     const $ = (id) => document.getElementById(id);
     let sessionId = null;
-    function apiKey() { return localStorage.getItem("nlu_api_key") || ""; }
-    function saveApiKey() { localStorage.setItem("nlu_api_key", $("apiKeyInput").value); checkHealth(); }
     function userId() { return $("userId").value.trim() || "demo"; }
     function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 
@@ -163,8 +160,6 @@
     async function api(path, opts) {
       opts = opts || {};
       const headers = Object.assign({}, opts.headers || {});
-      const k = apiKey();
-      if (k) headers["X-API-Key"] = k;
       const res = await fetch(path, Object.assign({}, opts, { headers }));
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -320,7 +315,6 @@
     $("refreshMem").onclick = loadMemory;
     $("saveSc").onclick = saveShortcut;
     $("userId").addEventListener("change", () => { newSession(); loadMemory(); });
-    $("apiKeyInput").value = apiKey();
     const qpUser = new URLSearchParams(location.search).get("user");
     if (qpUser) $("userId").value = qpUser;
     renderChips();

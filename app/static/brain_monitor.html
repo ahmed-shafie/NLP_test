@@ -101,7 +101,6 @@
 
   <footer>
     FastAPI · Memory Brain (SQL + Redis cache) · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
-    <span style="margin-left:14px">API key: <input id="apiKeyInput" type="password" placeholder="only if auth enabled" style="width:170px"> <button type="button" onclick="saveApiKey()">Save</button></span>
   </footer>
 
   <script>
@@ -111,14 +110,10 @@
     let charts = {};
     let lastUsers = [];
 
-    function apiKey() { return localStorage.getItem("nlu_api_key") || ""; }
-    function saveApiKey() { localStorage.setItem("nlu_api_key", $("apiKeyInput").value); location.reload(); }
     function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
 
     async function api(path) {
       const headers = {};
-      const k = apiKey();
-      if (k) headers["X-API-Key"] = k;
       const res = await fetch(path, { headers });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -213,7 +208,6 @@
     };
     $("refreshBtn").onclick = load;
     $("userFilter").addEventListener("input", renderUsers);
-    $("apiKeyInput").value = apiKey();
     checkHealth();
     load();
   </script>

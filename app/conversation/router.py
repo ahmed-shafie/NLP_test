@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
 from app.config import settings
 from app.conversation.engine import ConversationResult, get_engine
 from app.conversation.schemas import ConversationRequest, ConversationResponse
 from app.conversation.state import ConversationStatus
-from app.security import require_api_key
 
 router = APIRouter(tags=["conversation"])
 
@@ -38,9 +37,7 @@ def _require_conversation() -> None:
 
 
 @router.post("/conversation/text", response_model=ConversationResponse)
-def conversation_text(
-    request: ConversationRequest, _: str = Depends(require_api_key)
-) -> ConversationResponse:
+def conversation_text(request: ConversationRequest) -> ConversationResponse:
     """Advance a multi-turn transfer dialogue with a single text message."""
 
     _require_conversation()

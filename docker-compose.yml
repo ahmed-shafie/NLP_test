@@ -16,11 +16,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Security: enable auth and provide keys in a real deployment.
-      NLU_AUTH_ENABLED: "${NLU_AUTH_ENABLED:-false}"
-      NLU_API_KEYS: "${NLU_API_KEYS:-}"
-      NLU_ADMIN_API_KEYS: "${NLU_ADMIN_API_KEYS:-}"
-      NLU_CORS_ALLOW_ORIGINS: "${NLU_CORS_ALLOW_ORIGINS:-}"
       # Conversation sessions + Memory Brain cache. Falls back to in-memory if
       # Redis is unreachable.
       NLU_REDIS_URL: "redis://redis:6379/0"

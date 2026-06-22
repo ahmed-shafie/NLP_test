@@ -5,12 +5,12 @@
 mobile-banking AI assistant, focused on the **money-transfer** journey — from a single free-text
 utterance all the way to a validated, ready-to-execute transfer, including a multi-turn chat
 conversation, a per-user Memory Brain, configurable beneficiary lookup, and full production
-operations (auth, observability, audit/ELK).
+operations (observability, audit/ELK).
 **Audience:** engineers and reviewers integrating, operating, or extending the service.
 
 > This document is the end-to-end ("A to Z") companion to `DESIGN.md`. `DESIGN.md` covers the NLU
-> core in depth; this document covers the **whole system as it stands today**, including the security
-> (P0), observability (P1), and the conversation + Memory Brain (P2) layers.
+> core in depth; this document covers the **whole system as it stands today**, including the
+> observability (P1) and the conversation + Memory Brain (P2) layers.
 
 ---
 
@@ -27,8 +27,8 @@ operations (auth, observability, audit/ELK).
 9. [Multi-turn conversation engine](#9-multi-turn-conversation-engine)
 10. [Memory Brain (per-user habits + shortcuts)](#10-memory-brain-per-user-habits--shortcuts)
 11. [Admin layer: connections + audit/ELK](#11-admin-layer-connections--auditelk)
-12. [Security & access control](#12-security--access-control)
-13. [Observability: logging, metrics, readiness, rate limiting, versioning](#13-observability)
+12. [Error handling & request limits](#12-error-handling--request-limits)
+13. [Observability: logging, metrics, readiness, versioning](#13-observability)
 14. [Graceful degradation](#14-graceful-degradation)
 15. [API surface](#15-api-surface)
 16. [Configuration reference](#16-configuration-reference)
@@ -57,8 +57,7 @@ It is built as **independent, optional layers** so that every capability degrade
 - a **multi-turn conversation engine** (slot filling, bilingual prompts, Redis/in-memory sessions),
 - a **Memory Brain** (per-user habits + shortcuts; SQL durable store + Redis cache),
 - an **admin layer** (connection management GUI + audit/ELK observability),
-- and a **production envelope** (API-key auth, CORS, security headers, rate limiting, structured
-  logging, Prometheus metrics, readiness probe, Docker, CI).
+- and a **production envelope** (structured logging, Prometheus metrics, readiness probe, Docker, CI).
 
 If any model or external dependency is unavailable, the service still answers — just with reduced
 sophistication. Nothing in the path hard-fails because a model failed to load or a network call timed
@@ -80,11 +79,9 @@ out.
 | Memory Brain (habits + shortcuts) | `app/memory/` | on (`NLU_MEMORY_ENABLED`) | per `user_id`; SQL + Redis cache |
 | Connection management GUI | `app/admin/connections.py` | on | switch DB providers without code |
 | Audit + ELK observability | `app/admin/audit.py`, `elk.py` | on | every action; Kibana dashboards |
-| API-key authentication | `app/security.py` | off (`NLU_AUTH_ENABLED`) | public + admin tiers, fail-closed |
 | Structured JSON logging | `app/logging_config.py` | on | request-id correlated, ELK-ready |
 | Prometheus metrics | `app/metrics.py` | on | `/metrics` |
 | Readiness / liveness probes | `app/main.py` | on | `/health`, `/health/ready` |
-| Rate limiting | `app/ratelimit.py` | off | per-IP fixed window |
 | API versioning | `app/main.py` | on | served at `/...` and `/v1/...` |
 
 ---
@@ -99,7 +96,7 @@ pages (the simulator at `GET /`, the connections admin at `/admin`, and the audi
 
 ```
                 ┌──────────────────────── FastAPI app ────────────────────────┐
-   HTTP  ─────► │  Middleware stack (auth deps + cross-cutting middleware)     │
+   HTTP  ─────► │  Middleware stack (cross-cutting middleware)                 │
                 │      ▼                                                        │
                 │  Routers:  /nlu/*   /transfer/*   /contacts/*                │
                 │            /conversation/*        /admin/*    /health*       │
@@ -126,41 +123,35 @@ behind graceful-degradation guards.
 
 Every HTTP request passes through a deliberately ordered middleware stack before it reaches a route
 handler. Middleware in Starlette/FastAPI is applied **outermost-first** (the last one added runs
-first). The configured order, outermost → innermost (`app/main.py:68-88`):
+first). The configured order, outermost → innermost (`app/main.py`):
 
 ```
 client
   │
   ▼  RequestContextMiddleware   → assign/propagate X-Request-ID (ContextVar)
-  ▼  CORSMiddleware             → browser origin checks (only if origins configured)
   ▼  MetricsMiddleware          → count + time the request (Prometheus)
-  ▼  SecurityHeadersMiddleware  → X-Content-Type-Options, X-Frame-Options, ...
-  ▼  RateLimitMiddleware        → per-IP fixed-window guard (429 if exceeded)
   ▼  BodySizeLimitMiddleware    → reject oversized bodies (413)
   ▼  AuditMiddleware            → record the final action + status (innermost)
   ▼
-route handler  ──►  Depends(require_api_key | require_admin_key)  ──►  business logic
+route handler  ──►  business logic
 ```
 
 Why this order:
 
 - **Request-context is outermost** so the request id is available to *everything* downstream — logs,
   the error envelope, and audit records all share it for correlation.
-- **CORS and security headers wrap the guards** so even early rejections (a 429 from the rate
-  limiter, a 413 from the body-size guard) still carry the right headers for a browser.
 - **Audit is innermost** so it observes the *final* status code the client actually receives.
 
 ### Worked example: `POST /nlu/parse`
 
 ![Figure 3 — Sequence for POST /nlu/parse](figures/fig3_sequence.png)
 
-1. Middleware stack runs (request id assigned, metrics timer started, headers/limits checked).
-2. `require_api_key` dependency authorises the call (no-op when auth is disabled).
-3. `pipeline.parse(text, language, account_number)` delegates to the Haystack pipeline.
-4. The pipeline runs the six NLU stages (§5), invoking FAISS, NER, the DB, and the LLM as needed.
-5. The handler emits a semantic `audit.record("nlu.parse", ...)` event.
-6. The response — an `NLUResponse` — flows back out through the stack, picking up the
-   `X-Request-ID` and security headers, and is counted by the metrics middleware.
+1. Middleware stack runs (request id assigned, metrics timer started, body-size limit checked).
+2. `pipeline.parse(text, language, account_number)` delegates to the Haystack pipeline.
+3. The pipeline runs the six NLU stages (§5), invoking FAISS, NER, the DB, and the LLM as needed.
+4. The handler emits a semantic `audit.record("nlu.parse", ...)` event.
+5. The response — an `NLUResponse` — flows back out through the stack, picking up the
+   `X-Request-ID`, and is counted by the metrics middleware.
 
 ---
 
@@ -403,32 +394,11 @@ store write or unreachable ELK never breaks the request path.
 
 ---
 
-## 12. Security & access control
+## 12. Error handling & request limits
 
-Authentication is **API-key based**, with two tiers, implemented as FastAPI dependencies
-(`app/security.py`):
+The service exposes **all endpoints openly** — there is no authentication, rate limiting, CORS, or
+security-header layer. Two cross-cutting guards remain in the middleware stack (§4):
 
-| Tier | Header | Guards | Setting |
-|------|--------|--------|---------|
-| Public | `X-API-Key` | `/nlu/*`, `/transfer/*`, `/contacts/*`, `/conversation/*` | `NLU_API_KEYS` |
-| Admin | `X-Admin-Key` | `/admin/api/*` | `NLU_ADMIN_API_KEYS` |
-
-Design points:
-
-- **Opt-in, off by default** (`NLU_AUTH_ENABLED=false`) so local development is frictionless. Turn it
-  **on** in any shared/prod deployment.
-- **Fail-closed.** If auth is enabled but no keys are configured, requests return **503** rather than
-  silently allowing access.
-- **Constant-time comparison** (`secrets.compare_digest`) to avoid timing attacks; multiple keys are
-  supported (comma-separated) for rotation.
-- **Separate admin keys** keep the connection-management surface (which can create DB connection
-  strings) isolated from the public NLU surface.
-
-Complementary hardening (all in the middleware stack, §4):
-
-- **Security headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
-  `Referrer-Policy: no-referrer`, `X-XSS-Protection: 0`.
-- **CORS** — locked down by default (no origins); set `NLU_CORS_ALLOW_ORIGINS` explicitly in prod.
 - **Body-size limit** — requests above `NLU_MAX_REQUEST_BYTES` (1 MB default) are rejected with 413.
 - **Uniform error envelope** — every error is `{"error": {"code", "message", "request_id"}}`
   (`app/errors.py`), so clients get a consistent, correlatable shape.
@@ -453,9 +423,6 @@ The service is built to be operated, not just run.
   - `GET /health` — **liveness** (process is up): `{status, version}`.
   - `GET /health/ready` — **readiness**: checks the config/audit store (gating) and reports the
     embedder; returns **200** when ready, **503** otherwise. Ideal for Kubernetes readiness gates.
-- **Rate limiting** (`app/ratelimit.py`) — opt-in (`NLU_RATE_LIMIT_ENABLED`), per-IP fixed window
-  (`NLU_RATE_LIMIT_PER_MINUTE`, default 120) on the public NLU paths; exceeded requests get a 429 in
-  the uniform error envelope.
 - **API versioning** — public routers are served at both the unversioned paths (back-compat) and
   under a canonical `/v1` prefix, so clients can pin a version.
 
@@ -545,13 +512,10 @@ All settings are environment-overridable with the `NLU_` prefix (`app/config.py`
 | `NLU_USE_STORED_CONNECTION` | `true` | Prefer the active stored connection over `NLU_DB_*` |
 | `NLU_ADMIN_STORE_URL` | `sqlite:///./app_config.db` | Connections + audit store |
 
-### Security
+### Request limits
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `NLU_AUTH_ENABLED` | `false` | Require API keys |
-| `NLU_API_KEYS` / `NLU_ADMIN_API_KEYS` | `""` | Public / admin keys (comma-separated) |
-| `NLU_CORS_ALLOW_ORIGINS` | `""` | Allowed CORS origins |
 | `NLU_MAX_REQUEST_BYTES` | `1000000` | Max body size (413 above) |
 
 ### Observability
@@ -560,7 +524,6 @@ All settings are environment-overridable with the `NLU_` prefix (`app/config.py`
 |----------|---------|---------|
 | `NLU_LOG_LEVEL` / `NLU_LOG_JSON` | `INFO` / `true` | Log level / JSON logging |
 | `NLU_METRICS_ENABLED` | `true` | Expose `/metrics` |
-| `NLU_RATE_LIMIT_ENABLED` / `NLU_RATE_LIMIT_PER_MINUTE` | `false` / `120` | Rate limiting |
 
 ### Audit / ELK
 
@@ -621,10 +584,9 @@ index template, provisioning, and a Kibana dashboard.
 3. `pytest` (unit/integration suite)
 4. `pip-audit` (dependency vulnerability scan)
 
-**Production checklist:** set `NLU_AUTH_ENABLED=true` with real keys; set `NLU_CORS_ALLOW_ORIGINS`;
-point `NLU_DB_*` (or an admin connection) at the real beneficiary store; point `NLU_ELASTICSEARCH_URL`
-/ Logstash at the real ELK; consider `NLU_SESSION_BACKEND=redis` for multi-instance deployments;
-enable `NLU_RATE_LIMIT_ENABLED`; scrape `/metrics`; wire `/health` (liveness) and `/health/ready`
+**Production checklist:** point `NLU_DB_*` (or an admin connection) at the real beneficiary store;
+point `NLU_ELASTICSEARCH_URL` / Logstash at the real ELK; consider `NLU_SESSION_BACKEND=redis` for
+multi-instance deployments; scrape `/metrics`; wire `/health` (liveness) and `/health/ready`
 (readiness) into the orchestrator.
 
 ---
@@ -637,12 +599,10 @@ app/
   config.py               # Settings (NLU_ prefix) + currencies + demo contacts
   schemas.py              # NLU Pydantic models (TransferRequest, NLUResponse, ...)
   errors.py               # Uniform error envelope + exception handlers
-  security.py             # API-key auth dependencies (public + admin)
-  middleware.py           # Security headers + body-size limit
+  middleware.py           # Body-size limit
   request_context.py      # Request-id ContextVar middleware
   logging_config.py       # Structured JSON logging
   metrics.py              # Prometheus metrics + middleware
-  ratelimit.py            # Per-IP fixed-window rate limiter
   orchestration.py        # Haystack pipeline wiring
   llm.py                  # LiteLLM exception handler (local Ollama)
   embeddings.py           # Sentence-embedding model loader
@@ -673,7 +633,7 @@ tests/                    # pytest suite
   semantic tests auto-skip if the embedder is unavailable; LLM tests mock the handler (no running
   Ollama needed). Coverage spans the NLU core, beneficiary repository (in-memory SQLite, hit/miss,
   custom column maps, failing-query degradation), admin connection CRUD/test/activate, audit
-  recording + ES→store stats fallback, the security/observability envelope, the conversation
+  recording + ES→store stats fallback, the error/observability envelope, the conversation
   engine + session store, and the Memory Brain (store CRUD, shortcut resolution, habit learning,
   and engine integration).
 - **Static analysis:** `ruff check` + `ruff format`; `mypy`.

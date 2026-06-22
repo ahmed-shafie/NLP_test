@@ -14,6 +14,12 @@ Legend: ✅ implemented · ⚠️ partial / differs from brief · ❌ not implem
 > (`app/conversation/`, `app/voice/`, `/conversation/text`, `/conversation/voice`,
 > Redis session store with in-memory fallback, `tests/test_conversation.py`). The ❌ marks
 > in §1.3 below reflect the *original* state at the time of analysis.
+>
+> **Update — access-control layers removed (product decision).** The API-key authentication,
+> rate limiting, security headers, and CORS introduced in P0/P1 have since been **removed** at the
+> product owner's request. All endpoints are now open; only the body-size limit and uniform error
+> envelope remain. The auth/CORS/rate-limit items in §2.1 and the recommendations below are kept for
+> historical context but no longer reflect the current code.
 
 ---
 

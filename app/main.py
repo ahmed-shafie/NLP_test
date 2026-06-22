@@ -6,8 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import APIRouter, FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -29,11 +28,10 @@ from app.logging_config import configure_logging
 from app.memory.router import router as memory_router
 from app.memory.store import get_memory_store
 from app.metrics import MetricsMiddleware, metrics_response
-from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
+from app.middleware import BodySizeLimitMiddleware
 from app.nlu import arabic, english, pipeline
 from app.nlu.semantic_intents import get_semantic_classifier
 from app.orchestration import get_nlu_pipeline
-from app.ratelimit import RateLimitMiddleware
 from app.request_context import RequestContextMiddleware
 from app.schemas import (
     NLUResponse,
@@ -44,7 +42,6 @@ from app.schemas import (
     ValidateRequest,
     ValidationResult,
 )
-from app.security import require_api_key
 
 configure_logging()
 
@@ -83,24 +80,13 @@ register_exception_handlers(app)
 
 # Middleware is applied outermost-first (last added runs first). The intended order,
 # outermost -> innermost: request-context (assigns the request id used by logs, errors
-# and audit) -> CORS -> metrics -> security headers -> rate limit -> body-size guard ->
-# audit. Outer placement of CORS/security-headers ensures even early rejections (429,
-# 413) carry those headers; audit stays innermost so it records the final status code.
+# and audit) -> metrics -> body-size guard -> audit. Audit stays innermost so it
+# records the final status code.
 if settings.audit_enabled:
     app.add_middleware(audit.AuditMiddleware)
 app.add_middleware(BodySizeLimitMiddleware)
-app.add_middleware(RateLimitMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
 if settings.metrics_enabled:
     app.add_middleware(MetricsMiddleware)
-if settings.cors_origins_list():
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins_list(),
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 app.add_middleware(RequestContextMiddleware)
 
 app.include_router(admin_router)
@@ -193,7 +179,6 @@ nlu_router = APIRouter(tags=["nlu"])
 def nlu_parse(
     request: ParseRequest,
     http_request: Request,
-    _: str = Depends(require_api_key),
 ) -> NLUResponse:
     """Parse raw text into an intent and transfer slots.
 
@@ -220,9 +205,7 @@ def nlu_parse(
 
 
 @nlu_router.post("/transfer/validate", response_model=ValidationResult)
-def transfer_validate(
-    request: ValidateRequest, _: str = Depends(require_api_key)
-) -> ValidationResult:
+def transfer_validate(request: ValidateRequest) -> ValidationResult:
     """Validate gathered transfer slots, returning errors or a ready transfer."""
 
     return pipeline.validate_transfer(
@@ -240,7 +223,6 @@ def nlu_similar(
         ..., min_length=1, description="Utterance to find neighbours for."
     ),
     k: int = Query(default=5, ge=1, le=20),
-    _: str = Depends(require_api_key),
 ) -> list[SimilarExampleSchema]:
     """Return the nearest labeled example utterances (semantic debug/eval)."""
 
@@ -255,7 +237,7 @@ def nlu_similar(
 
 @nlu_router.post("/contacts/resolve", response_model=ResolveContactResponse)
 def contacts_resolve(
-    request: ResolveContactRequest, _: str = Depends(require_api_key)
+    request: ResolveContactRequest,
 ) -> ResolveContactResponse:
     """Resolve a recipient name to an address-book contact (cross-lingual)."""
 

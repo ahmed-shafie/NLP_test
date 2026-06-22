@@ -129,7 +129,6 @@
 
   <footer>
     FastAPI · audit middleware → Elasticsearch / Logstash / Kibana · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
-    <span style="margin-left:14px">Admin key: <input id="adminKeyInput" type="password" placeholder="only if auth enabled" style="width:180px"> <button type="button" onclick="saveAdminKey()">Save</button></span>
   </footer>
 
   <script>
@@ -137,13 +136,8 @@
     const C = { accent: "#38bdf8", green: "#22c55e", red: "#f87171", warn: "#f59e0b", purple: "#a855f7", muted: "#94a3b8" };
     let charts = {};
 
-    function adminKey() { return localStorage.getItem("nlu_admin_key") || ""; }
-    function saveAdminKey() { localStorage.setItem("nlu_admin_key", $("adminKeyInput").value); location.reload(); }
-
     async function api(path) {
       const headers = {};
-      const k = adminKey();
-      if (k) headers["X-Admin-Key"] = k;
       const res = await fetch(path, { headers });
       if (!res.ok) throw new Error("HTTP " + res.status);
       return res.json();
@@ -263,7 +257,6 @@
     $("refreshBtn").onclick = refreshAll;
     $("window").onchange = loadStats;
     $("applyFilter").onclick = loadEvents;
-    $("adminKeyInput").value = adminKey();
     refreshAll();
   </script>
 </body>

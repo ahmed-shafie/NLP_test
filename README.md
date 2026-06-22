@@ -276,25 +276,11 @@ Validate gathered slots and return a ready transfer or follow-up prompts.
 
 Returns `{"status": "ok", "version": "0.1.0"}`.
 
-## Security & access control
+## Error handling & request limits
 
-Authentication is **opt-in** (off by default for local development). Enable it in any
-shared or production deployment:
-
-```bash
-export NLU_AUTH_ENABLED=true
-export NLU_API_KEYS="key-for-clients,another-key"     # public NLU endpoints
-export NLU_ADMIN_API_KEYS="separate-admin-key"        # /admin/api/* only
-export NLU_CORS_ALLOW_ORIGINS="https://app.example.com"
-```
-
-- Public endpoints (`/nlu/*`, `/transfer/*`, `/contacts/*`) require the `X-API-Key`
-  header; admin endpoints (`/admin/api/*`) require `X-Admin-Key`. The admin GUI pages
-  have an "Admin key" field (stored in `localStorage`) that attaches the header.
-- With auth enabled and **no keys configured**, requests fail closed (`HTTP 503`).
+- All endpoints are open — there is no authentication, rate limiting, or CORS layer.
 - Every error returns a uniform envelope: `{"error": {"code", "message", "request_id"}}`.
-- Baseline security headers, a request body-size limit (`NLU_MAX_REQUEST_BYTES`), and
-  optional CORS are applied via middleware.
+- A request body-size limit (`NLU_MAX_REQUEST_BYTES`) is applied via middleware.
 
 See `.env.example` for the full configuration reference.
 
@@ -348,9 +334,6 @@ runs on every push/PR via `.github/workflows/ci.yml`.
   `nlu_http_request_duration_seconds`), toggled by `NLU_METRICS_ENABLED`.
 - **Async audit shipping** — events ship to ELK on a background worker thread so network
   I/O never blocks the request path (`NLU_AUDIT_ASYNC=true`).
-- **Rate limiting** — opt-in per-IP fixed-window limiter on the public NLU endpoints
-  (`NLU_RATE_LIMIT_ENABLED`, `NLU_RATE_LIMIT_PER_MINUTE`); returns `429` with the
-  standard error envelope.
 - **API versioning** — public endpoints are served under the canonical `/v1` prefix
   (e.g. `POST /v1/nlu/parse`) and the original unversioned paths (kept for back-compat).
 
@@ -410,13 +393,11 @@ pytest -v
 app/
   main.py         — FastAPI application
   config.py       — Settings, supported currencies, DB lookup config
-  security.py     — API-key authentication (public + admin)
   errors.py       — Uniform error envelope + global exception handlers
-  middleware.py   — Security headers + request body-size limit
+  middleware.py   — Request body-size limit
   request_context.py — Per-request id (logs + audit correlation)
   logging_config.py  — Structured JSON logging
   metrics.py      — Prometheus metrics + middleware
-  ratelimit.py    — In-process per-IP rate limiting
   conversation/   — Multi-turn slot-filling dialogue
     engine.py     —   state machine (collecting → confirming → completed)
     state.py      —   serializable session state + slots
@@ -468,7 +449,7 @@ tests/
   test_admin_connections.py
   test_audit.py
   test_beneficiary.py
-  test_security.py
+  test_http_errors.py
   test_observability.py
   test_conversation.py
 deploy/

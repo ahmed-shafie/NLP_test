@@ -130,24 +130,6 @@ class Settings(BaseSettings):
     logstash_host: str = "localhost"
     logstash_port: int = 50000
 
-    # ---- Security / API access control ----
-    # Require an API key on the NLU/transfer/contacts and admin endpoints. Off by
-    # default for local development; set NLU_AUTH_ENABLED=true in any shared/prod
-    # deployment. When enabled with no keys configured, requests fail closed (503).
-    auth_enabled: bool = False
-
-    # Comma-separated API keys accepted on the public NLU endpoints
-    # (/nlu/*, /transfer/*, /contacts/*). Sent by clients via the `X-API-Key` header.
-    api_keys: str = ""
-
-    # Comma-separated API keys accepted on the admin endpoints (/admin/api/*).
-    # Sent via the `X-Admin-Key` header. Keep these distinct from api_keys.
-    admin_api_keys: str = ""
-
-    # CORS allowed origins (comma-separated). Defaults to none; set explicitly in prod
-    # (e.g. "https://app.example.com"). Use "*" only for local development.
-    cors_allow_origins: str = ""
-
     # Maximum accepted request body size in bytes (rejects larger with HTTP 413).
     max_request_bytes: int = 1_000_000
 
@@ -160,12 +142,6 @@ class Settings(BaseSettings):
 
     # Expose Prometheus metrics at GET /metrics.
     metrics_enabled: bool = True
-
-    # ---- Rate limiting (in-process, fixed window per client IP) ----
-    rate_limit_enabled: bool = False
-
-    # Maximum requests per client IP per window for the public NLU endpoints.
-    rate_limit_per_minute: int = 120
 
     # ---- Conversation (multi-turn slot filling) ----
     conversation_enabled: bool = True
@@ -222,24 +198,6 @@ class Settings(BaseSettings):
     # UTC hour/minute the nightly rebuild runs at.
     index_rebuild_hour_utc: int = 3
     index_rebuild_minute_utc: int = 0
-
-    def _split(self, raw: str) -> list[str]:
-        return [item.strip() for item in raw.split(",") if item.strip()]
-
-    def api_keys_list(self) -> list[str]:
-        """Configured API keys for the public endpoints."""
-
-        return self._split(self.api_keys)
-
-    def admin_api_keys_list(self) -> list[str]:
-        """Configured API keys for the admin endpoints."""
-
-        return self._split(self.admin_api_keys)
-
-    def cors_origins_list(self) -> list[str]:
-        """Configured CORS origins."""
-
-        return self._split(self.cors_allow_origins)
 
 
 # Currencies the assistant understands, keyed by ISO-4217 code.

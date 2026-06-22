@@ -1,14 +1,12 @@
-"""Tests for P1 observability: readiness, metrics, request-id, rate limiting, /v1."""
+"""Tests for P1 observability: readiness, metrics, request-id, /v1."""
 
 from __future__ import annotations
 
 import json
 import logging
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.config import settings
 from app.logging_config import JsonFormatter
 from app.main import app
 from app.request_context import REQUEST_ID_HEADER, set_request_id
@@ -51,18 +49,6 @@ def test_v1_alias_works():
     resp = client.post("/v1/nlu/parse", json={"text": "send 5 dollars to Ahmed"})
     assert resp.status_code == 200
     assert resp.json()["intent"] == "transfer_money"
-
-
-def test_rate_limit_returns_429(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(settings, "rate_limit_enabled", True)
-    monkeypatch.setattr(settings, "rate_limit_per_minute", 3)
-    statuses = [
-        client.post("/nlu/parse", json={"text": "hi"}).status_code for _ in range(6)
-    ]
-    assert 429 in statuses
-    blocked = client.post("/nlu/parse", json={"text": "hi"})
-    assert blocked.status_code == 429
-    assert blocked.json()["error"]["code"] == "rate_limited"
 
 
 def test_json_formatter_includes_request_id():

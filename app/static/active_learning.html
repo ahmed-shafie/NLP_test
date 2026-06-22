@@ -97,22 +97,17 @@
 
   <footer>
     FastAPI + FAISS · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
-    <span style="margin-left:14px">API key: <input id="apiKeyInput" type="password" placeholder="only if auth enabled" style="width:180px"> <button type="button" onclick="saveApiKey()">Save</button></span>
   </footer>
 
   <script>
     const $ = (id) => document.getElementById(id);
     const INTENTS = ["transfer_money", "fallback"];
-    function apiKey() { return localStorage.getItem("nlu_api_key") || ""; }
-    function saveApiKey() { localStorage.setItem("nlu_api_key", $("apiKeyInput").value); loadAll(); }
     function esc(s) { return String(s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
     function fmtTime(s) { if (!s) return "—"; try { return new Date(s).toLocaleString(); } catch { return s; } }
 
     async function api(path, opts) {
       opts = opts || {};
       const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
-      const k = apiKey();
-      if (k) headers["X-API-Key"] = k;
       const res = await fetch(path, Object.assign({}, opts, { headers }));
       const body = res.status === 204 ? null : await res.json();
       if (!res.ok) {
@@ -208,7 +203,6 @@
     $("refreshBtn").onclick = loadQueue;
     $("statusFilter").onchange = loadQueue;
     $("rebuildBtn").onclick = rebuild;
-    $("apiKeyInput").value = apiKey();
     loadAll();
   </script>
 </body>

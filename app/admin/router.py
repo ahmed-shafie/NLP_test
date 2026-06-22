@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.admin import audit, connections, elk
 from app.admin.schemas import (
@@ -15,11 +15,8 @@ from app.admin.schemas import (
     ConnectionUpdate,
     ElkStatus,
 )
-from app.security import require_admin_key
 
-router = APIRouter(
-    prefix="/admin/api", tags=["admin"], dependencies=[Depends(require_admin_key)]
-)
+router = APIRouter(prefix="/admin/api", tags=["admin"])
 
 
 def _actor(request: Request) -> str:

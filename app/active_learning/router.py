@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.active_learning.daemon import next_run_time
 from app.active_learning.index_rebuilder import last_result, rebuild_index
@@ -16,7 +16,6 @@ from app.active_learning.schemas import (
 from app.active_learning.store import get_store
 from app.config import settings
 from app.nlu.semantic_intents import get_semantic_classifier
-from app.security import require_api_key
 
 router = APIRouter(tags=["active-learning"], prefix="/active-learning")
 
@@ -33,7 +32,6 @@ def _require_active_learning() -> None:
 def review_queue(
     status_filter: CaseStatus | None = Query(default=None, alias="status"),
     limit: int = Query(default=100, ge=1, le=1000),
-    _: str = Depends(require_api_key),
 ) -> list[ReviewCase]:
     """List logged cases (newest first), optionally filtered by status."""
 
@@ -42,7 +40,7 @@ def review_queue(
 
 
 @router.get("/stats", response_model=ActiveLearningStats)
-def stats(_: str = Depends(require_api_key)) -> ActiveLearningStats:
+def stats() -> ActiveLearningStats:
     """Queue counts plus live index size and next scheduled rebuild."""
 
     _require_active_learning()
@@ -61,9 +59,7 @@ def stats(_: str = Depends(require_api_key)) -> ActiveLearningStats:
 
 
 @router.post("/{case_id}/approve", response_model=ReviewCase)
-def approve_case(
-    case_id: int, decision: ReviewDecision, _: str = Depends(require_api_key)
-) -> ReviewCase:
+def approve_case(case_id: int, decision: ReviewDecision) -> ReviewCase:
     """Approve a case so it joins the index on the next rebuild."""
 
     _require_active_learning()
@@ -79,9 +75,7 @@ def approve_case(
 
 
 @router.post("/{case_id}/reject", response_model=ReviewCase)
-def reject_case(
-    case_id: int, decision: ReviewDecision, _: str = Depends(require_api_key)
-) -> ReviewCase:
+def reject_case(case_id: int, decision: ReviewDecision) -> ReviewCase:
     """Reject a case so it is excluded from the index."""
 
     _require_active_learning()
@@ -94,7 +88,7 @@ def reject_case(
 
 
 @router.post("/rebuild", response_model=RebuildResult)
-def rebuild(_: str = Depends(require_api_key)) -> RebuildResult:
+def rebuild() -> RebuildResult:
     """Manually rebuild + hot-swap the intent index now (no restart)."""
 
     _require_active_learning()
