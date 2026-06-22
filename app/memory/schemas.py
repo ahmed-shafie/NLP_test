@@ -32,6 +32,9 @@ class Habits(BaseModel):
     total_transfers: int = 0
     # recipient name -> number of completed transfers (drives the favourite).
     recipient_counts: dict[str, int] = Field(default_factory=dict)
+    # "recipient|amount|currency" -> number of identical completed transfers
+    # (drives the auto-created template alias).
+    combo_counts: dict[str, int] = Field(default_factory=dict)
     # Most-recent distinct amounts (newest first), capped to a small window.
     common_amounts: list[Decimal] = Field(default_factory=list)
 

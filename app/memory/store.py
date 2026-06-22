@@ -67,6 +67,8 @@ class UserHabitsRow(Base):
     total_transfers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # JSON-encoded {recipient: count} and [amount, ...].
     recipient_counts: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    # JSON-encoded {"recipient|amount|currency": count}.
+    combo_counts: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     common_amounts: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow
@@ -204,6 +206,7 @@ def _habits_from_row(row: UserHabitsRow | None) -> Habits:
         last_currency=row.last_currency,
         total_transfers=row.total_transfers,
         recipient_counts=json.loads(row.recipient_counts or "{}"),
+        combo_counts=json.loads(row.combo_counts or "{}"),
         common_amounts=json.loads(row.common_amounts or "[]"),
     )
 
@@ -298,6 +301,7 @@ class MemoryStore:
             row.last_currency = habits.last_currency
             row.total_transfers = habits.total_transfers
             row.recipient_counts = json.dumps(habits.recipient_counts)
+            row.combo_counts = json.dumps(habits.combo_counts)
             row.common_amounts = json.dumps([str(a) for a in habits.common_amounts])
             session.commit()
         self._cache.invalidate(user_id)
