@@ -10,9 +10,9 @@ falls back to the keyword classifier.
 from __future__ import annotations
 
 import logging
+import threading
 from collections import defaultdict
 from dataclasses import dataclass
-from functools import lru_cache
 
 from app.config import settings
 from app.embeddings import get_embedder
@@ -35,7 +35,7 @@ class SimilarExample:
 class SemanticIntentClassifier:
     """Nearest-neighbour intent classifier over embedded example utterances."""
 
-    def __init__(self) -> None:
+    def __init__(self, extra_examples: list[tuple[str, Intent]] | None = None) -> None:
         embedder = get_embedder()
         if embedder is None:
             raise RuntimeError(
@@ -46,10 +46,21 @@ class SemanticIntentClassifier:
             embedder.dimension
         )
 
-        texts = [text for text, _ in INTENT_EXAMPLES]
+        examples = list(INTENT_EXAMPLES) + list(extra_examples or [])
+        self.base_count = len(INTENT_EXAMPLES)
+        self.extra_count = len(extra_examples or [])
+        texts = [text for text, _ in examples]
         vectors = embedder.encode(texts)
-        self._store.add(vectors, list(INTENT_EXAMPLES))
-        logger.info("Indexed %d intent examples.", len(INTENT_EXAMPLES))
+        self._store.add(vectors, examples)
+        logger.info(
+            "Indexed %d intent examples (%d base + %d learned).",
+            len(examples),
+            self.base_count,
+            self.extra_count,
+        )
+
+    def __len__(self) -> int:
+        return len(self._store)
 
     def similar(self, text: str, k: int | None = None) -> list[SimilarExample]:
         """Return the ``k`` nearest example utterances to ``text``."""
@@ -90,14 +101,58 @@ class SemanticIntentClassifier:
         return best_intent, confidence
 
 
-@lru_cache(maxsize=1)
-def get_semantic_classifier() -> SemanticIntentClassifier | None:
-    """Build and cache the semantic classifier, or ``None`` if unavailable."""
+# The live classifier is held behind a lock so the active-learning daemon can swap
+# in a freshly rebuilt index atomically while requests are in flight.
+_lock = threading.Lock()
+_classifier: SemanticIntentClassifier | None = None
+_built = False
 
+
+def _build(
+    extra_examples: list[tuple[str, Intent]] | None = None,
+) -> SemanticIntentClassifier | None:
     if not settings.use_semantic_intent:
         return None
     try:
-        return SemanticIntentClassifier()
+        return SemanticIntentClassifier(extra_examples)
     except Exception as exc:  # noqa: BLE001 - degrade gracefully
         logger.warning("Semantic intent classifier unavailable (%s).", exc)
         return None
+
+
+def get_semantic_classifier() -> SemanticIntentClassifier | None:
+    """Return the live semantic classifier (built once), or ``None`` if unavailable."""
+
+    global _classifier, _built
+    with _lock:
+        if not _built:
+            _classifier = _build()
+            _built = True
+        return _classifier
+
+
+def rebuild_semantic_classifier(
+    extra_examples: list[tuple[str, Intent]] | None = None,
+) -> SemanticIntentClassifier | None:
+    """Rebuild the index from base + ``extra_examples`` and hot-swap it in.
+
+    The new classifier is built outside the lock (the slow part) and then swapped
+    atomically, so in-flight ``get_semantic_classifier`` callers never see a
+    half-built index. Returns the new classifier (or ``None`` if unavailable).
+    """
+
+    global _classifier, _built
+    new = _build(extra_examples)
+    with _lock:
+        _classifier = new
+        _built = True
+    return new
+
+
+def reset_semantic_classifier() -> None:
+    """Drop the cached classifier so the next access rebuilds it (used by tests)."""
+
+    global _classifier, _built
+    with _lock:
+        _classifier = None
+        _built = False

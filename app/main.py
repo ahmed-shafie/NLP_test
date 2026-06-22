@@ -13,6 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app import __version__
+from app.active_learning.daemon import start_daemon, stop_daemon
+from app.active_learning.router import router as active_learning_router
+from app.active_learning.store import get_store as get_active_learning_store
 from app.admin import audit
 from app.admin.router import router as admin_router
 from app.admin.store import get_engine
@@ -55,6 +58,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # Ensure the Memory Brain store (habits + shortcuts) tables exist.
     if settings.memory_enabled:
         get_memory_store()
+    # Ensure the Active Learning review-queue tables exist, then start the nightly
+    # index-rebuild daemon (hot-swaps the FAISS index without a restart).
+    if settings.active_learning_enabled:
+        get_active_learning_store()
+        start_daemon()
     if settings.preload_models:
         english._load_model()
         arabic._load_model()
@@ -63,7 +71,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         get_nlu_pipeline()
         get_llm_handler()
         get_beneficiary_repository()
-    yield
+    try:
+        yield
+    finally:
+        stop_daemon()
 
 
 app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
@@ -117,6 +128,13 @@ def brain_monitor_page() -> FileResponse:
     """Serve the Memory Brain behavior monitoring dashboard."""
 
     return FileResponse(STATIC_DIR / "brain_monitor.html")
+
+
+@app.get("/active-learning", include_in_schema=False)
+def active_learning_page() -> FileResponse:
+    """Serve the Active Learning review-queue dashboard."""
+
+    return FileResponse(STATIC_DIR / "active_learning.html")
 
 
 @app.get("/admin", include_in_schema=False)
@@ -255,3 +273,5 @@ app.include_router(conversation_router)
 app.include_router(conversation_router, prefix="/v1")
 app.include_router(memory_router)
 app.include_router(memory_router, prefix="/v1")
+app.include_router(active_learning_router)
+app.include_router(active_learning_router, prefix="/v1")

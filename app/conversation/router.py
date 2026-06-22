@@ -25,6 +25,7 @@ def _to_response(result: ConversationResult) -> ConversationResponse:
         complete=state.status is ConversationStatus.COMPLETED,
         slots=state.slots,
         transfer=result.transfer,
+        block_trace=result.block_trace,
     )
 
 

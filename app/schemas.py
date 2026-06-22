@@ -8,6 +8,7 @@ from enum import Enum
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config import SUPPORTED_CURRENCIES
+from app.trace import BlockTrace
 
 
 class Language(str, Enum):
@@ -114,6 +115,13 @@ class NLUResponse(BaseModel):
         default=None,
         description=(
             "A natural-language follow-up/clarification suggested by the LLM fallback."
+        ),
+    )
+    block_trace: list[BlockTrace] = Field(
+        default_factory=list,
+        description=(
+            "Per-block execution trace (timing + status) for every pipeline block "
+            "this request ran, in execution order."
         ),
     )
 

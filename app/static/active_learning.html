@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Banking NLU Brain — Active Learning</title>
+  <style>
+    :root {
+      --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --border: #334155;
+      --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --accent-2: #22c55e;
+      --warn: #f59e0b; --danger: #f87171; --violet: #c4b5fd;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+    header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    header h1 { font-size: 20px; margin: 0; }
+    header .sub { color: var(--muted); font-size: 13px; }
+    nav { display: flex; gap: 14px; font-size: 13px; }
+    nav a { text-decoration: none; }
+    .status { margin-left: auto; font-size: 13px; color: var(--muted); }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: middle; }
+    .dot.ok { background: var(--accent-2); } .dot.bad { background: var(--danger); }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+    .card h2 .ep { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); background: var(--panel-2); padding: 2px 8px; border-radius: 6px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+    .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+    .stat .n { font-size: 22px; font-weight: 700; }
+    .stat .l { font-size: 12px; color: var(--muted); }
+    button { background: var(--accent); color: #04293a; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    button:hover { filter: brightness(1.08); } button:disabled { opacity: .6; cursor: not-allowed; }
+    button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+    button.ok { background: var(--accent-2); color: #052e16; }
+    button.danger { background: var(--danger); color: #450a0a; }
+    select, input[type=text] { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; }
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .toolbar .spacer { flex: 1; }
+    .item { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+    .item .top { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .item .utt { font-size: 15px; word-break: break-word; }
+    .item .meta { color: var(--muted); font-size: 12px; margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .item .actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.pending { background: rgba(245,158,11,.15); color: var(--warn); border: 1px solid rgba(245,158,11,.4); }
+    .badge.auto_approved { background: rgba(56,189,248,.15); color: var(--accent); border: 1px solid rgba(56,189,248,.4); }
+    .badge.approved { background: rgba(34,197,94,.15); color: var(--accent-2); border: 1px solid rgba(34,197,94,.4); }
+    .badge.rejected { background: rgba(248,113,113,.15); color: var(--danger); border: 1px solid rgba(248,113,113,.4); }
+    .badge.llm { background: rgba(168,85,247,.15); color: var(--violet); border: 1px solid rgba(168,85,247,.4); }
+    .muted { color: var(--muted); }
+    .err { color: var(--danger); font-size: 13px; }
+    .note { color: var(--muted); font-size: 13px; }
+    footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Active Learning</h1>
+    <span class="sub">Review queue · nightly index hot-swap</span>
+    <nav>
+      <a style="color:var(--muted)" href="/">Simulator</a>
+      <a style="color:var(--muted)" href="/brain">Brain</a>
+      <a style="color:var(--muted)" href="/brain/monitor">Brain monitor</a>
+      <a style="color:var(--accent)" href="/active-learning">Active learning</a>
+      <a style="color:var(--muted)" href="/admin">Connections</a>
+      <a style="color:var(--muted)" href="/admin/audit">Audit monitor</a>
+    </nav>
+    <span class="status"><span id="healthDot" class="dot"></span><span id="healthText">checking…</span></span>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Queue overview <span class="ep">GET /active-learning/stats</span></h2>
+      <div class="stats" id="stats"><div class="note">Loading…</div></div>
+      <div class="note" id="indexInfo" style="margin-top:12px"></div>
+    </section>
+
+    <section class="card">
+      <h2>Review queue <span class="ep">GET /active-learning/queue</span></h2>
+      <div class="toolbar">
+        <label class="note" for="statusFilter">Status</label>
+        <select id="statusFilter">
+          <option value="">all</option>
+          <option value="pending" selected>pending</option>
+          <option value="auto_approved">auto_approved</option>
+          <option value="approved">approved</option>
+          <option value="rejected">rejected</option>
+        </select>
+        <button class="ghost" id="refreshBtn">Refresh</button>
+        <div class="spacer"></div>
+        <button class="ok" id="rebuildBtn" title="Rebuild + hot-swap the FAISS intent index now">Rebuild index now</button>
+      </div>
+      <div id="rebuildResult" class="note"></div>
+      <div id="queue"><div class="note">Loading…</div></div>
+    </section>
+  </main>
+
+  <footer>
+    FastAPI + FAISS · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
+    <span style="margin-left:14px">API key: <input id="apiKeyInput" type="password" placeholder="only if auth enabled" style="width:180px"> <button type="button" onclick="saveApiKey()">Save</button></span>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const INTENTS = ["transfer_money", "fallback"];
+    function apiKey() { return localStorage.getItem("nlu_api_key") || ""; }
+    function saveApiKey() { localStorage.setItem("nlu_api_key", $("apiKeyInput").value); loadAll(); }
+    function esc(s) { return String(s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+    function fmtTime(s) { if (!s) return "—"; try { return new Date(s).toLocaleString(); } catch { return s; } }
+
+    async function api(path, opts) {
+      opts = opts || {};
+      const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+      const k = apiKey();
+      if (k) headers["X-API-Key"] = k;
+      const res = await fetch(path, Object.assign({}, opts, { headers }));
+      const body = res.status === 204 ? null : await res.json();
+      if (!res.ok) {
+        const msg = body && body.error ? body.error.message : (body && body.detail ? JSON.stringify(body.detail) : ("HTTP " + res.status));
+        throw new Error(msg);
+      }
+      return body;
+    }
+
+    async function checkHealth() {
+      try { const h = await api("/health"); $("healthDot").className = "dot ok"; $("healthText").textContent = "API online · v" + (h.version || "?"); }
+      catch { $("healthDot").className = "dot bad"; $("healthText").textContent = "API offline"; }
+    }
+
+    function statCard(n, l) { return `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`; }
+
+    async function loadStats() {
+      try {
+        const s = await api("/active-learning/stats");
+        $("stats").innerHTML =
+          statCard(s.total, "total logged") + statCard(s.pending, "pending review") +
+          statCard(s.auto_approved, "auto-approved") + statCard(s.approved, "approved") +
+          statCard(s.rejected, "rejected") + statCard(s.learned_examples, "learned examples");
+        const idx = s.index_loaded
+          ? `Live index: <b>${s.index_base_examples}</b> base + <b>${s.index_learned_examples}</b> learned examples.`
+          : "Semantic index not loaded (embedding model unavailable).";
+        const nxt = s.next_rebuild_utc ? ` · Next nightly rebuild: <b>${fmtTime(s.next_rebuild_utc)}</b>` : "";
+        const last = s.last_rebuild_at ? ` · Last rebuild: <b>${fmtTime(s.last_rebuild_at)}</b>` : "";
+        $("indexInfo").innerHTML = idx + nxt + last;
+      } catch (e) { $("stats").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    }
+
+    function intentSelect(id, current) {
+      const opts = INTENTS.map(i => `<option value="${i}" ${i === current ? "selected" : ""}>${i}</option>`).join("");
+      return `<select id="${id}" title="Correct the label before approving">${opts}</select>`;
+    }
+
+    function caseItem(c) {
+      const llm = c.llm_assisted ? '<span class="badge llm">LLM assisted</span>' : "";
+      const decided = c.status === "approved" || c.status === "rejected" || c.status === "auto_approved";
+      const actions = decided
+        ? `<span class="note">${c.reviewer ? "by " + esc(c.reviewer) + " · " : ""}${fmtTime(c.reviewed_at)}</span>`
+        : `${intentSelect("intent-" + c.id, c.predicted_intent)}
+           <button class="ok" onclick="decide(${c.id}, 'approve')">Approve</button>
+           <button class="danger" onclick="decide(${c.id}, 'reject')">Reject</button>`;
+      return `<div class="item" id="case-${c.id}">
+          <div class="top">
+            <span class="utt" dir="auto">${esc(c.text)}</span>
+            <span class="badge ${c.status}">${c.status}</span>
+          </div>
+          <div class="meta">
+            <span>#${c.id}</span>
+            <span>predicted: <b>${esc(c.predicted_intent)}</b>${c.corrected_intent ? " → <b>" + esc(c.corrected_intent) + "</b>" : ""}</span>
+            <span>confidence: <b>${(c.confidence * 100).toFixed(1)}%</b></span>
+            <span>source: ${esc(c.intent_source)}</span>
+            <span>lang: ${esc(c.language)}</span>
+            ${llm}
+            <span>${fmtTime(c.created_at)}</span>
+          </div>
+          ${c.clarification ? `<div class="meta" dir="auto">clarification: ${esc(c.clarification)}</div>` : ""}
+          <div class="actions">${actions}</div>
+        </div>`;
+    }
+
+    async function loadQueue() {
+      const status = $("statusFilter").value;
+      try {
+        const rows = await api(`/active-learning/queue?limit=200${status ? "&status=" + status : ""}`);
+        $("queue").innerHTML = rows.length ? rows.map(caseItem).join("") : '<div class="note">No cases in this view.</div>';
+      } catch (e) { $("queue").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    }
+
+    async function decide(id, action) {
+      const sel = $("intent-" + id);
+      const body = action === "approve" ? { corrected_intent: sel ? sel.value : null, reviewer: "web" } : { reviewer: "web" };
+      try {
+        await api(`/active-learning/${id}/${action}`, { method: "POST", body: JSON.stringify(body) });
+        await Promise.all([loadStats(), loadQueue()]);
+      } catch (e) { alert("Failed: " + e.message); }
+    }
+
+    async function rebuild() {
+      $("rebuildBtn").disabled = true; $("rebuildResult").textContent = "Rebuilding index…";
+      try {
+        const r = await api("/active-learning/rebuild", { method: "POST", body: "{}" });
+        $("rebuildResult").innerHTML = `<span style="color:${r.ok ? "var(--accent-2)" : "var(--warn)"}">${esc(r.message)}</span>`;
+        await loadStats();
+      } catch (e) { $("rebuildResult").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+      finally { $("rebuildBtn").disabled = false; }
+    }
+
+    function loadAll() { checkHealth(); loadStats(); loadQueue(); }
+    $("refreshBtn").onclick = loadQueue;
+    $("statusFilter").onchange = loadQueue;
+    $("rebuildBtn").onclick = rebuild;
+    $("apiKeyInput").value = apiKey();
+    loadAll();
+  </script>
+</body>
+</html>

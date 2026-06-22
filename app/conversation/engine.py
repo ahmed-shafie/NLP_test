@@ -15,6 +15,7 @@ from app.memory.service import get_memory_brain
 from app.nlu import entities, pipeline
 from app.nlu.lang import detect_language
 from app.schemas import Intent, Language, TransferRequest
+from app.trace import BlockTracer
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +82,12 @@ class ConversationResult:
         state: ConversationState,
         reply: str,
         transfer: TransferRequest | None = None,
+        block_trace: list | None = None,
     ) -> None:
         self.state = state
         self.reply = reply
         self.transfer = transfer
+        self.block_trace = block_trace or []
 
 
 class ConversationEngine:
@@ -98,8 +101,14 @@ class ConversationEngine:
         language: Language | None = None,
         user_id: str | None = None,
     ) -> ConversationResult:
+        tracer = BlockTracer()
         sid = session_id or uuid.uuid4().hex
-        state = self._store.load(sid) or ConversationState(session_id=sid)
+        # Memory Brain restores the conversation state (slots, FSM status) across turns.
+        with tracer.block("memory_restore") as span:
+            loaded = self._store.load(sid)
+            if loaded is None:
+                span.annotate("new session")
+            state = loaded or ConversationState(session_id=sid)
         state.turns += 1
         if user_id:
             state.user_id = user_id
@@ -112,80 +121,98 @@ class ConversationEngine:
             state.language = lang
 
         if _matches(text, _CANCEL):
-            state.reset()
-            state.status = ConversationStatus.CANCELLED
-            return self._finish(state, templates.cancelled(lang))
+            with tracer.block("orchestrator"):
+                state.reset()
+                state.status = ConversationStatus.CANCELLED
+                result = self._finish(state, templates.cancelled(lang))
+        elif state.status is ConversationStatus.CONFIRMING:
+            result = self._handle_confirmation(state, text, lang, tracer)
+        else:
+            result = self._collect(state, text, lang, tracer)
 
-        if state.status is ConversationStatus.CONFIRMING:
-            return self._handle_confirmation(state, text, lang)
-
-        return self._collect(state, text, lang)
+        # All blocks have closed; attach the completed trace to the turn's result.
+        result.block_trace = list(tracer.entries)
+        return result
 
     # ------------------------------------------------------------------ #
 
     def _handle_confirmation(
-        self, state: ConversationState, text: str, lang: Language
+        self,
+        state: ConversationState,
+        text: str,
+        lang: Language,
+        tracer: BlockTracer,
     ) -> ConversationResult:
-        if _matches(text, _NEGATIVE):
-            state.reset()
-            state.status = ConversationStatus.CANCELLED
-            return self._finish(state, templates.cancelled(lang))
-        if _matches(text, _AFFIRM):
-            return self._complete(state, lang)
-        # Unrecognised reply: re-ask for confirmation.
-        return self._finish(state, self._confirm_text(state, lang))
+        with tracer.block("orchestrator"):
+            if _matches(text, _NEGATIVE):
+                state.reset()
+                state.status = ConversationStatus.CANCELLED
+                return self._finish(state, templates.cancelled(lang))
+            if _matches(text, _AFFIRM):
+                return self._complete(state, lang, tracer)
+            # Unrecognised reply: re-ask for confirmation.
+            return self._finish(state, self._confirm_text(state, lang))
 
     def _collect(
-        self, state: ConversationState, text: str, lang: Language
+        self,
+        state: ConversationState,
+        text: str,
+        lang: Language,
+        tracer: BlockTracer,
     ) -> ConversationResult:
         parsed = pipeline.parse(text, lang)
-        slots = state.slots
+        # Fold the NLU pipeline's own per-block trace into this turn's trace.
+        tracer.extend(parsed.block_trace)
 
-        # Memory Brain: a saved shortcut ("pay rent") pre-fills the transfer template.
-        self._apply_shortcut(state, text)
+        with tracer.block("orchestrator"):
+            slots = state.slots
 
-        if parsed.intent is Intent.TRANSFER_MONEY:
-            state.intent = Intent.TRANSFER_MONEY
+            # Memory Brain: a saved shortcut ("pay rent") pre-fills the template.
+            self._apply_shortcut(state, text)
 
-        if state.intent is not Intent.TRANSFER_MONEY:
-            return self._finish(state, templates.fallback(lang))
+            if parsed.intent is Intent.TRANSFER_MONEY:
+                state.intent = Intent.TRANSFER_MONEY
 
-        # Merge any newly extracted slots (never overwrite an already-filled slot).
-        ent = parsed.entities
-        if slots.amount is None and ent.amount is not None:
-            slots.amount = ent.amount
-        # Only adopt a currency the user *explicitly* stated this turn; the generic
-        # USD default is deferred below so a learned habit currency can win first.
-        explicit_currency = entities.extract_currency(text)
-        if not slots.currency and explicit_currency:
-            slots.currency = explicit_currency
-        if not slots.recipient and ent.recipient:
-            slots.recipient = ent.recipient
-        if not slots.source_account and ent.source_account:
-            slots.source_account = ent.source_account
+            if state.intent is not Intent.TRANSFER_MONEY:
+                return self._finish(state, templates.fallback(lang))
 
-        # If we just asked for a specific slot and parsing didn't fill it, interpret
-        # the bare answer (e.g. "Ahmed" for recipient, "five" is out of scope).
-        if state.pending_slot:
-            self._fill_pending_from_raw(state, text, lang)
+            # Merge newly extracted slots (never overwrite an already-filled slot).
+            ent = parsed.entities
+            if slots.amount is None and ent.amount is not None:
+                slots.amount = ent.amount
+            # Only adopt a currency the user *explicitly* stated this turn; the
+            # generic USD default is deferred below so a learned habit currency
+            # can win first.
+            explicit_currency = entities.extract_currency(text)
+            if not slots.currency and explicit_currency:
+                slots.currency = explicit_currency
+            if not slots.recipient and ent.recipient:
+                slots.recipient = ent.recipient
+            if not slots.source_account and ent.source_account:
+                slots.source_account = ent.source_account
 
-        # Memory Brain: fall back to learned habits for any still-empty slot
-        # ("send my usual" -> favourite recipient; default currency / source account).
-        self._apply_memory_defaults(state, text)
+            # If we just asked for a specific slot and parsing didn't fill it,
+            # interpret the bare answer (e.g. "Ahmed" for recipient).
+            if state.pending_slot:
+                self._fill_pending_from_raw(state, text, lang)
 
-        # Generic currency default (mirrors the parser) once habits have had a say.
-        if slots.currency is None and slots.amount is not None:
-            slots.currency = DEFAULT_CURRENCY
+            # Memory Brain: fall back to learned habits for any still-empty slot
+            # ("send my usual" -> favourite recipient; default currency / source).
+            self._apply_memory_defaults(state, text)
 
-        missing = slots.first_missing_required()
-        if missing is not None:
-            state.pending_slot = missing
-            state.status = ConversationStatus.COLLECTING
-            return self._finish(state, templates.slot_prompt(missing, lang))
+            # Generic currency default (mirrors the parser) after habits had a say.
+            if slots.currency is None and slots.amount is not None:
+                slots.currency = DEFAULT_CURRENCY
 
-        state.pending_slot = None
-        state.status = ConversationStatus.CONFIRMING
-        return self._finish(state, self._confirm_text(state, lang))
+            missing = slots.first_missing_required()
+            if missing is not None:
+                state.pending_slot = missing
+                state.status = ConversationStatus.COLLECTING
+                return self._finish(state, templates.slot_prompt(missing, lang))
+
+            state.pending_slot = None
+            state.status = ConversationStatus.CONFIRMING
+            return self._finish(state, self._confirm_text(state, lang))
 
     def _fill_pending_from_raw(
         self, state: ConversationState, text: str, lang: Language
@@ -258,7 +285,9 @@ class ConversationEngine:
             if source:
                 slots.source_account = source
 
-    def _complete(self, state: ConversationState, lang: Language) -> ConversationResult:
+    def _complete(
+        self, state: ConversationState, lang: Language, tracer: BlockTracer
+    ) -> ConversationResult:
         slots = state.slots
         result = pipeline.validate_transfer(
             amount=slots.amount,

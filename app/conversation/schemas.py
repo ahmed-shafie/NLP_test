@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.conversation.state import ConversationSlots, ConversationStatus
 from app.schemas import Intent, Language, TransferRequest
+from app.trace import BlockTrace
 
 
 class ConversationRequest(BaseModel):
@@ -40,3 +41,7 @@ class ConversationResponse(BaseModel):
     complete: bool = False
     slots: ConversationSlots
     transfer: TransferRequest | None = None
+    block_trace: list[BlockTrace] = Field(
+        default_factory=list,
+        description="Per-block execution trace (timing + status) for this turn.",
+    )

@@ -196,6 +196,33 @@ class Settings(BaseSettings):
     # learned "favourite" default.
     memory_favorite_min_count: int = 2
 
+    # ---- Active Learning (passive review queue + nightly index rebuild) ----
+    # Log LLM-assisted / low-confidence cases to a review queue, auto-approve the
+    # confident ones, and feed approved examples back into the semantic intent index.
+    active_learning_enabled: bool = True
+
+    # SQLAlchemy URL for the durable review-queue store. Any provider works
+    # (PostgreSQL/Oracle/SQL Server/...); defaults to a local SQLite file.
+    active_learning_store_url: str = "sqlite:///./active_learning.db"
+
+    # A logged case with intent confidence at or above this floor (and a concrete,
+    # non-fallback intent) is auto-approved and skips human review.
+    active_learning_auto_approve_confidence: float = 0.85
+
+    # A case is enqueued for review when the LLM was invoked, the intent was a
+    # fallback, or the intent confidence is below this ceiling. Confident,
+    # deterministic results are not logged (nothing to learn from).
+    active_learning_log_confidence: float = 0.6
+
+    # ---- Nightly FAISS intent-index rebuild (hot-swap, no restart) ----
+    # Run a background daemon that rebuilds the semantic intent index from the base
+    # examples plus approved review-queue examples, then atomically swaps it in.
+    index_rebuild_enabled: bool = True
+
+    # UTC hour/minute the nightly rebuild runs at.
+    index_rebuild_hour_utc: int = 3
+    index_rebuild_minute_utc: int = 0
+
     def _split(self, raw: str) -> list[str]:
         return [item.strip() for item in raw.split(",") if item.strip()]
 

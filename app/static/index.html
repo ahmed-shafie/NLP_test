@@ -103,6 +103,7 @@
       <a style="color:var(--accent)" href="/">Simulator</a>
       <a style="color:var(--muted)" href="/brain">Brain</a>
       <a style="color:var(--muted)" href="/brain/monitor">Brain monitor</a>
+      <a style="color:var(--muted)" href="/active-learning">Active learning</a>
       <a style="color:var(--muted)" href="/admin">Connections</a>
       <a style="color:var(--muted)" href="/admin/audit">Audit monitor</a>
     </nav>
@@ -222,6 +223,27 @@
       return `<details><summary>Raw JSON</summary><pre class="raw">${esc(JSON.stringify(obj, null, 2))}</pre></details>`;
     }
 
+    const TRACE_COLOR = { ok: "var(--accent-2)", skipped: "var(--muted)", error: "var(--danger)" };
+    function traceBlock(trace) {
+      if (!trace || !trace.length) return "";
+      const max = Math.max(...trace.map(b => b.duration_ms), 0.001);
+      const rows = trace.map(b => {
+        const c = TRACE_COLOR[b.status] || "var(--muted)";
+        const w = Math.max(2, (b.duration_ms / max) * 100);
+        const note = b.note ? ` <span class="muted">· ${esc(b.note)}</span>` : "";
+        return `<div class="item" style="padding:8px 12px">
+            <div class="top">
+              <span><span class="dot" style="background:${c}"></span>${esc(b.block)}${note}</span>
+              <span class="score">${b.duration_ms.toFixed(2)} ms</span>
+            </div>
+            <div class="meter" style="margin-top:6px"><span style="width:${w}%;background:${c}"></span></div>
+          </div>`;
+      }).join("");
+      const total = trace.reduce((s, b) => s + b.duration_ms, 0);
+      return `<details open style="margin-top:14px"><summary>block_trace · ${trace.length} blocks · ${total.toFixed(2)} ms</summary>
+        <div class="list">${rows}</div></details>`;
+    }
+
     async function doParse() {
       const text = $("parseText").value.trim();
       const account = $("parseAccount").value.trim();
@@ -275,6 +297,7 @@
           </div>
           ${benBlock}
           ${clarify}
+          ${traceBlock(r.block_trace)}
           ${rawBlock(r)}`;
       } catch (err) {
         out.innerHTML = `<div class="err">${esc(err.message)}</div>`;
