@@ -220,6 +220,29 @@ SUPPORTED_CURRENCIES: dict[str, set[str]] = {
     "QAR": {"qar", "ريال قطري"},
 }
 
+# Recognised bill categories, keyed by canonical name -> trigger keywords (EN+AR).
+# Matching is substring-based on the lowered utterance; anything not matched is
+# kept as the free-text biller the customer typed.
+BILLER_CATEGORIES: dict[str, set[str]] = {
+    "electricity": {"electricity", "power", "كهرباء", "الكهرباء"},
+    "water": {"water", "مياه", "المياه", "مية"},
+    "gas": {"gas", "غاز", "الغاز"},
+    "internet": {"internet", "wifi", "نت", "النت", "انترنت", "إنترنت"},
+    "mobile": {
+        "mobile",
+        "phone",
+        "vodafone",
+        "orange",
+        "etisalat",
+        "موبايل",
+        "الموبايل",
+        "تليفون",
+        "فودافون",
+        "اورنج",
+    },
+    "tv": {"tv", "cable", "تليفزيون", "التليفزيون"},
+}
+
 # Default currency assumed when the user gives an amount with no currency.
 DEFAULT_CURRENCY = "USD"
 

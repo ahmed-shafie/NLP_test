@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.schemas import Language
+from app.schemas import Intent, Language
 
 # Follow-up prompts for each missing slot, keyed by language.
 _SLOT_PROMPTS: dict[str, dict[Language, str]] = {
@@ -18,6 +18,29 @@ _SLOT_PROMPTS: dict[str, dict[Language, str]] = {
         Language.EN: "Who should I send the money to?",
         Language.AR: "إلى من تريد إرسال المبلغ؟",
     },
+    "biller": {
+        Language.EN: "Which bill would you like to pay?",
+        Language.AR: "أي فاتورة تريد دفعها؟",
+    },
+    "reference_number": {
+        Language.EN: "What's the bill/reference number?",
+        Language.AR: "ما هو رقم الفاتورة/المرجع؟",
+    },
+}
+
+# Intent-specific overrides (e.g. "pay" instead of "transfer" for the amount).
+_SLOT_PROMPTS_BY_INTENT: dict[Intent, dict[str, dict[Language, str]]] = {
+    Intent.PAY_BILL: {
+        "amount": {
+            Language.EN: "How much would you like to pay?",
+            Language.AR: "ما المبلغ الذي تريد دفعه؟",
+        },
+    },
+}
+
+_CHOOSE_ACTION: dict[Language, str] = {
+    Language.EN: "What would you like to do — (1) Transfer money or (2) Pay a bill?",
+    Language.AR: "ماذا تريد أن تفعل — (١) تحويل أموال أم (٢) دفع فاتورة؟",
 }
 
 _GREETING: dict[Language, str] = {
@@ -37,8 +60,18 @@ _CANCELLED: dict[Language, str] = {
 }
 
 
-def slot_prompt(slot: str, language: Language) -> str:
+def slot_prompt(
+    slot: str, language: Language, intent: Intent | None = None
+) -> str:
+    if intent is not None:
+        override = _SLOT_PROMPTS_BY_INTENT.get(intent, {}).get(slot)
+        if override is not None:
+            return override[language]
     return _SLOT_PROMPTS.get(slot, {}).get(language, f"Please provide the {slot}.")
+
+
+def choose_action(language: Language) -> str:
+    return _CHOOSE_ACTION[language]
 
 
 def greeting(language: Language) -> str:
@@ -70,6 +103,34 @@ def completed(amount: str, currency: str, recipient: str, language: Language) ->
     if language is Language.AR:
         return f"تم تجهيز التحويل: {amount} {currency} إلى {recipient}."
     return f"Done — your transfer of {amount} {currency} to {recipient} is ready."
+
+
+def bill_confirm_prompt(
+    amount: str, currency: str, biller: str, reference: str, language: Language
+) -> str:
+    if language is Language.AR:
+        return (
+            f"تأكيد: دفع {amount} {currency} لفاتورة {biller} (مرجع {reference}). "
+            "هل أتابع؟ (نعم/لا)"
+        )
+    return (
+        f"Please confirm: pay {amount} {currency} to {biller} (ref {reference}). "
+        "Shall I proceed? (yes/no)"
+    )
+
+
+def bill_completed(
+    amount: str, currency: str, biller: str, reference: str, language: Language
+) -> str:
+    if language is Language.AR:
+        return (
+            f"تم — تجهيز دفع فاتورة {biller} بمبلغ {amount} {currency} "
+            f"(مرجع {reference})."
+        )
+    return (
+        f"Done — your {biller} bill payment of {amount} {currency} "
+        f"(ref {reference}) is ready."
+    )
 
 
 def alias_created(name: str, language: Language) -> str:

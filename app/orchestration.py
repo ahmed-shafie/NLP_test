@@ -156,6 +156,9 @@ class BeneficiaryLookup:
 def _needs_llm(state: dict) -> bool:
     """The LLM handler fires only when the deterministic path is incomplete."""
 
+    if state["intent"] is Intent.PAY_BILL:
+        # Bill slots are extracted by the conversation engine, not the LLM.
+        return False
     if state["intent"] is Intent.FALLBACK:
         return True
     entities: TransferEntities = state["entities"]
