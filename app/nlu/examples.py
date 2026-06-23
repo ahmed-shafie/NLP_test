@@ -28,6 +28,22 @@ INTENT_EXAMPLES: list[tuple[str, Intent]] = [
     ("ادفع 200 جنيه لصاحب البيت", Intent.TRANSFER_MONEY),
     ("اريد تحويل خمسمئة دولار الى خالد", Intent.TRANSFER_MONEY),
     ("حوّل من حسابي مبلغ إلى ليلى", Intent.TRANSFER_MONEY),
+    # --- pay_bill (English) ---
+    ("pay my electricity bill", Intent.PAY_BILL),
+    ("pay 320 EGP electricity bill 778899", Intent.PAY_BILL),
+    ("I want to pay the water bill", Intent.PAY_BILL),
+    ("settle my internet bill reference 4455123", Intent.PAY_BILL),
+    ("pay the gas bill number 99100", Intent.PAY_BILL),
+    ("pay my mobile bill for Vodafone", Intent.PAY_BILL),
+    ("can you pay my phone bill", Intent.PAY_BILL),
+    ("pay utility bill 5512 amount 150", Intent.PAY_BILL),
+    # --- pay_bill (Arabic) ---
+    ("ادفع فاتورة الكهرباء", Intent.PAY_BILL),
+    ("عايز ادفع فاتورة النت", Intent.PAY_BILL),
+    ("سدد فاتورة المياه رقم ٤٤٥٥", Intent.PAY_BILL),
+    ("ادفع فاتورة الغاز ٣٢٠ جنيه", Intent.PAY_BILL),
+    ("اريد دفع فاتورة الموبايل فودافون", Intent.PAY_BILL),
+    ("ادفع فاتورة الكهرباء 778899 بمبلغ 320", Intent.PAY_BILL),
     # --- fallback / out of scope (English) ---
     ("what is my account balance", Intent.FALLBACK),
     ("show me my recent transactions", Intent.FALLBACK),

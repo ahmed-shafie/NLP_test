@@ -155,6 +155,10 @@
     const CHAT_SAMPLES = [
       { t: "send 75 EGP to Mona" }, { t: "pay rent" }, { t: "yes" }, { t: "no" },
       { t: "send 50 to Sara" }, { t: "حوّل 100 جنيه إلى محمد", rtl: true },
+      { t: "pay 320 EGP electricity bill 778899" },
+      { t: "I want to pay my internet bill" },
+      { t: "ادفع فاتورة الكهرباء 778899 بمبلغ 320", rtl: true },
+      { t: "1" }, { t: "2" },
     ];
 
     async function api(path, opts) {
@@ -191,7 +195,10 @@
     }
 
     function renderSlots(slots, pending) {
-      const order = ["amount", "currency", "recipient", "source_account"];
+      const isBill = slots && (slots.biller || slots.reference_number);
+      const order = isBill
+        ? ["biller", "reference_number", "amount", "currency"]
+        : ["amount", "currency", "recipient", "source_account"];
       $("slots").innerHTML = order.map(k => {
         const v = slots && slots[k];
         const cls = v ? "filled" : (k === pending ? "pending" : "");

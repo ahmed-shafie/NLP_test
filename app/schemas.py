@@ -19,9 +19,10 @@ class Language(str, Enum):
 
 
 class Intent(str, Enum):
-    """Intents recognised by the assistant (v1 focuses on transfers)."""
+    """Intents recognised by the assistant."""
 
     TRANSFER_MONEY = "transfer_money"
+    PAY_BILL = "pay_bill"
     FALLBACK = "fallback"
 
 
@@ -32,6 +33,17 @@ class TransferEntities(BaseModel):
     currency: str | None = None
     recipient: str | None = None
     source_account: str | None = None
+    note: str | None = None
+
+
+class BillEntities(BaseModel):
+    """Raw bill-payment slots extracted from an utterance, before validation."""
+
+    biller: str | None = None
+    biller_category: str | None = None
+    reference_number: str | None = None
+    amount: Decimal | None = None
+    currency: str | None = None
     note: str | None = None
 
 
@@ -182,6 +194,42 @@ class TransferRequest(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("Recipient must not be empty.")
+        return cleaned
+
+
+class BillPaymentRequest(BaseModel):
+    """A validated bill-payment instruction for the payment hub.
+
+    Construction fails with a ``ValidationError`` if any required slot is missing
+    or invalid, which the conversation engine turns into follow-up prompts.
+    """
+
+    biller: str = Field(..., min_length=1, description="Who is being paid.")
+    biller_category: str | None = Field(
+        default=None, description="Canonical biller category when recognised."
+    )
+    reference_number: str = Field(
+        ..., min_length=1, description="Bill / subscriber / account reference."
+    )
+    amount: Decimal = Field(..., gt=0, description="Amount to pay, must be > 0.")
+    currency: str = Field(..., description="ISO-4217 currency code.")
+    note: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def _known_currency(cls, value: str) -> str:
+        code = value.strip().upper()
+        if code not in SUPPORTED_CURRENCIES:
+            supported = ", ".join(sorted(SUPPORTED_CURRENCIES))
+            raise ValueError(f"Unsupported currency '{value}'. Supported: {supported}.")
+        return code
+
+    @field_validator("biller", "reference_number")
+    @classmethod
+    def _clean(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Value must not be empty.")
         return cleaned
 
 

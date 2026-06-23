@@ -9,13 +9,20 @@ from pydantic import BaseModel, Field
 
 from app.schemas import Intent, Language
 
-# Slots that must be filled before a transfer can be confirmed.
+# Slots that must be filled before each action can be confirmed, per intent.
 REQUIRED_SLOTS: tuple[str, ...] = ("amount", "currency", "recipient")
+BILL_REQUIRED_SLOTS: tuple[str, ...] = (
+    "biller",
+    "reference_number",
+    "amount",
+    "currency",
+)
 
 
 class ConversationStatus(str, Enum):
     """Where the dialogue currently stands."""
 
+    SELECTING = "selecting"
     COLLECTING = "collecting"
     CONFIRMING = "confirming"
     COMPLETED = "completed"
@@ -23,22 +30,23 @@ class ConversationStatus(str, Enum):
 
 
 class ConversationSlots(BaseModel):
-    """Transfer slots gathered across turns."""
+    """Slots gathered across turns (covers both transfers and bill payments)."""
 
     amount: Decimal | None = None
     currency: str | None = None
     recipient: str | None = None
     source_account: str | None = None
     account_number: str | None = None
+    biller: str | None = None
+    biller_category: str | None = None
+    reference_number: str | None = None
     note: str | None = None
 
-    def first_missing_required(self) -> str | None:
-        candidates: tuple[tuple[str, object | None], ...] = (
-            ("amount", self.amount),
-            ("currency", self.currency),
-            ("recipient", self.recipient),
-        )
-        for slot, value in candidates:
+    def first_missing_required(
+        self, required: tuple[str, ...] = REQUIRED_SLOTS
+    ) -> str | None:
+        for slot in required:
+            value = getattr(self, slot)
             if value is None or (isinstance(value, str) and not value.strip()):
                 return slot
         return None
