@@ -59,32 +59,31 @@ _FALLBACK: dict[Language, str] = {
 # gently steering the customer back to what the assistant can do.
 _SMALL_TALK: dict[str, dict[Language, str]] = {
     "greeting": {
-        Language.EN: "Hi there! 👋 I'm your banking assistant — I can send money "
-        "or pay a bill. What would you like to do?",
-        Language.AR: "أهلاً بك! 👋 أنا مساعدك المصرفي — أقدر أحوّل أموال أو أدفع "
-        "فاتورة. كيف أقدر أساعدك؟",
+        Language.EN: "Hey! 👋 Good to see you. I can send money or pay a bill "
+        "for you — what's up?",
+        Language.AR: "هلا والله! 👋 سعيد إني أشوفك. أقدر أحوّل لك فلوس أو أدفع "
+        "فاتورة — وش تحتاج؟",
     },
     "thanks": {
-        Language.EN: "You're very welcome 😊 Anything else I can help you with — "
-        "a transfer or a bill?",
-        Language.AR: "العفو 😊 هل من شيء آخر أقدر أساعدك فيه — تحويل أو فاتورة؟",
+        Language.EN: "Anytime! 😊 Need anything else — a transfer or a bill?",
+        Language.AR: "على الرحب! 😊 تحتاج شي ثاني — تحويل أو فاتورة؟",
     },
     "how_are_you": {
-        Language.EN: "Doing great, thanks for asking — and ready to help! 😊 "
-        "Would you like to send money or pay a bill?",
-        Language.AR: "بخير والحمد لله، وجاهز لمساعدتك! 😊 تحب تحوّل أموال أو تدفع "
+        Language.EN: "I'm good, thanks for asking! 😄 So, wanna send some money "
+        "or pay a bill?",
+        Language.AR: "تمام والحمد لله، تسلم على السؤال! 😄 تبي تحوّل فلوس أو تدفع "
         "فاتورة؟",
     },
     "bye": {
-        Language.EN: "Take care! 👋 I'm here whenever you need to send money or "
-        "pay a bill.",
-        Language.AR: "مع السلامة! 👋 أنا هنا وقت ما تحتاج تحوّل أموال أو تدفع فاتورة.",
+        Language.EN: "Catch you later! 👋 I'm around whenever you wanna send "
+        "money or pay a bill.",
+        Language.AR: "نشوفك على خير! 👋 أنا موجود وقت ما تبي تحويل أو فاتورة.",
     },
     "default": {
-        Language.EN: "Happy to chat! 😊 I'm best at sending money and paying "
-        "bills — want to try one?",
-        Language.AR: "يسعدني الحديث معك! 😊 أنا الأفضل في تحويل الأموال ودفع "
-        "الفواتير — تحب نجرّب؟",
+        Language.EN: "Love a good chat! 😊 I'm best with money transfers and "
+        "bills though — wanna give one a go?",
+        Language.AR: "يسعدني السوالف! 😊 بس أنا أشطر في التحويلات ودفع الفواتير "
+        "— نجرّب وحدة؟",
     },
 }
 
