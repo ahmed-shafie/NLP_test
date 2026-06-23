@@ -86,6 +86,22 @@ def test_resolve_shortcut_by_word_and_phrase(memory):
     assert memory.resolve_shortcut("u3", "send money to Ali") is None
 
 
+def test_resolve_shortcut_arabic_spelling_variants(memory):
+    # Saved with alef-hamza + ta-marbuta; the user types plain alef variants.
+    memory.upsert_shortcut("ar", Shortcut(name="الإيجار", recipient="محمد"))
+    memory.upsert_shortcut("ar", Shortcut(name="فاتورة المياه", recipient="الشركة"))
+    assert memory.resolve_shortcut("ar", "ادفع الايجار").name == "الإيجار"
+    assert memory.resolve_shortcut("ar", "ادفع فاتوره المياه").name == "فاتورة المياه"
+    # Diacritics on the typed form must not break the match.
+    assert memory.resolve_shortcut("ar", "اَلايجار").name == "الإيجار"
+
+
+def test_delete_shortcut_arabic_spelling_variant(memory):
+    memory.upsert_shortcut("ar2", Shortcut(name="الإيجار", recipient="محمد"))
+    assert memory.delete_shortcut("ar2", "الايجار") is True
+    assert memory.get_memory("ar2").shortcuts == []
+
+
 def test_learn_from_transfer_builds_favorite(memory):
     t = TransferRequest(amount=Decimal("100"), currency="EGP", recipient="Ahmed")
     memory.learn_from_transfer("u4", t)
@@ -147,9 +163,9 @@ def test_memory_ignored_without_user_id(memory):
     memory.update_habits("u9", HabitsUpdate(preferred_currency="EGP"))
     engine = ConversationEngine()
     result = engine.handle("send 50 to Ahmed", "s9")  # no user_id
-    # Without a user, the habit currency (EGP) is ignored; the generic USD default
+    # Without a user, the habit currency (EGP) is ignored; the generic SAR default
     # applies instead.
-    assert result.state.slots.currency == "USD"
+    assert result.state.slots.currency == "SAR"
 
 
 # ------------------------------- API endpoints ----------------------------- #

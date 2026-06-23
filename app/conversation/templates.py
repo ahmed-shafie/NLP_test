@@ -49,10 +49,80 @@ _GREETING: dict[Language, str] = {
 }
 
 _FALLBACK: dict[Language, str] = {
-    Language.EN: "I can help you transfer money. Try, for example, "
-    '"send 500 USD to Ahmed".',
-    Language.AR: 'أستطيع مساعدتك في تحويل الأموال. جرّب مثلاً: "حوّل ٥٠٠ دولار إلى أحمد".',
+    Language.EN: "Hmm, I didn't quite catch that 🤔 — I can send money or pay a "
+    'bill. For example, try "send 500 SAR to Ahmed" or "pay my STC bill".',
+    Language.AR: "لم أفهم تماماً 🤔 — أستطيع تحويل الأموال أو دفع الفواتير. "
+    'جرّب مثلاً: "حوّل ٥٠٠ ريال إلى أحمد" أو "ادفع فاتورة STC".',
 }
+
+# Warm chit-chat replies, keyed by a small-talk kind. Each one stays helpful by
+# gently steering the customer back to what the assistant can do.
+_SMALL_TALK: dict[str, dict[Language, str]] = {
+    "greeting": {
+        Language.EN: "Hey! 👋 Good to see you. I can send money or pay a bill "
+        "for you — what's up?",
+        Language.AR: "هلا والله! 👋 سعيد إني أشوفك. أقدر أحوّل لك فلوس أو أدفع "
+        "فاتورة — وش تحتاج؟",
+    },
+    "thanks": {
+        Language.EN: "Anytime! 😊 Need anything else — a transfer or a bill?",
+        Language.AR: "على الرحب! 😊 تحتاج شي ثاني — تحويل أو فاتورة؟",
+    },
+    "how_are_you": {
+        Language.EN: "I'm good, thanks for asking! 😄 So, wanna send some money "
+        "or pay a bill?",
+        Language.AR: "تمام والحمد لله، تسلم على السؤال! 😄 تبي تحوّل فلوس أو تدفع "
+        "فاتورة؟",
+    },
+    "bye": {
+        Language.EN: "Catch you later! 👋 I'm around whenever you wanna send "
+        "money or pay a bill.",
+        Language.AR: "نشوفك على خير! 👋 أنا موجود وقت ما تبي تحويل أو فاتورة.",
+    },
+    "default": {
+        Language.EN: "Love a good chat! 😊 I'm best with money transfers and "
+        "bills though — wanna give one a go?",
+        Language.AR: "يسعدني السوالف! 😊 بس أنا أشطر في التحويلات ودفع الفواتير "
+        "— نجرّب وحدة؟",
+    },
+}
+
+# Keyword cues used to pick the right warm reply (matched on normalized tokens).
+_SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
+    (
+        "how_are_you",
+        frozenset(
+            {"how", "are", "you", "doing", "كيف", "حالك", "عامل", "ايه", "اخبارك"}
+        ),
+    ),
+    (
+        "thanks",
+        frozenset({"thanks", "thank", "thx", "شكرا", "مشكور", "تسلم", "يعطيك"}),
+    ),
+    (
+        "bye",
+        frozenset({"bye", "goodbye", "وداعا", "باي"}),
+    ),
+    (
+        "greeting",
+        frozenset(
+            {
+                "hi",
+                "hello",
+                "hey",
+                "yo",
+                "morning",
+                "evening",
+                "مرحبا",
+                "اهلا",
+                "السلام",
+                "هاي",
+                "صباح",
+                "مساء",
+            }
+        ),
+    ),
+)
 
 _CANCELLED: dict[Language, str] = {
     Language.EN: "Okay, I've cancelled the transfer.",
@@ -82,6 +152,46 @@ def fallback(language: Language) -> str:
 
 def cancelled(language: Language) -> str:
     return _CANCELLED[language]
+
+
+# Filler words allowed in an otherwise pure chit-chat message ("hello there").
+_SMALL_TALK_FILLERS: frozenset[str] = frozenset(
+    {"there", "friend", "buddy", "sir", "dear", "please", "the", "a", "good"}
+)
+_ALL_SMALL_TALK_CUES: frozenset[str] = frozenset(
+    tok for _, cues in _SMALL_TALK_CUES for tok in cues
+)
+
+
+def _small_talk_kind(text: str) -> str | None:
+    from app.nlu.normalize import normalize_tokens
+
+    tokens = set(normalize_tokens(text))
+    if not tokens:
+        return None
+    # Only treat as chit-chat when the message is *purely* greeting/thanks/etc.
+    # (cue tokens + a few fillers), so "hi I want to pay a bill" still routes.
+    if not tokens & _ALL_SMALL_TALK_CUES:
+        return None
+    if tokens - _ALL_SMALL_TALK_CUES - _SMALL_TALK_FILLERS:
+        return None
+    for kind, cues in _SMALL_TALK_CUES:
+        if tokens & cues:
+            return kind
+    return None
+
+
+def is_small_talk(text: str) -> bool:
+    """True when ``text`` is *purely* chit-chat (greeting/thanks/bye/etc.)."""
+
+    return _small_talk_kind(text) is not None
+
+
+def small_talk(text: str, language: Language) -> str:
+    """Return a warm chit-chat reply, picking the kind from ``text`` cues."""
+
+    kind = _small_talk_kind(text) or "default"
+    return _SMALL_TALK[kind][language]
 
 
 def confirm_prompt(

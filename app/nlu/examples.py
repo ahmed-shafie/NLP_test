@@ -44,6 +44,21 @@ INTENT_EXAMPLES: list[tuple[str, Intent]] = [
     ("ادفع فاتورة الغاز ٣٢٠ جنيه", Intent.PAY_BILL),
     ("اريد دفع فاتورة الموبايل فودافون", Intent.PAY_BILL),
     ("ادفع فاتورة الكهرباء 778899 بمبلغ 320", Intent.PAY_BILL),
+    # --- small_talk / chit-chat (English) ---
+    ("hi", Intent.SMALL_TALK),
+    ("hello there", Intent.SMALL_TALK),
+    ("hey, good morning", Intent.SMALL_TALK),
+    ("thanks a lot", Intent.SMALL_TALK),
+    ("thank you so much", Intent.SMALL_TALK),
+    ("how are you doing", Intent.SMALL_TALK),
+    ("goodbye", Intent.SMALL_TALK),
+    # --- small_talk / chit-chat (Arabic) ---
+    ("مرحبا", Intent.SMALL_TALK),
+    ("اهلا وسهلا", Intent.SMALL_TALK),
+    ("السلام عليكم", Intent.SMALL_TALK),
+    ("شكرا جزيلا", Intent.SMALL_TALK),
+    ("كيف حالك", Intent.SMALL_TALK),
+    ("مع السلامة", Intent.SMALL_TALK),
     # --- fallback / out of scope (English) ---
     ("what is my account balance", Intent.FALLBACK),
     ("show me my recent transactions", Intent.FALLBACK),

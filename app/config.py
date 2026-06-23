@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     # Cosine-similarity floor for accepting a contact match.
     contact_match_threshold: float = 0.5
 
+    # ---- Biller catalogue (SADAD) + name gazetteer ----
+    # Resolve billers against the SADAD catalogue (gazetteer + FAISS fallback).
+    biller_catalog_enabled: bool = True
+
+    # Cosine-similarity floor for accepting a FAISS biller match.
+    biller_match_threshold: float = 0.55
+
+    # Use the name gazetteer to canonicalise/typo-correct recipient names.
+    names_gazetteer_enabled: bool = True
+
+    # rapidfuzz ratio floor (0-100) for accepting a fuzzy name match.
+    name_match_score: float = 88.0
+
     # ---- LiteLLM exception handler (local LLM via Ollama by default) ----
     # Route the LLM fallback through LiteLLM. Disable to skip the LLM entirely.
     llm_enabled: bool = True
@@ -244,7 +257,8 @@ BILLER_CATEGORIES: dict[str, set[str]] = {
 }
 
 # Default currency assumed when the user gives an amount with no currency.
-DEFAULT_CURRENCY = "USD"
+# SAR (Saudi Riyal) is the default for all flows (transfers and SADAD bills).
+DEFAULT_CURRENCY = "SAR"
 
 # Currency symbol -> ISO code, used while tokenizing amounts like ``$50``.
 CURRENCY_SYMBOLS: dict[str, str] = {"$": "USD", "€": "EUR", "£": "GBP"}

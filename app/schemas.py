@@ -23,6 +23,7 @@ class Intent(str, Enum):
 
     TRANSFER_MONEY = "transfer_money"
     PAY_BILL = "pay_bill"
+    SMALL_TALK = "small_talk"
     FALLBACK = "fallback"
 
 
@@ -41,6 +42,8 @@ class BillEntities(BaseModel):
 
     biller: str | None = None
     biller_category: str | None = None
+    biller_code: str | None = None
+    biller_name: str | None = None
     reference_number: str | None = None
     amount: Decimal | None = None
     currency: str | None = None
@@ -207,6 +210,12 @@ class BillPaymentRequest(BaseModel):
     biller: str = Field(..., min_length=1, description="Who is being paid.")
     biller_category: str | None = Field(
         default=None, description="Canonical biller category when recognised."
+    )
+    biller_code: str | None = Field(
+        default=None, description="SADAD biller code (e.g. '001'), when resolved."
+    )
+    biller_name: str | None = Field(
+        default=None, description="Resolved SADAD biller display name, when known."
     )
     reference_number: str = Field(
         ..., min_length=1, description="Bill / subscriber / account reference."

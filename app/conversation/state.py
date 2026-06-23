@@ -39,6 +39,7 @@ class ConversationSlots(BaseModel):
     account_number: str | None = None
     biller: str | None = None
     biller_category: str | None = None
+    biller_code: str | None = None
     reference_number: str | None = None
     note: str | None = None
 
