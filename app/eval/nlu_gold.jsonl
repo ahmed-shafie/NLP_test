@@ -1,0 +1,73 @@
+{"text": "send 50 to Ahmed", "language": "en", "intent": "transfer_money", "slots": {"amount": "50", "currency": "SAR", "recipient": "Ahmed"}}
+{"text": "transfer 500 USD to John", "language": "en", "intent": "transfer_money", "slots": {"amount": "500", "currency": "USD", "recipient": "John"}}
+{"text": "wire 1000 EUR to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "1000", "currency": "EUR", "recipient": "Sara"}}
+{"text": "send 20 to Mohammed", "language": "en", "intent": "transfer_money", "slots": {"amount": "20", "currency": "SAR", "recipient": "Mohammed"}}
+{"text": "move 250 from savings to Lara", "language": "en", "intent": "transfer_money", "slots": {"amount": "250", "currency": "SAR", "recipient": "Lara"}}
+{"text": "send 300 to Khaled", "language": "en", "intent": "transfer_money", "slots": {"amount": "300", "currency": "SAR", "recipient": "Khaled"}}
+{"text": "transfer 150 to Yusuf", "language": "en", "intent": "transfer_money", "slots": {"amount": "150", "currency": "SAR", "recipient": "Yusuf"}}
+{"text": "send 5000 SAR to Mohammed", "language": "en", "intent": "transfer_money", "slots": {"amount": "5000", "currency": "SAR", "recipient": "Mohammed"}}
+{"text": "wire 250 dollars to John", "language": "en", "intent": "transfer_money", "slots": {"amount": "250", "currency": "USD", "recipient": "John"}}
+{"text": "transfer 80 to Fatima", "language": "en", "intent": "transfer_money", "slots": {"amount": "80", "currency": "SAR", "recipient": "Fatima"}}
+{"text": "send 1200 to Layla", "language": "en", "intent": "transfer_money", "slots": {"amount": "1200", "currency": "SAR", "recipient": "Layla"}}
+{"text": "please transfer 640 to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "640", "currency": "SAR", "recipient": "Sara"}}
+{"text": "send 45 EUR to Khaled", "language": "en", "intent": "transfer_money", "slots": {"amount": "45", "currency": "EUR", "recipient": "Khaled"}}
+{"text": "remit 900 to Ahmed", "language": "en", "intent": "transfer_money", "slots": {"amount": "900", "currency": "SAR", "recipient": "Ahmed"}}
+{"text": "send 60 GBP to John", "language": "en", "intent": "transfer_money", "slots": {"amount": "60", "currency": "GBP", "recipient": "John"}}
+{"text": "transfer 100 to Mohammed", "language": "en", "intent": "transfer_money", "slots": {"amount": "100", "currency": "SAR", "recipient": "Mohammed"}}
+{"text": "send 2000 to Yusuf", "language": "en", "intent": "transfer_money", "slots": {"amount": "2000", "currency": "SAR", "recipient": "Yusuf"}}
+{"text": "wire 30 to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "30", "currency": "SAR", "recipient": "Sara"}}
+{"text": "send 70 to Laila", "language": "en", "intent": "transfer_money", "slots": {"amount": "70", "currency": "SAR", "recipient": "Laila"}}
+{"text": "transfer 410 SAR to Khaled", "language": "en", "intent": "transfer_money", "slots": {"amount": "410", "currency": "SAR", "recipient": "Khaled"}}
+{"text": "حول 100 إلى محمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "100", "currency": "SAR", "recipient": "محمد"}}
+{"text": "ارسل 1000 ريال إلى سارة", "language": "ar", "intent": "transfer_money", "slots": {"amount": "1000", "currency": "SAR", "recipient": "ساره"}}
+{"text": "حولي 300 درهم لعلي", "language": "ar", "intent": "transfer_money", "slots": {"amount": "300", "currency": "AED", "recipient": "علي"}}
+{"text": "ابعت 200 جنيه لمحمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "200", "currency": "EGP", "recipient": "محمد"}}
+{"text": "اريد تحويل 500 دولار الى خالد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "500", "currency": "USD", "recipient": "خالد"}}
+{"text": "حول 250 إلى أحمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "250", "currency": "SAR", "recipient": "أحمد"}}
+{"text": "ارسل 60 يورو إلى سارة", "language": "ar", "intent": "transfer_money", "slots": {"amount": "60", "currency": "EUR", "recipient": "ساره"}}
+{"text": "حول 1500 ريال إلى فاطمة", "language": "ar", "intent": "transfer_money", "slots": {"amount": "1500", "currency": "SAR", "recipient": "فاطمة"}}
+{"text": "ابعت 90 لعلي", "language": "ar", "intent": "transfer_money", "slots": {"amount": "90", "currency": "SAR", "recipient": "علي"}}
+{"text": "حولي 320 إلى خالد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "320", "currency": "SAR", "recipient": "خالد"}}
+{"text": "ارسل 45 جنيه إلى محمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "45", "currency": "EGP", "recipient": "محمد"}}
+{"text": "حول 700 إلى ليلى", "language": "ar", "intent": "transfer_money", "slots": {"amount": "700", "currency": "SAR", "recipient": "ليلى"}}
+{"text": "اريد ارسال 130 ريال الى احمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "130", "currency": "SAR", "recipient": "أحمد"}}
+{"text": "حول 80 درهم إلى سارة", "language": "ar", "intent": "transfer_money", "slots": {"amount": "80", "currency": "AED", "recipient": "ساره"}}
+{"text": "ابعت 5000 ريال لمحمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "5000", "currency": "SAR", "recipient": "محمد"}}
+{"text": "pay my STC bill 778899 amount 320", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "001", "reference_number": "778899", "amount": "320", "currency": "SAR"}}
+{"text": "pay my Mobily bill 5512 amount 150", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "005", "reference_number": "5512", "amount": "150", "currency": "SAR"}}
+{"text": "pay Zain bill reference 4455123 amount 90", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "044", "reference_number": "4455123", "amount": "90", "currency": "SAR"}}
+{"text": "settle my Saudi Electric Company bill 99100 amount 200", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "002", "reference_number": "99100", "amount": "200", "currency": "SAR"}}
+{"text": "pay my electricity bill 778899 amount 200", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "002", "reference_number": "778899", "amount": "200", "currency": "SAR"}}
+{"text": "pay the water bill 4455 amount 120", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "015", "reference_number": "4455", "amount": "120", "currency": "SAR"}}
+{"text": "pay Marafiq bill 5566 amount 310", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "004", "reference_number": "5566", "amount": "310", "currency": "SAR"}}
+{"text": "pay National Water Company bill 7788 amount 60", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "138", "reference_number": "7788", "amount": "60", "currency": "SAR"}}
+{"text": "pay my gas bill 9911 amount 75", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "148", "reference_number": "9911", "amount": "75", "currency": "SAR"}}
+{"text": "pay STC bill 100200 amount 500", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "001", "reference_number": "100200", "amount": "500", "currency": "SAR"}}
+{"text": "pay Mobily bill 220033 amount 45", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "005", "reference_number": "220033", "amount": "45", "currency": "SAR"}}
+{"text": "pay Zain bill 5512 amount 130", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "044", "reference_number": "5512", "amount": "130", "currency": "SAR"}}
+{"text": "ادفع فاتورة الكهرباء 778899 بمبلغ 320", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "002", "reference_number": "778899", "amount": "320", "currency": "SAR"}}
+{"text": "سدد فاتورة المياه رقم ٤٤٥٥ بمبلغ ١٠٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "015", "reference_number": "4455", "amount": "100", "currency": "SAR"}}
+{"text": "ادفع فاتورة موبايلي ٣٢٠ ريال رقم ٥٥١٢", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "005", "reference_number": "5512", "amount": "320", "currency": "SAR"}}
+{"text": "ادفع فاتورة زين رقم ٤٤٥٥١٢٣ بمبلغ ٩٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "044", "reference_number": "4455123", "amount": "90", "currency": "SAR"}}
+{"text": "ادفع فاتورة الكهرباء رقم ٩٩١٠٠ بمبلغ ٢٠٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "002", "reference_number": "99100", "amount": "200", "currency": "SAR"}}
+{"text": "سدد فاتورة مرافق رقم ٥٥٦٦ بمبلغ ٣١٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "004", "reference_number": "5566", "amount": "310", "currency": "SAR"}}
+{"text": "ادفع فاتورة الغاز رقم ٩٩١١ بمبلغ ٧٥", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "148", "reference_number": "9911", "amount": "75", "currency": "SAR"}}
+{"text": "ادفع فاتورة اس تي سي رقم ١٠٠٢٠٠ بمبلغ ٥٠٠", "language": "ar", "intent": "pay_bill", "slots": {"reference_number": "100200", "amount": "500", "currency": "SAR"}}
+{"text": "hi", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "hello there", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "hey good morning", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "thanks a lot", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "thank you so much", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "how are you doing", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "goodbye", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "good evening", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "thanks for your help", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "hello", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "مرحبا", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "اهلا وسهلا", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "صباح الخير", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "شكرا جزيلا", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "كيف حالك", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "شكرا لك", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "اهلا", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "السلام عليكم", "language": "ar", "intent": "small_talk", "slots": {}}

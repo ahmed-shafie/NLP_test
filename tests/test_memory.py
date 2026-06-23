@@ -96,6 +96,19 @@ def test_resolve_shortcut_arabic_spelling_variants(memory):
     assert memory.resolve_shortcut("ar", "اَلايجار").name == "الإيجار"
 
 
+def test_resolve_shortcut_cross_script_name(memory):
+    # A person-name shortcut saved in one script matches when referenced in the
+    # other (C1), via the name gazetteer's transliteration pairs.
+    memory.upsert_shortcut("cx", Shortcut(name="mohammed", recipient="محمد"))
+    assert memory.resolve_shortcut("cx", "حوّل لـ محمد").name == "mohammed"
+
+    memory.upsert_shortcut("cx2", Shortcut(name="أحمد", recipient="Ahmed"))
+    assert memory.resolve_shortcut("cx2", "send to ahmed").name == "أحمد"
+
+    # A non-name label (no transliteration) is unaffected: no false match.
+    assert memory.resolve_shortcut("cx", "pay the rent") is None
+
+
 def test_delete_shortcut_arabic_spelling_variant(memory):
     memory.upsert_shortcut("ar2", Shortcut(name="الإيجار", recipient="محمد"))
     assert memory.delete_shortcut("ar2", "الايجار") is True

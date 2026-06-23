@@ -143,24 +143,25 @@ def test_validate_bill_payment_non_positive_amount():
 
 
 def test_one_shot_bill_reaches_confirmation(engine: ConversationEngine):
-    result = engine.handle("pay 320 EGP electricity bill 778899", "ob1")
+    # A named (unambiguous) biller goes straight to confirmation.
+    result = engine.handle("pay 320 EGP STC bill 778899", "ob1")
     assert result.state.intent is Intent.PAY_BILL
     assert result.state.status is ConversationStatus.CONFIRMING
-    assert result.state.slots.biller == "Saudi Electric Company"
-    assert result.state.slots.biller_code == "002"
+    assert result.state.slots.biller == "STC"
+    assert result.state.slots.biller_code == "001"
     assert result.state.slots.reference_number == "778899"
     assert result.state.slots.amount == Decimal("320")
     assert result.state.slots.currency == "EGP"
 
 
 def test_one_shot_bill_confirm_emits_payload(engine: ConversationEngine):
-    engine.handle("pay 320 EGP electricity bill 778899", "ob2")
+    engine.handle("pay 320 EGP STC bill 778899", "ob2")
     result = engine.handle("yes", "ob2")
     assert result.state.status is ConversationStatus.COMPLETED
     assert result.bill is not None
-    assert result.bill.biller == "Saudi Electric Company"
-    assert result.bill.biller_code == "002"
-    assert result.bill.biller_name == "Saudi Electric Company"
+    assert result.bill.biller == "STC"
+    assert result.bill.biller_code == "001"
+    assert result.bill.biller_name == "STC"
     assert result.bill.reference_number == "778899"
     assert result.bill.amount == Decimal("320")
     assert result.bill.currency == "EGP"
@@ -203,7 +204,7 @@ def test_chooser_choose_bill_then_flow(engine: ConversationEngine):
     assert r.state.intent is Intent.PAY_BILL
     assert r.state.pending_slot == "biller"
 
-    r = engine.handle("water 5512", "ch2")
+    r = engine.handle("Water Services 5512", "ch2")
     assert r.state.slots.biller == "Water Services"
     assert r.state.slots.biller_code == "015"
     assert r.state.slots.reference_number == "5512"
@@ -252,7 +253,10 @@ def test_clear_bill_skips_chooser(engine: ConversationEngine):
 
 
 def test_arabic_one_shot_bill(engine: ConversationEngine):
-    result = engine.handle("ادفع فاتورة الكهرباء 778899 بمبلغ 320", "ar1")
+    # A named (unambiguous) Arabic biller goes straight to confirmation.
+    result = engine.handle(
+        "ادفع فاتورة الشركة السعودية للكهرباء 778899 بمبلغ 320", "ar1"
+    )
     assert result.state.intent is Intent.PAY_BILL
     assert result.state.status is ConversationStatus.CONFIRMING
     assert result.state.slots.biller == "الشركة السعودية للكهرباء"
@@ -266,3 +270,56 @@ def test_arabic_one_shot_bill(engine: ConversationEngine):
 def test_arabic_bill_confirm_prompt_is_arabic(engine: ConversationEngine):
     result = engine.handle("ادفع فاتورة الغاز 1122 بمبلغ 50", "ar2")
     assert "تأكيد" in result.reply
+
+
+# ------------------------- biller disambiguation (C2) --------------------- #
+
+
+def test_ambiguous_biller_asks_which_one(engine: ConversationEngine):
+    # "electricity" maps to two SADAD billers -> the engine asks instead of guessing.
+    result = engine.handle("pay my electricity bill 778899 amount 200", "dz1")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.pending_slot == "biller"
+    assert len(result.state.biller_options) == 2
+    codes = {opt.code for opt in result.state.biller_options}
+    assert codes == {"002", "004"}
+    # Other slots stated in the same turn are retained for after the choice.
+    assert result.state.slots.reference_number == "778899"
+    assert result.state.slots.amount == Decimal("200")
+    assert result.state.slots.currency == "SAR"
+
+
+def test_disambiguation_pick_by_number(engine: ConversationEngine):
+    engine.handle("pay my electricity bill 778899 amount 200", "dz2")
+    result = engine.handle("2", "dz2")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.biller_code == "004"
+    assert result.state.slots.biller == "Marafiq"
+
+
+def test_disambiguation_pick_by_name(engine: ConversationEngine):
+    engine.handle("pay my electricity bill 778899 amount 200", "dz3")
+    result = engine.handle("Saudi Electric Company", "dz3")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.biller_code == "002"
+
+
+def test_disambiguation_unrecognised_reask(engine: ConversationEngine):
+    engine.handle("pay my electricity bill 778899 amount 200", "dz4")
+    result = engine.handle("not sure", "dz4")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert "(1)" in result.reply and "(2)" in result.reply
+
+
+def test_disambiguation_arabic_pick_by_indic_digit(engine: ConversationEngine):
+    engine.handle("ادفع فاتورة الكهرباء 778899 بمبلغ 200", "dz5")
+    result = engine.handle("١", "dz5")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.biller_code == "002"
+
+
+def test_named_biller_skips_disambiguation(engine: ConversationEngine):
+    # Naming the specific biller resolves directly, no question asked.
+    result = engine.handle("pay Marafiq bill 5566 amount 310", "dz6")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.biller_code == "004"

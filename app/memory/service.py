@@ -6,6 +6,7 @@ import logging
 from decimal import Decimal
 
 from app.config import settings
+from app.data_loader import transliterations
 from app.memory.schemas import (
     Habits,
     HabitsUpdate,
@@ -145,6 +146,9 @@ class MemoryBrain:
 
         Both the message and the shortcut name are normalized first, so Arabic
         spelling variants (alef/ya/ta-marbuta, diacritics, digits) still match.
+        A single-word name that is a recognised person name also matches across
+        scripts (e.g. a shortcut "mohammed" referenced as "محمد"), using the
+        name gazetteer's transliteration pairs.
         """
 
         memory = self._store.get(user_id)
@@ -152,12 +156,23 @@ class MemoryBrain:
             return None
         normalized = normalize(text)
         tokens = set(normalized.split())
+        # Expand the message tokens with their cross-script equivalents once.
+        expanded = set(tokens)
+        for token in tokens:
+            expanded |= transliterations(token)
         for shortcut in memory.shortcuts:
             name = normalize(shortcut.name)
             if not name:
                 continue
-            # Match a single-word name as a token, or a multi-word name as a phrase.
-            if (" " in name and name in normalized) or name in tokens:
+            if " " in name:
+                # Multi-word names match as a contiguous phrase (same script).
+                if name in normalized:
+                    return shortcut
+                continue
+            if name in tokens:
+                return shortcut
+            # Cross-script: a person-name shortcut referenced in the other script.
+            if ({name} | transliterations(name)) & expanded:
                 return shortcut
         return None
 

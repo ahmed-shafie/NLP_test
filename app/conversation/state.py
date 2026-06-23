@@ -24,9 +24,18 @@ class ConversationStatus(str, Enum):
 
     SELECTING = "selecting"
     COLLECTING = "collecting"
+    DISAMBIGUATING = "disambiguating"
     CONFIRMING = "confirming"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+
+
+class BillerOption(BaseModel):
+    """A candidate biller offered when a generic term is ambiguous."""
+
+    code: str
+    name: str
+    category: str | None = None
 
 
 class ConversationSlots(BaseModel):
@@ -63,6 +72,7 @@ class ConversationState(BaseModel):
     status: ConversationStatus = ConversationStatus.COLLECTING
     slots: ConversationSlots = Field(default_factory=ConversationSlots)
     pending_slot: str | None = None
+    biller_options: list[BillerOption] = Field(default_factory=list)
     turns: int = 0
 
     def reset(self) -> None:
@@ -72,3 +82,4 @@ class ConversationState(BaseModel):
         self.status = ConversationStatus.COLLECTING
         self.slots = ConversationSlots()
         self.pending_slot = None
+        self.biller_options = []
