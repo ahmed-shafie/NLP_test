@@ -142,6 +142,15 @@ def choose_action(language: Language) -> str:
     return _CHOOSE_ACTION[language]
 
 
+def choose_biller(names: list[str], language: Language) -> str:
+    """Ask the customer which biller they meant when a term is ambiguous."""
+
+    listing = "  ".join(f"({i + 1}) {name}" for i, name in enumerate(names))
+    if language is Language.AR:
+        return f"وجدت أكثر من جهة لهذه الفاتورة — أيها تقصد؟ {listing}"
+    return f"I found more than one biller for that — which one? {listing}"
+
+
 def greeting(language: Language) -> str:
     return _GREETING[language]
 

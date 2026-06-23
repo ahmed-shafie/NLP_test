@@ -29,20 +29,23 @@ _DATA_DIR = Path(__file__).resolve().parent / "data"
 _BILLERS_CSV = _DATA_DIR / "sadad_billers.csv"
 _NAMES_CSV = _DATA_DIR / "names.csv"
 
-# Generic words customers use mapped to a canonical SADAD biller_code. Only
-# unambiguous utilities are mapped here; ambiguous terms (e.g. "internet",
-# "mobile") are left to name matching / FAISS so we never silently guess.
-_GENERIC_BILLER_ALIASES: dict[str, str] = {
-    "electricity": "002",
-    "power": "002",
-    "كهرباء": "002",
-    "الكهرباء": "002",
-    "water": "015",
-    "مياه": "015",
-    "مية": "015",
-    "gas": "148",
-    "غاز": "148",
-    "الغاز": "148",
+# Generic words customers use mapped to the SADAD billers they could mean,
+# canonical/most-common first. A term with several candidates (e.g. "electricity"
+# -> Saudi Electric Company *or* Marafiq) is ambiguous: the conversation engine
+# asks the customer which one instead of silently guessing. Terms that map to a
+# single code resolve directly.
+_GENERIC_BILLER_GROUPS: dict[str, tuple[str, ...]] = {
+    "electricity": ("002", "004"),
+    "power": ("002", "004"),
+    "كهرباء": ("002", "004"),
+    "الكهرباء": ("002", "004"),
+    "water": ("015", "138"),
+    "مياه": ("015", "138"),
+    "المياه": ("015", "138"),
+    "مية": ("015", "138"),
+    "gas": ("148",),
+    "غاز": ("148",),
+    "الغاز": ("148",),
 }
 
 
@@ -115,20 +118,58 @@ def _contains_subsequence(haystack: list[str], needle: tuple[str, ...]) -> bool:
 
 
 def resolve_biller_gazetteer(text: str) -> BillerRecord | None:
-    """Exact resolution via biller names then curated generic aliases."""
+    """Exact resolution via biller names then curated generic aliases.
+
+    For an ambiguous generic term the canonical (first) candidate is returned, so
+    the stateless single-result path stays deterministic; the conversation engine
+    uses :func:`resolve_biller_candidates` to offer the full choice instead.
+    """
+
+    candidates = _gazetteer_candidates(text)
+    return candidates[0] if candidates else None
+
+
+def _gazetteer_candidates(text: str) -> list[BillerRecord]:
+    """Exact name match (one record) or a generic-term group (one or several)."""
 
     tokens = normalize_tokens(text)
     if not tokens:
-        return None
+        return []
     for name_tokens, rec in _biller_name_index():
         if _contains_subsequence(tokens, name_tokens):
-            return rec
+            return [rec]
     by_code = _biller_by_code()
     token_set = set(tokens)
-    for alias, code in _GENERIC_BILLER_ALIASES.items():
-        if normalize(alias) in token_set and code in by_code:
-            return by_code[code]
-    return None
+    for term, codes in _GENERIC_BILLER_GROUPS.items():
+        if normalize(term) in token_set:
+            recs = [by_code[c] for c in codes if c in by_code]
+            if recs:
+                return recs
+    return []
+
+
+def resolve_biller_candidates(
+    text: str, *, allow_semantic: bool = False
+) -> list[BillerRecord]:
+    """Return every SADAD biller ``text`` could mean (ordered, most likely first).
+
+    Returns ``[]`` when nothing matches, ``[rec]`` for an unambiguous hit (exact
+    name, single-candidate generic term, or a FAISS fallback when
+    ``allow_semantic`` is set), and several records when a generic term is
+    ambiguous (e.g. "electricity" -> Saudi Electric Company or Marafiq) so the
+    caller can ask the customer to choose.
+    """
+
+    if not settings.biller_catalog_enabled:
+        return []
+    candidates = _gazetteer_candidates(text)
+    if candidates:
+        return candidates
+    if allow_semantic:
+        rec = resolve_biller_semantic(text)
+        if rec is not None:
+            return [rec]
+    return []
 
 
 # ---- FAISS fuzzy/semantic fallback for billers --------------------------- #
@@ -223,6 +264,42 @@ def _load_names() -> dict[str, str]:
 @lru_cache(maxsize=1)
 def _name_keys() -> list[str]:
     return list(_load_names().keys())
+
+
+@lru_cache(maxsize=1)
+def _transliteration_map() -> dict[str, frozenset[str]]:
+    """``normalized name form -> its equivalents in the other script``.
+
+    Built from the English/Arabic pairs in ``names.csv`` so a person name written
+    in one script can be matched against the same name written in the other
+    (e.g. "mohammed" <-> "محمد").
+    """
+
+    pairs: dict[str, set[str]] = {}
+    if not _NAMES_CSV.exists():
+        return {}
+    with _NAMES_CSV.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            en = normalize((row.get("name_en") or "").strip())
+            ar = normalize((row.get("name_ar") or "").strip())
+            if en and ar:
+                pairs.setdefault(en, set()).add(ar)
+                pairs.setdefault(ar, set()).add(en)
+    return {key: frozenset(values) for key, values in pairs.items()}
+
+
+def transliterations(token: str) -> set[str]:
+    """Return the normalized cross-script equivalents of a single name token.
+
+    Empty when the gazetteer is disabled or the token is not a recognised name.
+    """
+
+    if not settings.names_gazetteer_enabled:
+        return set()
+    key = normalize(token)
+    if not key:
+        return set()
+    return set(_transliteration_map().get(key, frozenset()))
 
 
 def lookup_name(token: str) -> str | None:

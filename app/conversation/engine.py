@@ -10,14 +10,18 @@ from app.config import DEFAULT_CURRENCY, settings
 from app.conversation import templates
 from app.conversation.state import (
     BILL_REQUIRED_SLOTS,
+    BillerOption,
+    ConversationSlots,
     ConversationState,
     ConversationStatus,
 )
 from app.conversation.store import get_session_store
+from app.data_loader import BillerRecord, resolve_biller_candidates
 from app.memory.schemas import Shortcut
 from app.memory.service import get_memory_brain
 from app.nlu import entities, pipeline
 from app.nlu.lang import detect_language
+from app.nlu.normalize import normalize
 from app.schemas import (
     BillPaymentRequest,
     Intent,
@@ -188,6 +192,8 @@ class ConversationEngine:
                 result = self._finish(state, templates.cancelled(lang))
         elif state.status is ConversationStatus.CONFIRMING:
             result = self._handle_confirmation(state, text, lang, tracer)
+        elif state.status is ConversationStatus.DISAMBIGUATING:
+            result = self._handle_disambiguation(state, text, lang, tracer)
         elif state.status is ConversationStatus.SELECTING:
             result = self._handle_selection(state, text, lang, tracer)
         else:
@@ -373,16 +379,12 @@ class ConversationEngine:
     ) -> ConversationResult:
         slots = state.slots
 
-        # First interpret a bare answer to the slot we just asked for.
-        if state.pending_slot:
+        # First interpret a bare answer to a non-biller slot we just asked for.
+        if state.pending_slot and state.pending_slot != "biller":
             self._fill_pending_bill(state, text, lang)
 
-        # Then merge anything else stated this turn (without overwriting).
+        # Merge non-biller slots stated this turn (without overwriting).
         bills = entities.extract_bill_entities(text, lang, allow_semantic=True)
-        if not slots.biller and bills.biller:
-            slots.biller = bills.biller
-            slots.biller_category = bills.biller_category
-            slots.biller_code = bills.biller_code
         if not slots.reference_number and bills.reference_number:
             slots.reference_number = bills.reference_number
         if slots.amount is None and bills.amount is not None:
@@ -390,7 +392,135 @@ class ConversationEngine:
         if not slots.currency and bills.currency:
             slots.currency = bills.currency
 
-        # Learned default currency, then the generic fallback once amount is known.
+        # Apply currency defaults now so they hold even if we pause to ask the
+        # customer which biller they meant.
+        self._apply_bill_defaults(state)
+        if slots.currency is None and slots.amount is not None:
+            slots.currency = DEFAULT_CURRENCY
+
+        # Resolve the biller, asking the customer to choose if it's ambiguous.
+        if not slots.biller:
+            asked = self._resolve_bill_biller(state, text, lang)
+            if asked is not None:
+                return asked
+
+        return self._advance_bill(state, lang)
+
+    def _resolve_bill_biller(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult | None:
+        """Fill the biller slot, or return a prompt asking which biller is meant.
+
+        Returns a :class:`ConversationResult` (the disambiguation question) when
+        the term matches several SADAD billers; otherwise sets the biller slot
+        (from a single catalogue hit or free text) and returns ``None``.
+        """
+
+        slots = state.slots
+        candidates = resolve_biller_candidates(text, allow_semantic=True)
+        if len(candidates) > 1:
+            return self._ask_biller_choice(state, candidates, lang)
+        if len(candidates) == 1:
+            self._set_biller(slots, candidates[0], lang)
+            return None
+        # No catalogue match: keep the free-text biller (or the raw answer when
+        # we explicitly asked "which bill?").
+        biller, category, biller_code = entities.extract_biller(
+            text, lang, allow_semantic=True
+        )
+        if state.pending_slot == "biller":
+            slots.biller = biller or text.strip(" .,،؟?")
+            slots.biller_category = category
+            slots.biller_code = biller_code
+        elif biller:
+            slots.biller = biller
+            slots.biller_category = category
+            slots.biller_code = biller_code
+        return None
+
+    @staticmethod
+    def _set_biller(
+        slots: ConversationSlots, record: BillerRecord, lang: Language
+    ) -> None:
+        name = record.name_ar if lang is Language.AR else record.name_en
+        slots.biller = name or record.name_en
+        slots.biller_category = record.category
+        slots.biller_code = record.biller_code
+
+    def _ask_biller_choice(
+        self,
+        state: ConversationState,
+        candidates: list[BillerRecord],
+        lang: Language,
+    ) -> ConversationResult:
+        options = [
+            BillerOption(
+                code=rec.biller_code,
+                name=(rec.name_ar if lang is Language.AR else rec.name_en)
+                or rec.name_en,
+                category=rec.category,
+            )
+            for rec in candidates
+        ]
+        state.biller_options = options
+        state.pending_slot = "biller"
+        state.status = ConversationStatus.DISAMBIGUATING
+        return self._finish(
+            state, templates.choose_biller([opt.name for opt in options], lang)
+        )
+
+    def _handle_disambiguation(
+        self,
+        state: ConversationState,
+        text: str,
+        lang: Language,
+        tracer: BlockTracer,
+    ) -> ConversationResult:
+        """Resolve a reply to the "which biller?" question, then continue."""
+
+        with tracer.block("orchestrator"):
+            choice = self._match_biller_option(state.biller_options, text)
+            if choice is None:
+                # Unrecognised pick — re-ask with the same options.
+                return self._finish(
+                    state,
+                    templates.choose_biller(
+                        [opt.name for opt in state.biller_options], lang
+                    ),
+                )
+            slots = state.slots
+            slots.biller = choice.name
+            slots.biller_category = choice.category
+            slots.biller_code = choice.code
+            state.biller_options = []
+            state.pending_slot = None
+            state.status = ConversationStatus.COLLECTING
+            return self._advance_bill(state, lang)
+
+    @staticmethod
+    def _match_biller_option(
+        options: list[BillerOption], text: str
+    ) -> BillerOption | None:
+        if not options:
+            return None
+        normalized = normalize(text)
+        digits = "".join(ch for ch in normalized if ch.isdigit())
+        if digits:
+            index = int(digits)
+            if 1 <= index <= len(options):
+                return options[index - 1]
+        for option in options:
+            name = normalize(option.name)
+            if name and (name in normalized or normalized in name):
+                return option
+        return None
+
+    def _advance_bill(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult:
+        """Apply defaults, then prompt for the next missing slot or confirm."""
+
+        slots = state.slots
         self._apply_bill_defaults(state)
         if slots.currency is None and slots.amount is not None:
             slots.currency = DEFAULT_CURRENCY
@@ -412,14 +542,7 @@ class ConversationEngine:
     ) -> None:
         slot = state.pending_slot
         slots = state.slots
-        if slot == "biller" and not slots.biller:
-            biller, category, biller_code = entities.extract_biller(
-                text, lang, allow_semantic=True
-            )
-            slots.biller = biller or text.strip(" .,،؟?")
-            slots.biller_category = category
-            slots.biller_code = biller_code
-        elif slot == "reference_number" and not slots.reference_number:
+        if slot == "reference_number" and not slots.reference_number:
             ref = entities.extract_reference_number(text)
             if ref:
                 slots.reference_number = ref

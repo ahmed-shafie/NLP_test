@@ -33,6 +33,9 @@ jobs:
       - name: Tests (pytest)
         run: pytest -q
 
+      - name: NLU accuracy eval (gold set)
+        run: python scripts/eval_nlu.py
+
   security-audit:
     runs-on: ubuntu-latest
     steps:

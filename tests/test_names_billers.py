@@ -12,7 +12,9 @@ from app.data_loader import (
     is_known_name,
     lookup_name,
     resolve_biller,
+    resolve_biller_candidates,
     resolve_biller_gazetteer,
+    transliterations,
 )
 from app.nlu.normalize import normalize, normalize_tokens
 from app.schemas import Intent, Language
@@ -57,6 +59,37 @@ def test_biller_semantic_disabled_by_default():
     # Arbitrary chit-chat must not be mis-resolved to a near-neighbour biller.
     assert resolve_biller_gazetteer("hello") is None
     assert resolve_biller("hello") is None  # allow_semantic defaults to False
+
+
+# ----------------------- biller candidates (C2) --------------------------- #
+
+
+def test_ambiguous_generic_term_returns_several_candidates():
+    cands = resolve_biller_candidates("pay my electricity bill")
+    codes = [rec.biller_code for rec in cands]
+    assert codes == ["002", "004"]  # Saudi Electric Company then Marafiq
+
+
+def test_named_biller_returns_single_candidate():
+    cands = resolve_biller_candidates("pay my STC bill 778899")
+    assert [rec.biller_code for rec in cands] == ["001"]
+
+
+def test_no_match_returns_empty_candidates():
+    assert resolve_biller_candidates("hello there") == []
+
+
+# --------------------- cross-script transliteration (C1) ------------------ #
+
+
+def test_transliterations_bridge_scripts():
+    assert "محمد" in transliterations("mohammed")
+    assert "mohammed" in transliterations("محمد")
+    assert transliterations("Ahmed") == {normalize("أحمد")}
+
+
+def test_transliterations_unknown_token_is_empty():
+    assert transliterations("zzzqx") == set()
 
 
 # ----------------------------- name gazetteer ----------------------------- #
