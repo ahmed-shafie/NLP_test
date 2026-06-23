@@ -89,8 +89,10 @@ class SlotScore:
 
     @property
     def f1(self) -> float:
-        p, r = self.precision, self.recall
-        return 2 * p * r / (p + r) if (p + r) else 1.0
+        # Count-based form so an all-wrong slot (tp=0, fp>0, fn>0) scores 0.0,
+        # not 1.0; only a slot with no gold and no prediction is vacuously 1.0.
+        denom = 2 * self.tp + self.fp + self.fn
+        return (2 * self.tp) / denom if denom else 1.0
 
 
 @dataclass

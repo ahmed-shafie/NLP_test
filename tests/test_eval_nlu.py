@@ -8,12 +8,22 @@ fallback cannot separate pay_bill / small_talk (see ``app.eval.harness``).
 from __future__ import annotations
 
 from app.eval.harness import (
+    SlotScore,
     check_thresholds,
     evaluate,
     format_report,
     load_gold,
 )
 from app.schemas import Intent
+
+
+def test_slot_f1_zero_when_every_prediction_is_wrong() -> None:
+    # All predictions wrong (tp=0, fp>0, fn>0) must score 0.0, not a vacuous 1.0,
+    # otherwise the gate would silently pass a total slot regression.
+    assert SlotScore(tp=0, fp=5, fn=5).f1 == 0.0
+    # No gold and no prediction is vacuously perfect.
+    assert SlotScore().f1 == 1.0
+    assert SlotScore(tp=4, fp=0, fn=0).f1 == 1.0
 
 
 def test_gold_set_is_bilingual_and_covers_all_intents() -> None:
