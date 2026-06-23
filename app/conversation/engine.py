@@ -80,6 +80,23 @@ _FORGET = {"forget", "remove", "delete", "احذف", "امسح"}
 # Tokens that pick a flow when the assistant asks "Transfer or Pay a bill?".
 _CHOOSE_TRANSFER = {"1", "١", "transfer", "send", "تحويل", "حوالة", "حول", "حوّل"}
 _CHOOSE_BILL = {"2", "٢", "bill", "bills", "فاتورة", "فواتير", "دفع"}
+# Filler tokens allowed alongside a bare menu pick ("option 2", "let's transfer").
+_CHOICE_FILLERS = {
+    "please",
+    "the",
+    "a",
+    "option",
+    "number",
+    "i",
+    "want",
+    "to",
+    "choose",
+    "pick",
+    "let",
+    "me",
+    "it",
+    "s",
+}
 
 
 def _tokens(text: str) -> set[str]:
@@ -208,11 +225,19 @@ class ConversationEngine:
     ) -> ConversationResult:
         """Resolve a reply to the Transfer/Pay-bill menu, then ask the first slot."""
 
+        choice = _parse_choice(text)
+        bare = choice is not None and _tokens(text) <= (
+            _CHOOSE_TRANSFER | _CHOOSE_BILL | _CHOICE_FILLERS
+        )
+        if not bare:
+            # Not a plain "1"/"2" pick — re-run the smart collector so a full
+            # request ("pay my electricity bill 778899") keeps its slots, and an
+            # unrecognised reply ("maybe later") re-asks the menu.
+            state.status = ConversationStatus.COLLECTING
+            state.intent = None
+            return self._collect(state, text, lang, tracer)
+
         with tracer.block("orchestrator"):
-            choice = _parse_choice(text)
-            if choice is None:
-                # Couldn't tell which one — ask again.
-                return self._finish(state, templates.choose_action(lang))
             state.intent = choice
             state.status = ConversationStatus.COLLECTING
             # The menu reply itself carries no slots; ask for the first one.
@@ -283,6 +308,11 @@ class ConversationEngine:
             if state.intent not in (Intent.TRANSFER_MONEY, Intent.PAY_BILL):
                 action = self._decide_action(state, text, lang, parsed)
                 if action is None:
+                    # Warm chit-chat reply for pure greetings/thanks; then wait
+                    # in SELECTING so a follow-up choice/request is understood.
+                    if templates.is_small_talk(text):
+                        state.status = ConversationStatus.SELECTING
+                        return self._finish(state, templates.small_talk(text, lang))
                     state.status = ConversationStatus.SELECTING
                     return self._finish(state, templates.choose_action(lang))
                 state.intent = action
@@ -348,10 +378,11 @@ class ConversationEngine:
             self._fill_pending_bill(state, text, lang)
 
         # Then merge anything else stated this turn (without overwriting).
-        bills = entities.extract_bill_entities(text, lang)
+        bills = entities.extract_bill_entities(text, lang, allow_semantic=True)
         if not slots.biller and bills.biller:
             slots.biller = bills.biller
             slots.biller_category = bills.biller_category
+            slots.biller_code = bills.biller_code
         if not slots.reference_number and bills.reference_number:
             slots.reference_number = bills.reference_number
         if slots.amount is None and bills.amount is not None:
@@ -382,9 +413,12 @@ class ConversationEngine:
         slot = state.pending_slot
         slots = state.slots
         if slot == "biller" and not slots.biller:
-            biller, category = entities.extract_biller(text, lang)
+            biller, category, biller_code = entities.extract_biller(
+                text, lang, allow_semantic=True
+            )
             slots.biller = biller or text.strip(" .,،؟?")
             slots.biller_category = category
+            slots.biller_code = biller_code
         elif slot == "reference_number" and not slots.reference_number:
             ref = entities.extract_reference_number(text)
             if ref:
@@ -537,6 +571,8 @@ class ConversationEngine:
             amount=slots.amount,
             currency=slots.currency,
             biller_category=slots.biller_category,
+            biller_code=slots.biller_code,
+            biller_name=slots.biller if slots.biller_code else None,
             note=slots.note,
         )
         if payment is None:

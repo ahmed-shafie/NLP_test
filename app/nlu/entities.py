@@ -11,6 +11,7 @@ import re
 from decimal import Decimal, InvalidOperation
 
 from app.config import BILLER_CATEGORIES, CURRENCY_SYMBOLS, SUPPORTED_CURRENCIES
+from app.data_loader import canonicalize_recipient, resolve_biller
 from app.schemas import BillEntities, Language
 
 # Arabic-Indic (٠-٩) and Extended Arabic-Indic (۰-۹) digit translation to ASCII.
@@ -94,13 +95,20 @@ def extract_currency(text: str) -> str | None:
 
 
 def extract_recipient(text: str, language: Language) -> str | None:
-    """Return the beneficiary name via language-specific surface patterns."""
+    """Return the beneficiary name via language-specific surface patterns.
+
+    Recognised given names are spelling-corrected against the name gazetteer
+    (typos + Arabic/English transliteration); unknown names pass through as-is.
+    """
 
     pattern = _AR_RECIPIENT_RE if language is Language.AR else _EN_RECIPIENT_RE
     match = pattern.search(text)
     if not match:
         return None
-    return match.group(1).strip(" ,،.") or None
+    candidate = match.group(1).strip(" ,،.")
+    if not candidate:
+        return None
+    return canonicalize_recipient(candidate)
 
 
 def extract_source_account(text: str, language: Language) -> str | None:
@@ -178,22 +186,31 @@ def _bill_amount(
     return None
 
 
-def extract_biller(text: str, language: Language) -> tuple[str | None, str | None]:
-    """Return ``(biller, category)`` for a bill utterance.
+def extract_biller(
+    text: str, language: Language, *, allow_semantic: bool = False
+) -> tuple[str | None, str | None, str | None]:
+    """Return ``(biller, category, biller_code)`` for a bill utterance.
 
-    ``category`` is a canonical name from :data:`BILLER_CATEGORIES` when a keyword
-    matches; otherwise the free-text biller before "bill"/after "فاتورة" is used.
+    Resolution order: the SADAD catalogue (exact name/alias, then an optional
+    FAISS fallback when ``allow_semantic`` is set) which yields a ``biller_code``;
+    then the generic :data:`BILLER_CATEGORIES` keywords; then the free-text
+    biller before "bill"/after "فاتورة".
     """
+
+    record = resolve_biller(text, allow_semantic=allow_semantic)
+    if record is not None:
+        name = record.name_ar if language is Language.AR else record.name_en
+        return name or record.name_en, record.category, record.biller_code
 
     lowered = normalize_digits(text).lower()
     for category, keywords in BILLER_CATEGORIES.items():
         if any(kw in lowered for kw in keywords):
-            return category, category
+            return category, category, None
     match = _EN_BILLER_RE.search(text) or _AR_BILLER_RE.search(text)
     if match:
         biller = _strip_biller_stopwords(match.group(1))
-        return (biller or None), None
-    return None, None
+        return (biller or None), None, None
+    return None, None, None
 
 
 def extract_reference_number(text: str) -> str | None:
@@ -211,11 +228,15 @@ def has_bill_word(text: str) -> bool:
     return bool(_BILL_WORD_RE.search(text))
 
 
-def extract_bill_entities(text: str, language: Language) -> BillEntities:
+def extract_bill_entities(
+    text: str, language: Language, *, allow_semantic: bool = False
+) -> BillEntities:
     """Extract all bill slots (biller, reference, amount, currency) from ``text``."""
 
     normalized = normalize_digits(text)
-    biller, category = extract_biller(text, language)
+    biller, category, biller_code = extract_biller(
+        text, language, allow_semantic=allow_semantic
+    )
     currency = extract_currency(normalized)
     reference = _reference_via_cue(normalized)
     amount = _bill_amount(normalized, currency, reference)
@@ -228,6 +249,8 @@ def extract_bill_entities(text: str, language: Language) -> BillEntities:
     return BillEntities(
         biller=biller,
         biller_category=category,
+        biller_code=biller_code,
+        biller_name=biller if biller_code else None,
         reference_number=reference,
         amount=amount,
         currency=currency,

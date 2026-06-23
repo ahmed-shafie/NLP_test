@@ -112,6 +112,8 @@ def validate_bill_payment(
     amount: Decimal | None,
     currency: str | None,
     biller_category: str | None = None,
+    biller_code: str | None = None,
+    biller_name: str | None = None,
     note: str | None = None,
 ) -> tuple[BillPaymentRequest | None, list[str], list[SlotError]]:
     """Validate gathered bill slots into a :class:`BillPaymentRequest`.
@@ -135,6 +137,8 @@ def validate_bill_payment(
         payment = BillPaymentRequest(
             biller=biller,  # type: ignore[arg-type]
             biller_category=biller_category,
+            biller_code=biller_code,
+            biller_name=biller_name,
             reference_number=reference_number,  # type: ignore[arg-type]
             amount=amount,  # type: ignore[arg-type]
             currency=currency,  # type: ignore[arg-type]

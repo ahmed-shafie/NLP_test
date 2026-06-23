@@ -107,7 +107,7 @@
 
       <div class="samples" id="chatSamples"></div>
       <div class="row" style="margin-top:8px">
-        <div><input type="text" id="msg" placeholder="Type a message, e.g. send 75 EGP to Mona" /></div>
+        <div><input type="text" id="msg" placeholder="Type a message, e.g. send 75 SAR to Mona" /></div>
         <div style="flex:0 0 auto"><button id="sendBtn">Send</button></div>
       </div>
       <div id="chatErr"></div>
@@ -153,9 +153,11 @@
     function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 
     const CHAT_SAMPLES = [
-      { t: "send 75 EGP to Mona" }, { t: "pay rent" }, { t: "yes" }, { t: "no" },
-      { t: "send 50 to Sara" }, { t: "حوّل 100 جنيه إلى محمد", rtl: true },
-      { t: "pay 320 EGP electricity bill 778899" },
+      { t: "hi" }, { t: "thanks" },
+      { t: "send 75 to Mona" }, { t: "pay rent" }, { t: "yes" }, { t: "no" },
+      { t: "حوّل 100 إلى محمد", rtl: true },
+      { t: "pay my STC bill 778899 amount 320" },
+      { t: "pay 320 electricity bill 778899" },
       { t: "I want to pay my internet bill" },
       { t: "ادفع فاتورة الكهرباء 778899 بمبلغ 320", rtl: true },
       { t: "1" }, { t: "2" },

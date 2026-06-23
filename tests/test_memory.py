@@ -147,9 +147,9 @@ def test_memory_ignored_without_user_id(memory):
     memory.update_habits("u9", HabitsUpdate(preferred_currency="EGP"))
     engine = ConversationEngine()
     result = engine.handle("send 50 to Ahmed", "s9")  # no user_id
-    # Without a user, the habit currency (EGP) is ignored; the generic USD default
+    # Without a user, the habit currency (EGP) is ignored; the generic SAR default
     # applies instead.
-    assert result.state.slots.currency == "USD"
+    assert result.state.slots.currency == "SAR"
 
 
 # ------------------------------- API endpoints ----------------------------- #

@@ -1,0 +1,261 @@
+biller_code,name_en,name_ar,category
+001,STC,الإتصالات السعودية,Telecom & Internet
+002,Saudi Electric Company,الشركة السعودية للكهرباء,Utilities
+003,Tawuniya,التعاونية للتأمين,Insurance
+004,Marafiq,مـرافــق,Utilities
+005,Mobily,مـوبـايـلـي,Telecom & Internet
+006,Madinah Municipality,أمـانـة الـمـديـنـة الـمـنـورة,Government Services
+007,Home PC Initiative,مبادرة الحاسب المنزلي,Government Services
+008,Qiyas,قياس,Education
+009,King Abdulaziz University,انتساب جامعة الملك عبدالعزيز,Education
+010,Riyadh Municipality,أمانة الرياض,Government Services
+012,Samba Services Payments,مدفوعات خدمات سامبا,Banking & Finance
+013,Ministry of Commerce,وزارة التجارة,Government Services
+014,STCSC,STC المتخصصة,Telecom & Internet
+015,Water Services,خدمات المياه,Utilities
+016,AlAhli Finance and Credit Cards,تمويل و بطاقات الأهلي,Banking & Finance
+017,Arab Open University,الجامعة العربية المفتوحة,Education
+018,American Express,أمريكان اكسبريس,Banking & Finance
+019,Jeddah Chamber of Commerce and Industry,غرفة جدة,Services
+020,General Authority of Zakat and Tax,هيئة الزكاة و الدخل,Government Services
+021,Saudi Post,البريد السعودي,Services
+022,Saudi Arabian Airlines,الخطوط الجوية العربية السعودية,Travel & Transportation
+023,Al-Hamrani Company for Investment in Trade,شركة الحمراني للاستثمار التجاري,Banking & Finance
+024,Al Yusr Leasing & Financing Company,شركة اليسر للإجارة والتمويل,Banking & Finance
+025,Eastern Province Municipality,أمانة المنطقة الشرقية,Government Services
+026,FlyNas,ناس,Travel & Transportation
+027,Holy Makkah Municipality,أمانة العاصمة المقدسة,Government Services
+028,Municipality of Jeddah,أمانة محافظة جدة,Government Services
+029,SABB Payment Services,خدمات ساب للمدفوعات,Banking & Finance
+030,Customs,الهيئة العامة للجمارك,Government Services
+031,Alawwal Bank Credit Card Payments,مدفوعات البطاقات الائتمانية للبنك الأول,Banking & Finance
+032,OSN,أو أس أن,Media & Entertainment
+033,GO TELECOM,جو للاتصالات,Telecom & Internet
+034,National Technology Group,مباشر,Services
+035,Cadre Economic Cities,كادر المدن الاقتصادية,Government Services
+036,Saudi Credit Bureau,الشـركـة السـعـودية للـمـعـلومات الائتمانية,Banking & Finance
+037,Nesma Internet,نسما انترنت,Telecom & Internet
+038,Saudi Net DSL Cards,سعودي نت DSL بطاقات,Telecom & Internet
+039,Awan For Market Data,أوان لبيانات الأسواق,Services
+040,Real Estate Development Fund,صندوق التنمية العقاري,Government Services
+041,AwalNet,أول نت,Telecom & Internet
+042,Communications and Information Technology Commission,هيئة الاتصالات و تقنية المعلومات,Government Services
+043,Adahi,أضاحي,Services
+044,Zain,زين,Telecom & Internet
+045,Saudi Arabian Agricultural Bank,البنك الزراعي العربي السعودي,Banking & Finance
+046,Royal Commission of Yanbu,الهيئة الملكية بينبع,Government Services
+047,AlRiyad Press Est,جريدة الرياض,Media & Entertainment
+048,Sahara net,صحارى نت,Telecom & Internet
+049,"Saudi Standards, Metrology and Quality Organization",الهيئة السعودية للموصفات و المقاييس والجودة,Government Services
+050,Ministry of Labor,وزارة العمل,Government Services
+051,Ministry of Media,وزارة الإعلام,Government Services
+052,AL TAYSEER ARABIAN COMPANY,شركة التيسير العربية,Banking & Finance
+053,Jazirah Newspaper Subscriptions & Advertisements Invoices,فواتير إعلانات واشتراكات جريدة الجزيرة,Media & Entertainment
+054,AlRajhi Bank Services,خدمات مصرف الراجحي,Banking & Finance
+055,Integrated Telecom Company ITC,شركة الاتصالات المتكاملة المحدودة,Telecom & Internet
+056,Falcon Credit Card,بطاقة فالكون الائتمانية,Banking & Finance
+057,Saudi Commission for Tourism and Antiquities,الهيئة العامة للسياحة والآثار,Government Services
+058,Social Development Bank,بنك التنمية الاجتماعية,Banking & Finance
+059,Cyberia,سيبيريا,Telecom & Internet
+060,GOSI,التامينات الاجتماعية,Government Services
+061,Hail Municipality,أمانة منطقة حائل,Government Services
+062,Tabouk Municipality,امانة تبوك,Government Services
+063,Taajeer Group,مجموعة تأجير,Banking & Finance
+064,Jazan Municipality,أمانة منطقة جازان,Government Services
+065,Abdul Latif Jameel United Finance,شركة عبد اللطيف جميل المتحدة للتمويل,Banking & Finance
+066,Global Goodness,نظام الخير الشامل,Services
+067,Riyad Bank Payments,مدفوعات بنك الرياض,Banking & Finance
+068,Modon,مدن,Government Services
+069,Tamwily International Co.,شركة تمويلي العالمية,Banking & Finance
+070,Al Qassim Municipality,امانة منطقة القصيم,Government Services
+071,Banque Saudi Fransi Payment Services,مدفوعات خدمات البنك السعودي الفرنسي,Banking & Finance
+072,Alyamamah University,جامعة اليمامة,Education
+073,Riyadh Chamber of Commerce and Industrial,غرفة الرياض,Services
+074,Dar Alyaum For Press and Media,دار اليوم للإعلام,Media & Entertainment
+075,Ministry of Transportation,وزارة النقل,Government Services
+076,Arab Media Company,الشركة العربية للوسائل,Media & Entertainment
+077,Assemblies of teaching Koran,جمعيات تحفيظ القران الكريم,Education
+078,Bank Al-Jazira,بنك الجزيرة,Banking & Finance
+079,Al Amthal Leasing,شركه الامثل,Banking & Finance
+080,KING SAUD UNIVERSITY,جامعة الملك سعود,Education
+081,AL MAJD TV channels,قنوات المجد,Media & Entertainment
+082,ANB Payments,مدفوعات البنك العربي,Banking & Finance
+083,SBM,الشركة السعودية للحاسبات الألكترونية المحدودة,Services
+084,Aseer Province Municipality,امانة منطقة عسير,Government Services
+085,Ishaar,إشعار,Services
+086,ALJABR FINANCE,شركة الجبر للتمويل,Banking & Finance
+087,Najran Province Municipality,امانة منطقة نجران,Government Services
+088,Ministry of Finance,وزارة المالية,Government Services
+089,Saudi Ports Authority,المؤسسة العامة للموانئ,Government Services
+098,General Authority of Civil Aviation,الهيئة العامة للطيران المدني,Government Services
+101,Ministry of Foreign Affairs,وزارة الخارجية,Government Services
+102,Municipality of Northern Borders,أمانه الحدود الشمالية,Government Services
+103,AlJouf Provence Municipality,امانة منطقة الجوف,Government Services
+104,Municipality of Al-Baha,أمانه منطقة الباحة,Government Services
+105,King Abdulaziz City for Sciences and Technology,مدينة الملك عبدالعزيز للعلوم والتقنية,Government Services
+106,Taibah University,جامعة طيبة,Education
+107,Smart Cash,سمارت كاش,Banking & Finance
+108,Ministry of Investment of Saudi Arabia,وزارة الاستثمار,Government Services
+109,Saudi Food And Drugs Authority,الهيئة العامه للغذاء والدواء,Government Services
+110,Al Rajhi Takaful,الراجحي تكافل,Insurance
+112,Amanah Al Ahsa,أمانة الاحساء,Government Services
+113,Municipality Of Al Taif,أمانة محافظة الطائف,Government Services
+114,Abha Chamber of Commerce industry,الغرفة التجارية الصناعية بابها,Services
+115,Technical and Vocational Training Corporation,المؤسسة العامة للتدريب التقني والمهني,Education
+116,Deputy Minister for Mineral Resources,وكالة الوزارة للثروة المعدنية,Government Services
+117,King Fahd University of Petroleum and Minerals,جامعة الملك فهد للبترول والمعادن,Education
+118,King Faisal Universty,جامعة الملك فيصل,Education
+120,Saudi Railways,الخطوط الحديدية,Travel & Transportation
+121,dar Alhayat for Distribution,دار الحياة للنشر والتوزيع,Media & Entertainment
+122,TAWZEA,شركة توزيع,Services
+123,SAUDI COUNCIL OF ENGINEERS,الهيئة السعودية للمهندسين,Services
+124,Nayifat Finance Company,شركة النايفات للتمويل,Banking & Finance
+125,Emirates NBD Payments,مدفوعات بنك الإمارات دبي الوطني,Banking & Finance
+128,Ministry of Health,وزارة الصحة,Government Services
+129,Saudi Commission For Health Specialties,الهيئة السعودية للتخصصات الصحية,Services
+130,Bupa Arabia,بوبا العربية,Insurance
+131,Raya Financing Company,شركة راية للتمويل (مساهمة مقفلة ),Banking & Finance
+132,Umm Al-Qura University,جامعة أم القرى,Education
+133,Saudi Heart Association,جمعية القلب السعودية,Services
+134,United Electronics Company - Extra,الشركة المتحدة للإلكترونيات - إكسترا,Services
+135,Saudi E-Tabadul Company,الشركة السعودية لتبادل المعلومات الكترونيا,Services
+136,Arabian Shield Cooperative Insurance Company,شركة الدرع العربي للتأمين التعاوني,Insurance
+137,Saudi Electronic University,الجامعة السعودية الإلكترونية,Education
+138,National Water Company,شركة المياه الوطنية,Utilities
+139,Asharqia Chamber,غرفة الشرقية,Services
+140,Bank Albilad SADAD Biller,مدفوعات بنك البلاد,Banking & Finance
+141,Government e-Procurement Portal,بوابة المشتريات الحكومية,Government Services
+142,Human Resources Development Fund Programs,برامج صندوق تنمية الموارد البشرية,Government Services
+143,Saudi Industrial Development Fund,صندوق التنمية الصناعية السعودي,Government Services
+144,My Business Services,خدمات أعمالي,Services
+145,Industrial Cities Development & Operating Co,شركة تطوير وتشغيل المدن الصناعية المحدودة,Government Services
+146,Royal Commission of Jubail,الهيئة الملكية في الجبيل,Government Services
+147,Saudi Home Loans,الشركة السعودية لتمويل المساكن,Banking & Finance
+148,National Gas and Industrialization Company,شركة الغاز والتصنيع الأهلية,Utilities
+149,Saudi Telecom Company (SAWA),(سوا)شركة الاتصالات السعودية,Telecom & Internet
+150,SAPTCO,الشركة السعودية للنقل الجماعي,Travel & Transportation
+151,Virgin Mobile,فيرجن موبايل,Telecom & Internet
+153,Ejar,إيجار,Government Services
+154,Economic Cities Authority,هيئة المدن الإقتصادية,Government Services
+156,Tamkeen Technologies,تمكين للتقنيات,Services
+157,Almawarid Manpower Company,شركة الموارد للقوى البشرية,Services
+159,Education Evaluation Commission,هيئة تقويم التعليم,Government Services
+160,Ministry of Justice,وزارة العدل,Government Services
+161,Ministry of Haj and Umrah,وزارة الحج والعمرة,Government Services
+162,Saudi Grains Organization,المؤسسة العامة للحبوب,Government Services
+163,Saudi Investment Bank Payments,مدفوعات البنك السعودي للإستثمار,Banking & Finance
+165,SaudiOrix,شركة اوركس السعودية,Banking & Finance
+166,"EMAAR, THE ECONOMIC CITY",اعمار، المدينة الاقتصادية,Services
+167,Saudi Manpower Solutions Co.-SMASCO,السعودية للإستقدام-سماسكو,Services
+168,Institute of Public Admiration-Business Center,معهد الإدارة العامة – مركز الاعمال,Education
+169,Ministry of Justice Execution Agency,التنفيذ القضائي,Government Services
+170,Arabian Agricultural Services Company,الشركة العربية للخدمات الزراعية,Services
+171,Ministry of Housing,وزارة الإسكان,Government Services
+172,JAS,شركة الجاسرية للتمويل,Banking & Finance
+175,Bidaya Home Finance,بداية لتمويل المنازل,Banking & Finance
+176,King Abdullah City for Atomic and Renewable Energy,مدينة الملك عبدالله للطاقة الذرية والمتجددة,Government Services
+177,Ministry of Municipality and Rural Affairs,وزارة الشؤون البلدية والقروية,Government Services
+179,Al-Ajeer Recruitment Company,شركة الأجير المنتدب للاستقدام,Services
+180,Public Transport Authority,هيئة النقل العام,Government Services
+181,Flyadeal,طيران أديل,Travel & Transportation
+182,Sakani - National Housing Company,سكني - الشركة الوطنية للاسكان,Government Services
+183,SAL CARGO COMPANY,شركة سال للشحن المحدودة,Travel & Transportation
+184,LEBARA,الهيئة العامة للمعارض والمؤتمرات,Telecom & Internet
+185,Saudi Exhibition & Convention Bureau,الهيئة العامة للمعارض والمؤتمرات,Government Services
+186,Lean Business Services Company,شركة لين لخدمات الأعمال,Services
+187,Ijarah Finance,ايجاره,Banking & Finance
+188,AJIL Financial Services Company,شركة آجل للخدمات التمويلية,Banking & Finance
+189,Bayan Credit Bureau,شركة بيان للمعلومات الائتمانية,Banking & Finance
+190,Public Pension Agency,المؤسسة العامة للتقاعد,Government Services
+191,Saudi Railway Company,الشركة السعودية للخطوط الحديدية,Travel & Transportation
+192,Presidency of Meteorology and Environment,الهيئة العامة للأرصاد وحماية البيئة,Government Services
+193,Nesma Airlines,نسما للطيران,Travel & Transportation
+195,Tawkelat Financing Company,شركة توكيلات للتمويل,Banking & Finance
+196,Allied Cooperative Insurance Group - ACIG,المجموعة المتحدة للتأمين التعاوني (أسيج),Insurance
+197,Tameeni,تأميني,Services
+199,Takamol Holding Company,شركة تكامل القابضة,Services
+200,King Abdulaziz & his Companions Foundation for Giftedness & Creativity - Mawhiba,مؤسسة الملك عبدالعزيز ورجاله للموهبة والإبداع - موهبة,Education
+201,NatRec,الشركة الأهلية للاستقدام,Services
+204,General Commission For Audiovisual Media,الهيئة العامة للاعلام المرئي والمسموع,Government Services
+206,Haramain High Speed Rail,قطار الحرمين السريع,Travel & Transportation
+207,STC Pay,STC Pay,Banking & Finance
+208,Saudi contractors authority,الهيئة السعودية للمقاولين,Services
+209,Tatweer Educational Technologies,تطوير لتقنيات التعليم,Education
+210,Al Sahab National company,شركة السحاب الوطنية,Services
+211,Taajeer for Finance,شركة التأجيير التمويلي,Banking & Finance
+212,National Committee for Tobacco Control,اللجنة الوطنية لمكافحة التبغ,Government Services
+213,Maharah Human Resources Company,شركة مهارة للموارد البشرية,Services
+214,ESAD for Human Resources Solutions and Management,شركة إساد لحلول وإدارة الموارد البشرية,Services
+215,University of Jeddah,جامعة جدة,Education
+216,King Abdulaziz Foundation for Research and Archives,دارة الملك عبدالعزيز,Education
+218,Qassim University,جامعة القصيم,Education
+219,General Authority for Statistics,هيئة العامة للإحصاء,Government Services
+221,Saudi Irrigation Organization,المؤسسة العامة للري,Government Services
+222,General Directorate of Border Guard,حرس الحدود,Government Services
+226,Najran Province Emirate,أمارة منطقة نجران,Government Services
+227,General Commission for Survey,الهيئة العامة للمساحة,Government Services
+229,Saline Water Conversion Corporation,المؤسسة العامة لتحلية المياه المالحة,Utilities
+231,Royal Saudi Land Forces,لقوات البرية الملكية السعودية,Government Services
+232,First Abu Dhabi Bank Payment Services,خدمة المدفوعات لبنك أبوظبي الأول,Banking & Finance
+233,General Authority of State Properties,الهيئة العامة لعقارات الدولة,Government Services
+234,Public Security Directorate,الأمن العام,Government Services
+235,Saudi Geological Survey,هيئة المساحة الجيولوجية,Government Services
+236,Hafr Al Batin Province Municipal,أمانة محافظة حفر الباطن,Government Services
+237,Makkah Region Province Emirate,أمارة منطقة مكة المكرمة,Government Services
+238,Alifta Council Senior Scholar,الرئاسة العامة للبحوث العلمية والإفتاء,Government Services
+239,Saudi Wildlife Authority,الهيئة العامة للحياة الفطرية,Government Services
+240,Makkah Region Development Authority,هيئة تطوير منطقة مكة المكرمة,Government Services
+241,Ministry Of Education,وزارة التعليم,Education
+242,Saudi Authority for Intellectual Property,الهيئة السعودية للملكية الفكرية,Government Services
+247,King Fahad Security College,كلية الملك فهد الأمنية,Education
+248,Royal Saudi Air Force,القوات الجوية الملكية السعودية,Government Services
+249,King Khalid University,جامعة الملك خالد,Education
+250,King Faisal Military City,مدينة الملك فيصل العسكرية,Government Services
+251,Saudi Export Development Authority,هيئة تنمية الصادرات السعودية,Government Services
+252,Saudi Arabian National Guard,وزارة الحرس الوطني,Government Services
+253,Al Madinah Region Development Authority,هيئة تطوير منطقة المدينة المنورة,Government Services
+254,The Saudi Red Crescent Authority,هيئة الهلال الأحمر السعودي,Government Services
+255,Musaned,مساند,Government Services
+256,Northern Border University,جامعة الحدود الشمالية,Education
+257,King Faisal Specialist Hospital & Research Center,مستشفى الملك فيصل التخصصي ومركز الأبحاث,Services
+258,Saudi Energy Efficiency Center,مركز كفاءة الطاقة السعودي,Government Services
+259,Premium Residency Center,مركز الإقامة المميزة,Government Services
+260,Rasid Jack,رصيد جاك,Services
+261,Tasheel Finance (UCFS),تسهيل للتمويل,Banking & Finance
+265,Royal Saudi Naval Forces,القوات البحرية الملكية السعودية,Government Services
+266,General Authority for Competition,الهيئة العامة للمنافسة,Government Services
+267,Ministry of Energy,وزارة الطاقة,Government Services
+268,National Financing Services Company,الشركة الوطنية لخدمات التمويل,Banking & Finance
+269,Nuclear and Radiological Regulatory Commission,هيئة الرقابة النووية والإشعاعية,Government Services
+270,Ministry of Justice - Alimony Fund,صندوق النفقة - وزارة العدل,Government Services
+272,Royal Commission for Jubail and Yanbu,الهيئة الملكية للجبيل وينبع,Government Services
+275,General Entertainment Authority,الهيئة العامة للترفيه,Government Services
+276,Saudi Central Board For Accreditation Of Healthcare,المركز السعودي لاعتماد المنشآت الصحية,Services
+278,General Organization for Military Industries,المؤسسة العامة للصناعات العسكرية,Government Services
+279,Saudi Center For Economic Business,المركز السعودي للأعمال الاقتصادية,Government Services
+280,School Transportation,النقل المدرسي,Education
+282,"Ministry of Environment, Water and Agriculture",البيئة والمياه والزراعة,Government Services
+283,Prince Sultan University,جامعة الأمير سلطان,Education
+285,National Cybersecurity Authority,الهيئة الوطنية للامن السيبراني,Government Services
+287,National Center of Metrology,المركز الوطني للارصاد,Government Services
+288,Saudi Accreditation Center,المركز السعودي للاعتماد,Government Services
+289,Aljouf University,جامعة الجوف,Education
+291,King Khalid Military Academy,كلية الملك خالد العسكرية,Education
+293,General Authority for Military Industries,الهيئة العامة للصناعات العسكرية,Government Services
+295,Saudi Broadcasting Authority,هيئة الإذاعة والتلفزيون,Media & Entertainment
+297,Ministry of Sport,وزارة الرياضة,Government Services
+298,The presidency of the Staff,رئاسة هيئة الأركان العامة,Government Services
+303,King Abdullah Air Defense College,كلية الملك عبدالله للدفاع الجوي,Education
+306,Saudi Press Agency,وكالة الانباء السعودية,Media & Entertainment
+307,Aljouf Province Emirate,أمارة منطقة الجوف,Government Services
+309,Albaha Emirates,إمارة منطقة الباحة,Government Services
+312,Electronic Porperty Transfer,الإفراغ العقاري الإلكتروني,Government Services
+313,Ministry Of National Guard Health Affairs,وزارة الحرس الوطني الشؤون الصحية,Government Services
+314,MOI_PVP,لوحات المركبات المميزة,Government Services
+343,Public Health Authority,هيئة الصحة العامة,Government Services
+639,NAFT Services Co. Ltd,شركة خدمات النفط المحدودة,Utilities
+901,Rosom,رسوم,Services
+902,e-fa’a Payments,مدفوعات إيفاء,Government Services
+903,EDAA,إيداع,Banking & Finance
+904,The presidency of the Staff,رئاسة هيئة الأركان العامة,Government Services
+905,University of Jeddah,جامعة جدة,Education

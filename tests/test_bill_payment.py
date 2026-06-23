@@ -26,23 +26,28 @@ def engine() -> ConversationEngine:
 
 
 def test_extract_biller_category_en():
+    # "electricity" resolves to the SADAD utility (biller_code 002).
     assert extract_biller("pay my electricity bill", Language.EN) == (
-        "electricity",
-        "electricity",
+        "Saudi Electric Company",
+        "Utilities",
+        "002",
     )
 
 
 def test_extract_biller_category_ar():
     assert extract_biller("ادفع فاتورة الكهرباء", Language.AR) == (
-        "electricity",
-        "electricity",
+        "الشركة السعودية للكهرباء",
+        "Utilities",
+        "002",
     )
 
 
 def test_extract_biller_freetext_fallback():
-    biller, category = extract_biller("pay my Acme Telecom bill", Language.EN)
+    # An unknown biller with no gazetteer/semantic hit is kept as free text.
+    biller, category, code = extract_biller("pay my Acme Telecom bill", Language.EN)
     assert biller == "Acme Telecom"
     assert category is None
+    assert code is None
 
 
 def test_extract_reference_number_with_cue():
@@ -64,7 +69,8 @@ def test_bill_entities_disambiguates_amount_vs_reference():
     assert ent.amount == Decimal("320")
     assert ent.reference_number == "778899"
     assert ent.currency == "EGP"
-    assert ent.biller == "electricity"
+    assert ent.biller == "Saudi Electric Company"
+    assert ent.biller_code == "002"
 
 
 def test_bill_entities_amount_cue():
@@ -82,7 +88,7 @@ def test_bill_entities_bare_reference_no_amount():
 
 def test_bill_entities_arabic_digits():
     ent = extract_bill_entities("ادفع فاتورة الكهرباء 778899 بمبلغ 320", Language.AR)
-    assert ent.biller == "electricity"
+    assert ent.biller == "الشركة السعودية للكهرباء"
     assert ent.amount == Decimal("320")
     assert ent.reference_number == "778899"
 
@@ -140,7 +146,8 @@ def test_one_shot_bill_reaches_confirmation(engine: ConversationEngine):
     result = engine.handle("pay 320 EGP electricity bill 778899", "ob1")
     assert result.state.intent is Intent.PAY_BILL
     assert result.state.status is ConversationStatus.CONFIRMING
-    assert result.state.slots.biller == "electricity"
+    assert result.state.slots.biller == "Saudi Electric Company"
+    assert result.state.slots.biller_code == "002"
     assert result.state.slots.reference_number == "778899"
     assert result.state.slots.amount == Decimal("320")
     assert result.state.slots.currency == "EGP"
@@ -151,7 +158,9 @@ def test_one_shot_bill_confirm_emits_payload(engine: ConversationEngine):
     result = engine.handle("yes", "ob2")
     assert result.state.status is ConversationStatus.COMPLETED
     assert result.bill is not None
-    assert result.bill.biller == "electricity"
+    assert result.bill.biller == "Saudi Electric Company"
+    assert result.bill.biller_code == "002"
+    assert result.bill.biller_name == "Saudi Electric Company"
     assert result.bill.reference_number == "778899"
     assert result.bill.amount == Decimal("320")
     assert result.bill.currency == "EGP"
@@ -195,7 +204,8 @@ def test_chooser_choose_bill_then_flow(engine: ConversationEngine):
     assert r.state.pending_slot == "biller"
 
     r = engine.handle("water 5512", "ch2")
-    assert r.state.slots.biller == "water"
+    assert r.state.slots.biller == "Water Services"
+    assert r.state.slots.biller_code == "015"
     assert r.state.slots.reference_number == "5512"
 
     r = engine.handle("80 EGP", "ch2")
@@ -245,7 +255,7 @@ def test_arabic_one_shot_bill(engine: ConversationEngine):
     result = engine.handle("ادفع فاتورة الكهرباء 778899 بمبلغ 320", "ar1")
     assert result.state.intent is Intent.PAY_BILL
     assert result.state.status is ConversationStatus.CONFIRMING
-    assert result.state.slots.biller == "electricity"
+    assert result.state.slots.biller == "الشركة السعودية للكهرباء"
     assert result.state.slots.amount == Decimal("320")
     confirmed = engine.handle("نعم", "ar1")
     assert confirmed.state.status is ConversationStatus.COMPLETED
