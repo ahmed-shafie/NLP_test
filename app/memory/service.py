@@ -17,27 +17,28 @@ from app.memory.schemas import (
     UserSummary,
 )
 from app.memory.store import get_memory_store
+from app.nlu.normalize import normalize
 from app.schemas import TransferRequest
 
 logger = logging.getLogger(__name__)
 
 # Phrases that ask the assistant to reuse the user's favourite/last recipient.
+# Stored normalized so Arabic spelling variants (alef/ya/ta-marbuta) still match.
 _USUAL_RECIPIENT = {
-    "usual",
-    "favorite",
-    "favourite",
-    "same",
-    "regular",
-    "المعتاد",
-    "المفضل",
-    "نفس",
+    normalize(word)
+    for word in (
+        "usual",
+        "favorite",
+        "favourite",
+        "same",
+        "regular",
+        "المعتاد",
+        "المفضل",
+        "نفس",
+    )
 }
 
 _MAX_COMMON_AMOUNTS = 5
-
-
-def _tokens(text: str) -> list[str]:
-    return [t.strip(".,!؟،:").lower() for t in text.split()]
 
 
 class MemoryBrain:
@@ -126,27 +127,44 @@ class MemoryBrain:
         return self._store.get(user_id)
 
     def delete_shortcut(self, user_id: str, name: str) -> bool:
+        """Delete a shortcut, matching its name up to normalization.
+
+        Lets "forget" work in Arabic even when the spelling variant differs from
+        what was saved (e.g. alef-with-hamza vs plain alef).
+        """
+
+        target = normalize(name)
+        if target:
+            for shortcut in self._store.get(user_id).shortcuts:
+                if normalize(shortcut.name) == target:
+                    return self._store.delete_shortcut(user_id, shortcut.name)
         return self._store.delete_shortcut(user_id, name)
 
     def resolve_shortcut(self, user_id: str, text: str) -> Shortcut | None:
-        """Return a shortcut whose name appears as a word in ``text``."""
+        """Return a shortcut whose name appears as a word in ``text``.
+
+        Both the message and the shortcut name are normalized first, so Arabic
+        spelling variants (alef/ya/ta-marbuta, diacritics, digits) still match.
+        """
 
         memory = self._store.get(user_id)
         if not memory.shortcuts:
             return None
-        tokens = set(_tokens(text))
-        lowered = text.lower()
+        normalized = normalize(text)
+        tokens = set(normalized.split())
         for shortcut in memory.shortcuts:
-            name = shortcut.name.lower()
+            name = normalize(shortcut.name)
+            if not name:
+                continue
             # Match a single-word name as a token, or a multi-word name as a phrase.
-            if (" " in name and name in lowered) or name in tokens:
+            if (" " in name and name in normalized) or name in tokens:
                 return shortcut
         return None
 
     # --------------------------- apply to a turn -------------------------- #
 
     def wants_usual_recipient(self, text: str) -> bool:
-        return bool(set(_tokens(text)) & _USUAL_RECIPIENT)
+        return bool(set(normalize(text).split()) & _USUAL_RECIPIENT)
 
     def default_currency(self, user_id: str) -> str | None:
         return self._store.get(user_id).habits.preferred_currency
