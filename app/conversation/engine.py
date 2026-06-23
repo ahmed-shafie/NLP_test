@@ -227,9 +227,7 @@ class ConversationEngine:
                 state.status = ConversationStatus.CONFIRMING
                 return self._finish(state, self._confirm_text(state, lang))
             state.pending_slot = missing
-            return self._finish(
-                state, templates.slot_prompt(missing, lang, choice)
-            )
+            return self._finish(state, templates.slot_prompt(missing, lang, choice))
 
     @staticmethod
     def _required_slots(intent: Intent | None) -> tuple[str, ...]:

@@ -60,9 +60,7 @@ _CANCELLED: dict[Language, str] = {
 }
 
 
-def slot_prompt(
-    slot: str, language: Language, intent: Intent | None = None
-) -> str:
+def slot_prompt(slot: str, language: Language, intent: Intent | None = None) -> str:
     if intent is not None:
         override = _SLOT_PROMPTS_BY_INTENT.get(intent, {}).get(slot)
         if override is not None:
