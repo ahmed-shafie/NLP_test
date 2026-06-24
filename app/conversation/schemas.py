@@ -42,6 +42,13 @@ class ConversationResponse(BaseModel):
     slots: ConversationSlots
     transfer: TransferRequest | None = None
     bill: BillPaymentRequest | None = None
+    flagged_terms: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Abusive terms detected in the user's message this turn (for UI "
+            "highlighting); empty when the message is clean."
+        ),
+    )
     block_trace: list[BlockTrace] = Field(
         default_factory=list,
         description="Per-block execution trace (timing + status) for this turn.",

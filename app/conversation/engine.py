@@ -8,7 +8,8 @@ import uuid
 from decimal import Decimal
 
 from app.config import DEFAULT_CURRENCY, settings
-from app.conversation import templates
+from app.conversation import moderation, templates
+from app.conversation.moderation import ModerationResult
 from app.conversation.state import (
     BILL_REQUIRED_SLOTS,
     BillerOption,
@@ -148,12 +149,14 @@ class ConversationResult:
         transfer: TransferRequest | None = None,
         bill: BillPaymentRequest | None = None,
         block_trace: list | None = None,
+        flagged_terms: list[str] | None = None,
     ) -> None:
         self.state = state
         self.reply = reply
         self.transfer = transfer
         self.bill = bill
         self.block_trace = block_trace or []
+        self.flagged_terms = flagged_terms or []
 
 
 class ConversationEngine:
@@ -185,6 +188,17 @@ class ConversationEngine:
         if state.status in (ConversationStatus.COMPLETED, ConversationStatus.CANCELLED):
             state.reset()
             state.language = lang
+
+        # Content moderation: abusive ("ribald") input is refused with a calm,
+        # professional redirect and never processed as a slot. Runs in every
+        # state so it also catches abuse mid-flow (confirming/disambiguating).
+        flagged = moderation.detect(text)
+        if flagged.flagged:
+            with tracer.block("moderation") as span:
+                span.annotate(f"{flagged.severity}:{len(flagged.terms)}")
+                result = self._handle_inappropriate(state, flagged, lang)
+            result.block_trace = list(tracer.entries)
+            return result
 
         forget_name = _forget_target(text)
         if forget_name:
@@ -226,6 +240,37 @@ class ConversationEngine:
                 return self._complete(state, lang, tracer)
             # Unrecognised reply: re-ask for confirmation.
             return self._finish(state, self._confirm_text(state, lang))
+
+    def _handle_inappropriate(
+        self,
+        state: ConversationState,
+        flagged: ModerationResult,
+        lang: Language,
+    ) -> ConversationResult:
+        """Refuse an abusive turn with a varied, professional redirect.
+
+        The in-progress flow (status/slots) is preserved so a follow-up clean
+        message continues where it left off. After ``moderation_max_strikes``
+        flagged turns the session is ended.
+        """
+
+        state.flagged_count += 1
+        terms = list(flagged.terms)
+        if state.flagged_count >= settings.moderation_max_strikes:
+            state.reset()
+            state.flagged_count = 0
+            state.status = ConversationStatus.CANCELLED
+            return self._finish(
+                state, templates.repeat_offense(lang), flagged_terms=terms
+            )
+
+        severity = flagged.severity or "severe"
+        group = f"inappropriate:{severity}:{lang.value}"
+        reply, index = templates.inappropriate(
+            lang, severity, flagged.terms, state.last_variant.get(group)
+        )
+        state.last_variant[group] = index
+        return self._finish(state, reply, flagged_terms=terms)
 
     def _handle_selection(
         self,
@@ -314,6 +359,13 @@ class ConversationEngine:
         with tracer.block("orchestrator"):
             # Memory Brain: a saved shortcut ("pay rent") pre-fills the template.
             self._apply_shortcut(state, text)
+
+            # Semantic safety net: the classifier may flag abuse the blocklist
+            # missed (novel insults). Redirect without echoing any text.
+            if settings.moderation_enabled and parsed.intent is Intent.INAPPROPRIATE:
+                return self._handle_inappropriate(
+                    state, ModerationResult(True, "severe"), lang
+                )
 
             # Smart chooser: determine transfer vs bill, or ask the customer.
             if state.intent not in (Intent.TRANSFER_MONEY, Intent.PAY_BILL):
@@ -821,9 +873,12 @@ class ConversationEngine:
         reply: str,
         transfer: TransferRequest | None = None,
         bill: BillPaymentRequest | None = None,
+        flagged_terms: list[str] | None = None,
     ) -> ConversationResult:
         self._store.save(state)
-        return ConversationResult(state, reply, transfer=transfer, bill=bill)
+        return ConversationResult(
+            state, reply, transfer=transfer, bill=bill, flagged_terms=flagged_terms
+        )
 
 
 _engine: ConversationEngine | None = None

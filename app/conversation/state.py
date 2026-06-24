@@ -74,6 +74,12 @@ class ConversationState(BaseModel):
     pending_slot: str | None = None
     biller_options: list[BillerOption] = Field(default_factory=list)
     turns: int = 0
+    # Count of flagged (abusive) turns in this session; drives the repeat-offense
+    # cutoff. Kept across ``reset`` so it spans the whole session.
+    flagged_count: int = 0
+    # Last picked index per varied-reply group, so a reply isn't repeated
+    # back-to-back. Keyed e.g. "inappropriate:mild:en".
+    last_variant: dict[str, int] = Field(default_factory=dict)
 
     def reset(self) -> None:
         """Clear transfer progress to begin a fresh dialogue (keeps language)."""
