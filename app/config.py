@@ -49,6 +49,18 @@ class Settings(BaseSettings):
     # Cosine-similarity floor for accepting a FAISS biller match.
     biller_match_threshold: float = 0.55
 
+    # FAISS/embedding semantic biller fallback. Off by default: on this small
+    # catalogue it returns unreliable nearest-neighbours (e.g. "internet" ->
+    # "Nesma Internet"); rapidfuzz typo matching is used instead.
+    biller_semantic_enabled: bool = False
+
+    # rapidfuzz typo-tolerant biller matching ("egar" -> "Ejar").
+    biller_fuzzy_enabled: bool = True
+    # Max edit distance for a typo match (1 = a single insert/delete/substitute).
+    biller_fuzzy_max_distance: int = 1
+    # rapidfuzz ratio floor (0-100) accepted for a longer fuzzy biller match.
+    biller_fuzzy_min_ratio: float = 90.0
+
     # Use the name gazetteer to canonicalise/typo-correct recipient names.
     names_gazetteer_enabled: bool = True
 

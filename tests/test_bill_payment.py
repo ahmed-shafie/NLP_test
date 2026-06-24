@@ -173,7 +173,15 @@ def test_one_shot_bill_confirm_emits_payload(engine: ConversationEngine):
 def test_multi_turn_bill_flow(engine: ConversationEngine):
     r1 = engine.handle("I want to pay my internet bill", "mt1")
     assert r1.state.intent is Intent.PAY_BILL
-    assert r1.state.pending_slot == "reference_number"
+    # "internet" maps to the whole Telecom & Internet category, so the bot lists
+    # the SADAD billers (STC, Mobily, ...) and asks the customer to choose.
+    assert r1.state.status is ConversationStatus.DISAMBIGUATING
+    assert r1.state.pending_slot == "biller"
+    assert "(1)" in r1.reply
+
+    r1b = engine.handle("1", "mt1")  # pick the first listed biller (STC)
+    assert r1b.state.slots.biller_code == "001"
+    assert r1b.state.pending_slot == "reference_number"
 
     r2 = engine.handle("4455123", "mt1")
     assert r2.state.slots.reference_number == "4455123"
@@ -323,3 +331,51 @@ def test_named_biller_skips_disambiguation(engine: ConversationEngine):
     result = engine.handle("pay Marafiq bill 5566 amount 310", "dz6")
     assert result.state.status is ConversationStatus.CONFIRMING
     assert result.state.slots.biller_code == "004"
+
+
+# ------------------- category / code / typo bill resolution --------------- #
+
+
+def test_internet_category_lists_telecom_billers(engine: ConversationEngine):
+    result = engine.handle("pay my internet bill 778899 amount 200", "cat1")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    codes = {opt.code for opt in result.state.biller_options}
+    assert "001" in codes and "005" in codes  # STC + Mobily offered
+    # Slots from the same turn survive the pause.
+    assert result.state.slots.reference_number == "778899"
+    assert result.state.slots.currency == "SAR"
+
+
+def test_disambiguation_pick_by_sadad_code(engine: ConversationEngine):
+    engine.handle("pay my internet bill 778899 amount 200", "cat2")
+    result = engine.handle("005", "cat2")  # pick by SADAD code, not list index
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.biller_code == "005"
+    assert result.state.slots.biller == "Mobily"
+
+
+def test_numeric_code_as_biller_answer(engine: ConversationEngine):
+    # Choosing "pay a bill", then sending a SADAD code resolves to its name.
+    engine.handle("hi", "code1")
+    r = engine.handle("2", "code1")
+    assert r.state.pending_slot == "biller"
+    r = engine.handle("153", "code1")
+    assert r.state.slots.biller_code == "153"
+    assert r.state.slots.biller == "Ejar"
+
+
+def test_bill_amount_not_misread_as_biller_code(engine: ConversationEngine):
+    # 200 is a real SADAD code (Mawhiba), but here it's the amount -> it must
+    # stay the amount; the biller is resolved by name, never from the amount.
+    r = engine.handle("pay STC bill amount 200 ref 778899", "code2")
+    assert r.state.slots.amount == Decimal("200")
+    assert r.state.slots.biller_code == "001"  # STC, by name
+    assert r.state.slots.biller == "STC"
+
+
+def test_typo_biller_name_resolves(engine: ConversationEngine):
+    # "egar" is a single-letter typo of the SADAD biller "Ejar".
+    result = engine.handle("pay egar bill 4455 amount 300", "typo1")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.biller_code == "153"
+    assert result.state.slots.biller == "Ejar"
