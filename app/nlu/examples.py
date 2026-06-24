@@ -59,6 +59,16 @@ INTENT_EXAMPLES: list[tuple[str, Intent]] = [
     ("شكرا جزيلا", Intent.SMALL_TALK),
     ("كيف حالك", Intent.SMALL_TALK),
     ("مع السلامة", Intent.SMALL_TALK),
+    # --- inappropriate / abusive (English) ---
+    ("you are so stupid", Intent.INAPPROPRIATE),
+    ("shut up you useless bot", Intent.INAPPROPRIATE),
+    ("this is garbage, you idiot", Intent.INAPPROPRIATE),
+    ("you are a worthless piece of junk", Intent.INAPPROPRIATE),
+    ("get lost you dumb machine", Intent.INAPPROPRIATE),
+    # --- inappropriate / abusive (Arabic) ---
+    ("انت غبي", Intent.INAPPROPRIATE),
+    ("اخرس يا تافه", Intent.INAPPROPRIATE),
+    ("انت فاشل وحقير", Intent.INAPPROPRIATE),
     # --- fallback / out of scope (English) ---
     ("what is my account balance", Intent.FALLBACK),
     ("show me my recent transactions", Intent.FALLBACK),

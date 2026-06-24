@@ -139,6 +139,11 @@ def load_gold(path: Path = GOLD_PATH) -> list[GoldRow]:
 def predict_intent(text: str, language: Language) -> tuple[Intent, bool]:
     """Predict the intent deterministically; second value is ``semantic_used``."""
 
+    from app.conversation.moderation import detect as detect_abuse
+
+    # Deterministic moderation guard mirrors the live pipeline (orchestration).
+    if detect_abuse(text).flagged:
+        return Intent.INAPPROPRIATE, False
     classifier = get_semantic_classifier()
     if classifier is not None:
         intent, _ = classifier.classify(text)

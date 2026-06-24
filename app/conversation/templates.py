@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import random
+
+from app.config import settings
 from app.schemas import Intent, Language
+
+_RNG = random.Random()
 
 # Follow-up prompts for each missing slot, keyed by language.
 _SLOT_PROMPTS: dict[str, dict[Language, str]] = {
@@ -161,6 +166,91 @@ def fallback(language: Language) -> str:
 
 def cancelled(language: Language) -> str:
     return _CANCELLED[language]
+
+
+# Calm, professional replies to abusive ("ribald") input. Multiple variants per
+# (severity, language) so the assistant doesn't sound canned; one is picked at
+# random, avoiding an immediate repeat. ``mild`` variants may name the flagged
+# word(s) via ``{words}``; ``severe`` variants never echo the language back.
+_INAPPROPRIATE: dict[str, dict[Language, list[str]]] = {
+    "mild": {
+        Language.EN: [
+            "Let's keep it friendly 🙂 — I'll set {words} aside. I can send money "
+            "or pay a bill; which would you like?",
+            "No worries, but let's leave {words} out. Want to make a transfer or "
+            "pay a bill?",
+            "I'd rather skip {words} and keep things respectful. What can I help "
+            "you with — a transfer or a bill?",
+        ],
+        Language.AR: [
+            "خلينا نتكلم بأدب 🙂 — بتجاوز عن {words}. أقدر أحوّل فلوس أو أدفع فاتورة، "
+            "وش تحب؟",
+            "ولا يهمك، بس نخلي {words} على جنب. تبي تحويل أو دفع فاتورة؟",
+            "أفضّل نتجاوز {words} ونكمل باحترام. كيف أقدر أساعدك — تحويل أو فاتورة؟",
+        ],
+    },
+    "severe": {
+        Language.EN: [
+            "Let's keep this respectful. I can help with a transfer or a bill "
+            "payment — what would you like to do?",
+            "I'm here to help with your banking. Shall we do a transfer or pay a "
+            "bill?",
+            "I'd like to keep our chat professional. I can send money or pay a "
+            "bill for you — which one?",
+        ],
+        Language.AR: [
+            "خلينا نحافظ على الاحترام. أقدر أساعدك في تحويل أو دفع فاتورة — وش تحب؟",
+            "أنا هنا لمساعدتك في معاملاتك البنكية. نبدأ بتحويل أو دفع فاتورة؟",
+            "أحب نكمل المحادثة باحترام. أقدر أحوّل لك فلوس أو أدفع فاتورة — أيها؟",
+        ],
+    },
+}
+
+# Firm message when a session exceeds the abuse strike limit.
+_REPEAT_OFFENSE: dict[Language, str] = {
+    Language.EN: "I'm not able to continue this conversation. Please contact "
+    "support if you need help.",
+    Language.AR: "ما أقدر أكمل هذه المحادثة. تواصل مع خدمة العملاء إذا تحتاج "
+    "مساعدة.",
+}
+
+
+def _pick_variant(count: int, last_index: int | None) -> int:
+    """Pick a variant index, avoiding ``last_index`` so it isn't repeated."""
+
+    if count <= 1:
+        return 0
+    seed = settings.reply_variation_seed
+    rng = random.Random(seed) if seed is not None else _RNG
+    choices = [i for i in range(count) if i != last_index]
+    return rng.choice(choices or list(range(count)))
+
+
+def inappropriate(
+    language: Language,
+    severity: str,
+    flagged: tuple[str, ...] = (),
+    last_index: int | None = None,
+) -> tuple[str, int]:
+    """Return ``(reply, index)`` for an abusive turn.
+
+    A ``mild`` reply names the flagged word(s); ``severe`` (or a flagged-but-
+    untermed semantic catch) uses a generic redirect that never echoes the text.
+    """
+
+    bucket = "mild" if severity == "mild" and flagged else "severe"
+    variants = _INAPPROPRIATE[bucket][language]
+    index = _pick_variant(len(variants), last_index)
+    reply = variants[index]
+    if "{words}" in reply:
+        fallback_word = "that" if language is Language.EN else "ذلك"
+        words = ", ".join(f'"{w}"' for w in flagged) or fallback_word
+        reply = reply.replace("{words}", words)
+    return reply, index
+
+
+def repeat_offense(language: Language) -> str:
+    return _REPEAT_OFFENSE[language]
 
 
 # Filler words allowed in an otherwise pure chit-chat message ("hello there").

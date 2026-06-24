@@ -168,6 +168,18 @@ class Settings(BaseSettings):
     # Expose Prometheus metrics at GET /metrics.
     metrics_enabled: bool = True
 
+    # ---- Content moderation (abusive / ribald input) ----
+    # Detect profanity/abuse and reply with a calm, professional redirect instead
+    # of processing the turn (and never let abusive text leak into a slot).
+    moderation_enabled: bool = True
+
+    # End the conversation after this many flagged turns in one session.
+    moderation_max_strikes: int = 3
+
+    # Seed for canned-reply variation. ``None`` -> random (varied) replies;
+    # set an int for deterministic replies (used by tests).
+    reply_variation_seed: int | None = None
+
     # ---- Conversation (multi-turn slot filling) ----
     conversation_enabled: bool = True
 

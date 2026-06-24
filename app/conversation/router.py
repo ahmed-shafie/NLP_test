@@ -25,6 +25,7 @@ def _to_response(result: ConversationResult) -> ConversationResponse:
         slots=state.slots,
         transfer=result.transfer,
         bill=result.bill,
+        flagged_terms=result.flagged_terms,
         block_trace=result.block_trace,
     )
 

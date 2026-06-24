@@ -64,6 +64,18 @@ class IntentClassifier:
     def run(self, state: dict) -> dict:
         with _tracer(state).block("intent_classification") as span:
             text, lang = state["text"], state["language"]
+            # Content moderation first: abusive input is labelled deterministically
+            # so it never triggers the LLM or pollutes slot extraction.
+            from app.conversation.moderation import detect as detect_abuse
+
+            if detect_abuse(text).flagged:
+                span.annotate("moderation:inappropriate")
+                state.update(
+                    intent=Intent.INAPPROPRIATE,
+                    confidence=1.0,
+                    intent_source="moderation",
+                )
+                return {"state": state}
             classifier = get_semantic_classifier()
             if classifier is not None:
                 intent, confidence = classifier.classify(text)
@@ -161,6 +173,9 @@ def _needs_llm(state: dict) -> bool:
         return False
     if state["intent"] is Intent.SMALL_TALK:
         # Chit-chat is answered with canned warm replies, not the LLM.
+        return False
+    if state["intent"] is Intent.INAPPROPRIATE:
+        # Abusive input gets a canned redirect; never sent to the LLM.
         return False
     if state["intent"] is Intent.FALLBACK:
         return True

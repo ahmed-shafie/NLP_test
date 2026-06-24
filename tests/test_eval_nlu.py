@@ -30,7 +30,12 @@ def test_gold_set_is_bilingual_and_covers_all_intents() -> None:
     rows = load_gold()
     assert len(rows) >= 50
     intents = {row.intent for row in rows}
-    assert intents == {Intent.TRANSFER_MONEY, Intent.PAY_BILL, Intent.SMALL_TALK}
+    assert intents == {
+        Intent.TRANSFER_MONEY,
+        Intent.PAY_BILL,
+        Intent.SMALL_TALK,
+        Intent.INAPPROPRIATE,
+    }
     languages = {row.language for row in rows if row.language is not None}
     assert len(languages) == 2  # English and Arabic both represented
 
