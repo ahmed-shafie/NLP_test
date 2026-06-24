@@ -19,9 +19,10 @@ from functools import lru_cache
 from pathlib import Path
 
 from rapidfuzz import fuzz, process
+from rapidfuzz.distance import Levenshtein
 
 from app.config import settings
-from app.nlu.normalize import normalize, normalize_tokens
+from app.nlu.normalize import normalize, normalize_digits, normalize_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,11 @@ _BILLERS_CSV = _DATA_DIR / "sadad_billers.csv"
 _NAMES_CSV = _DATA_DIR / "names.csv"
 
 # Generic words customers use mapped to the SADAD billers they could mean,
-# canonical/most-common first. A term with several candidates (e.g. "electricity"
-# -> Saudi Electric Company *or* Marafiq) is ambiguous: the conversation engine
-# asks the customer which one instead of silently guessing. Terms that map to a
-# single code resolve directly.
+# canonical/most-common first. Used for utility sub-types (electricity / water /
+# gas) which all share the single coarse "Utilities" SADAD category, so the
+# category alone can't separate them. A term with several candidates (e.g.
+# "electricity" -> Saudi Electric Company *or* Marafiq) is ambiguous: the engine
+# asks the customer which one instead of silently guessing.
 _GENERIC_BILLER_GROUPS: dict[str, tuple[str, ...]] = {
     "electricity": ("002", "004"),
     "power": ("002", "004"),
@@ -46,6 +48,28 @@ _GENERIC_BILLER_GROUPS: dict[str, tuple[str, ...]] = {
     "gas": ("148",),
     "غاز": ("148",),
     "الغاز": ("148",),
+}
+
+# Generic words mapped to a whole SADAD *category*: every biller in that category
+# is offered. E.g. "internet" -> all "Telecom & Internet" billers (STC, Mobily,
+# Zain, ...) so the customer picks, instead of only matching names that literally
+# contain the word "internet".
+_GENERIC_CATEGORY_TERMS: dict[str, str] = {
+    "internet": "Telecom & Internet",
+    "wifi": "Telecom & Internet",
+    "نت": "Telecom & Internet",
+    "النت": "Telecom & Internet",
+    "انترنت": "Telecom & Internet",
+    "إنترنت": "Telecom & Internet",
+    "mobile": "Telecom & Internet",
+    "phone": "Telecom & Internet",
+    "موبايل": "Telecom & Internet",
+    "الموبايل": "Telecom & Internet",
+    "جوال": "Telecom & Internet",
+    "الجوال": "Telecom & Internet",
+    "insurance": "Insurance",
+    "تأمين": "Insurance",
+    "التأمين": "Insurance",
 }
 
 
@@ -86,6 +110,46 @@ def load_billers() -> tuple[BillerRecord, ...]:
 @lru_cache(maxsize=1)
 def _biller_by_code() -> dict[str, BillerRecord]:
     return {r.biller_code: r for r in load_billers()}
+
+
+@lru_cache(maxsize=1)
+def _billers_by_category() -> dict[str, tuple[BillerRecord, ...]]:
+    """``normalized category -> billers in it`` (ordered by code)."""
+
+    groups: dict[str, list[BillerRecord]] = {}
+    for rec in load_billers():
+        if rec.category:
+            groups.setdefault(normalize(rec.category), []).append(rec)
+    return {
+        key: tuple(sorted(recs, key=lambda r: r.biller_code))
+        for key, recs in groups.items()
+    }
+
+
+def _as_biller_code(token: str) -> str | None:
+    """Return the SADAD code a short numeric token denotes, else ``None``.
+
+    SADAD codes are 1-3 digit, zero-padded to three in the catalogue ("001",
+    "153"). Longer digit runs are reference numbers, never codes.
+    """
+
+    digits = "".join(ch for ch in normalize_digits(token) if ch.isdigit())
+    if not digits or len(digits) > 3:
+        return None
+    by_code = _biller_by_code()
+    for candidate in (digits, digits.zfill(3)):
+        if candidate in by_code:
+            return candidate
+    return None
+
+
+def resolve_biller_by_code(token: str) -> BillerRecord | None:
+    """Resolve a short numeric token (1-3 digits) to its SADAD biller."""
+
+    if not settings.biller_catalog_enabled:
+        return None
+    code = _as_biller_code(token)
+    return _biller_by_code().get(code) if code else None
 
 
 @lru_cache(maxsize=1)
@@ -145,6 +209,12 @@ def _gazetteer_candidates(text: str) -> list[BillerRecord]:
             recs = [by_code[c] for c in codes if c in by_code]
             if recs:
                 return recs
+    by_category = _billers_by_category()
+    for term, category in _GENERIC_CATEGORY_TERMS.items():
+        if normalize(term) in token_set:
+            recs = list(by_category.get(normalize(category), ()))
+            if recs:
+                return recs
     return []
 
 
@@ -154,10 +224,11 @@ def resolve_biller_candidates(
     """Return every SADAD biller ``text`` could mean (ordered, most likely first).
 
     Returns ``[]`` when nothing matches, ``[rec]`` for an unambiguous hit (exact
-    name, single-candidate generic term, or a FAISS fallback when
+    name, single-candidate generic term, or a typo/semantic fallback when
     ``allow_semantic`` is set), and several records when a generic term is
-    ambiguous (e.g. "electricity" -> Saudi Electric Company or Marafiq) so the
-    caller can ask the customer to choose.
+    ambiguous (e.g. "electricity" -> Saudi Electric Company or Marafiq, or
+    "internet" -> all Telecom & Internet billers) so the caller can ask the
+    customer to choose.
     """
 
     if not settings.biller_catalog_enabled:
@@ -166,13 +237,96 @@ def resolve_biller_candidates(
     if candidates:
         return candidates
     if allow_semantic:
-        rec = resolve_biller_semantic(text)
+        rec = resolve_biller_fuzzy(text)
+        if rec is None and settings.biller_semantic_enabled:
+            rec = resolve_biller_semantic(text)
         if rec is not None:
             return [rec]
     return []
 
 
-# ---- FAISS fuzzy/semantic fallback for billers --------------------------- #
+# ---- rapidfuzz typo-tolerant biller matching ---------------------------- #
+
+# Stopwords stripped from a query before fuzzy matching so they can't typo-match
+# a biller name (e.g. "pay" should never fuzzy-resolve to a biller).
+_BILLER_QUERY_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "pay",
+        "bill",
+        "bills",
+        "my",
+        "the",
+        "a",
+        "an",
+        "your",
+        "our",
+        "this",
+        "for",
+        "فاتورة",
+        "فواتير",
+        "ادفع",
+        "دفع",
+    }
+)
+# Minimum token length considered for a fuzzy match (shorter tokens are too
+# collision-prone for a single-edit typo rule).
+_FUZZY_MIN_LEN = 4
+
+
+@lru_cache(maxsize=1)
+def _biller_fuzzy_index() -> tuple[tuple[str, BillerRecord], ...]:
+    """``(normalized full name, record)`` pairs for typo matching.
+
+    Only whole names are indexed (not sub-tokens) so a common word shared by many
+    billers ("saudi", "company") can't fuzzy-match an unrelated biller; a query
+    only matches a biller whose *entire* name is close to it.
+    """
+
+    index: list[tuple[str, BillerRecord]] = []
+    seen: set[tuple[str, str]] = set()
+    for rec in load_billers():
+        for name in (rec.name_en, rec.name_ar):
+            key = normalize(name)
+            if key and (key, rec.biller_code) not in seen:
+                index.append((key, rec))
+                seen.add((key, rec.biller_code))
+    return tuple(index)
+
+
+def resolve_biller_fuzzy(text: str) -> BillerRecord | None:
+    """Best typo-tolerant biller match, or ``None``.
+
+    Accepts a candidate (the stopword-stripped phrase, or any single token) when
+    its edit distance to a biller name is within
+    ``settings.biller_fuzzy_max_distance`` or its rapidfuzz ratio clears
+    ``settings.biller_fuzzy_min_ratio``. Closest match wins.
+    """
+
+    if not (settings.biller_catalog_enabled and settings.biller_fuzzy_enabled):
+        return None
+    tokens = [t for t in normalize_tokens(text) if t not in _BILLER_QUERY_STOPWORDS]
+    candidates = {t for t in tokens if len(t) >= _FUZZY_MIN_LEN and not t.isdigit()}
+    phrase = " ".join(tokens)
+    if len(phrase) >= _FUZZY_MIN_LEN:
+        candidates.add(phrase)
+    if not candidates:
+        return None
+    max_distance = settings.biller_fuzzy_max_distance
+    best: BillerRecord | None = None
+    best_rank: tuple[int, float] = (max_distance + 1, 0.0)
+    for candidate in candidates:
+        for key, rec in _biller_fuzzy_index():
+            distance = Levenshtein.distance(candidate, key)
+            ratio = fuzz.ratio(candidate, key)
+            if distance <= max_distance or ratio >= settings.biller_fuzzy_min_ratio:
+                rank = (min(distance, max_distance), -ratio)
+                if rank < best_rank:
+                    best_rank = rank
+                    best = rec
+    return best
+
+
+# ---- FAISS semantic fallback for billers (off by default) --------------- #
 
 _biller_store = None
 _biller_store_built = False
@@ -217,11 +371,12 @@ def resolve_biller_semantic(text: str) -> BillerRecord | None:
 
 
 def resolve_biller(text: str, *, allow_semantic: bool = False) -> BillerRecord | None:
-    """Resolve a biller: exact gazetteer first, then optional FAISS fallback.
+    """Resolve a single biller: exact gazetteer first, then a typo fallback.
 
-    The FAISS fallback is only consulted when ``allow_semantic`` is set (i.e. we
-    already know we're in a bill context). This keeps arbitrary chit-chat like
-    "hi" from being mis-resolved to a near-neighbour biller.
+    The typo (and optional semantic) fallback is only consulted when
+    ``allow_semantic`` is set (i.e. we already know we're in a bill context).
+    This keeps arbitrary chit-chat like "hi" from being mis-resolved to a
+    near-neighbour biller.
     """
 
     if not settings.biller_catalog_enabled:
@@ -230,7 +385,11 @@ def resolve_biller(text: str, *, allow_semantic: bool = False) -> BillerRecord |
     if gazetteer is not None:
         return gazetteer
     if allow_semantic:
-        return resolve_biller_semantic(text)
+        fuzzy = resolve_biller_fuzzy(text)
+        if fuzzy is not None:
+            return fuzzy
+        if settings.biller_semantic_enabled:
+            return resolve_biller_semantic(text)
     return None
 
 

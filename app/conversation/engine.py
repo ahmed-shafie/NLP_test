@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from decimal import Decimal
 
@@ -16,12 +17,16 @@ from app.conversation.state import (
     ConversationStatus,
 )
 from app.conversation.store import get_session_store
-from app.data_loader import BillerRecord, resolve_biller_candidates
+from app.data_loader import (
+    BillerRecord,
+    resolve_biller_by_code,
+    resolve_biller_candidates,
+)
 from app.memory.schemas import Shortcut
 from app.memory.service import get_memory_brain
 from app.nlu import entities, pipeline
 from app.nlu.lang import detect_language
-from app.nlu.normalize import normalize
+from app.nlu.normalize import normalize, normalize_digits
 from app.schemas import (
     BillPaymentRequest,
     Intent,
@@ -423,6 +428,11 @@ class ConversationEngine:
         if len(candidates) == 1:
             self._set_biller(slots, candidates[0], lang)
             return None
+        # A short number sent as the biller -> its SADAD code (returns the name).
+        record = self._biller_from_code(state, text)
+        if record is not None:
+            self._set_biller(slots, record, lang)
+            return None
         # No catalogue match: keep the free-text biller (or the raw answer when
         # we explicitly asked "which bill?").
         biller, category, biller_code = entities.extract_biller(
@@ -446,6 +456,28 @@ class ConversationEngine:
         slots.biller = name or record.name_en
         slots.biller_category = record.category
         slots.biller_code = record.biller_code
+
+    @staticmethod
+    def _biller_from_code(state: ConversationState, text: str) -> BillerRecord | None:
+        """Resolve a short numeric token in ``text`` to a biller via its code.
+
+        Digit runs already consumed as the amount or reference number are skipped
+        so a bill amount of 200 is never misread as biller code 200.
+        """
+
+        slots = state.slots
+        used: set[str] = set()
+        if slots.reference_number:
+            used.add("".join(ch for ch in slots.reference_number if ch.isdigit()))
+        if slots.amount is not None:
+            used.add("".join(ch for ch in str(slots.amount) if ch.isdigit()))
+        for run in re.findall(r"\d+", normalize_digits(text)):
+            if len(run) > 3 or run in used:
+                continue
+            record = resolve_biller_by_code(run)
+            if record is not None:
+                return record
+        return None
 
     def _ask_biller_choice(
         self,
@@ -504,11 +536,22 @@ class ConversationEngine:
         if not options:
             return None
         normalized = normalize(text)
-        digits = "".join(ch for ch in normalized if ch.isdigit())
+        digits = "".join(ch for ch in normalize_digits(normalized) if ch.isdigit())
         if digits:
+            # A zero-padded or 3-digit number is a SADAD code (e.g. "005"); a
+            # plain small number is the list position (e.g. "2").
+            looks_like_code = len(digits) == 3 or digits.startswith("0")
+            by_code = next(
+                (o for o in options if o.code in (digits, digits.zfill(3))), None
+            )
             index = int(digits)
-            if 1 <= index <= len(options):
-                return options[index - 1]
+            in_range = options[index - 1] if 1 <= index <= len(options) else None
+            if looks_like_code and by_code is not None:
+                return by_code
+            if in_range is not None:
+                return in_range
+            if by_code is not None:
+                return by_code
         for option in options:
             name = normalize(option.name)
             if name and (name in normalized or normalized in name):

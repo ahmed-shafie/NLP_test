@@ -12,7 +12,9 @@ from app.data_loader import (
     is_known_name,
     lookup_name,
     resolve_biller,
+    resolve_biller_by_code,
     resolve_biller_candidates,
+    resolve_biller_fuzzy,
     resolve_biller_gazetteer,
     transliterations,
 )
@@ -77,6 +79,42 @@ def test_named_biller_returns_single_candidate():
 
 def test_no_match_returns_empty_candidates():
     assert resolve_biller_candidates("hello there") == []
+
+
+def test_generic_category_term_lists_all_billers_in_category():
+    # "internet" must offer every SADAD Telecom & Internet biller (STC, Mobily,
+    # Zain, ...), not just names that literally contain the word "internet".
+    cands = resolve_biller_candidates("pay my internet bill")
+    codes = {rec.biller_code for rec in cands}
+    assert len(cands) > 5
+    assert "001" in codes  # STC
+    assert "005" in codes  # Mobily
+    assert all(rec.category == "Telecom & Internet" for rec in cands)
+
+
+def test_freetext_multiword_name_is_not_swallowed_by_category():
+    # A specific (unknown) biller name must stay free text, not collapse to a
+    # whole category.
+    assert resolve_biller_candidates("pay my Acme Telecom bill") == []
+
+
+def test_numeric_token_resolves_to_sadad_code():
+    assert resolve_biller_by_code("153").name_en == "Ejar"
+    assert resolve_biller_by_code("001").biller_code == "001"
+    assert resolve_biller_by_code("1").biller_code == "001"  # zero-padded
+    assert resolve_biller_by_code("٠٠١").biller_code == "001"  # Arabic-Indic
+    assert resolve_biller_by_code("778899") is None  # too long -> a reference
+    assert resolve_biller_by_code("999") is None  # not a real code
+
+
+def test_fuzzy_typo_matches_biller_name():
+    assert resolve_biller_fuzzy("egar").name_en == "Ejar"  # single-letter typo
+    assert resolve_biller_fuzzy("mobiley").name_en == "Mobily"
+
+
+def test_fuzzy_does_not_match_common_shared_words():
+    # A word shared by many billers must not fuzzy-resolve to an arbitrary one.
+    assert resolve_biller_fuzzy("saudi") is None
 
 
 # --------------------- cross-script transliteration (C1) ------------------ #
