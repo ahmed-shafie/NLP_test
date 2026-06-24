@@ -362,7 +362,7 @@ class ConversationEngine:
 
             # Semantic safety net: the classifier may flag abuse the blocklist
             # missed (novel insults). Redirect without echoing any text.
-            if parsed.intent is Intent.INAPPROPRIATE:
+            if settings.moderation_enabled and parsed.intent is Intent.INAPPROPRIATE:
                 return self._handle_inappropriate(
                     state, ModerationResult(True, "severe"), lang
                 )

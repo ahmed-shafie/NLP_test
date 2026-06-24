@@ -77,6 +77,15 @@ def test_abuse_midflow_preserves_state(engine: ConversationEngine):
     assert done.transfer is not None
 
 
+def test_moderation_disabled_does_not_redirect(engine: ConversationEngine, monkeypatch):
+    # With moderation off, abusive input is processed normally — neither the
+    # blocklist nor the semantic safety net should issue a redirect.
+    monkeypatch.setattr(settings, "moderation_enabled", False)
+    result = engine.handle("you are stupid, send 500 to Ahmed", "m_off")
+    assert not result.flagged_terms
+    assert result.state.flagged_count == 0
+
+
 def test_replies_vary_between_turns(engine: ConversationEngine, monkeypatch):
     monkeypatch.setattr(settings, "moderation_max_strikes", 10)
     first = engine.handle("you are stupid", "m3").reply
