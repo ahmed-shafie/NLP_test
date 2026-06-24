@@ -101,11 +101,7 @@ def detect(text: str) -> ModerationResult:
     if not hits:
         return ModerationResult(False)
 
-    severity = (
-        "severe"
-        if any(sev == "severe" for _, sev in hits)
-        else "mild"
-    )
+    severity = "severe" if any(sev == "severe" for _, sev in hits) else "mild"
     # De-duplicate display terms while preserving order.
     seen: set[str] = set()
     terms: list[str] = []
