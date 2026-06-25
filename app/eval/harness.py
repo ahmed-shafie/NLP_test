@@ -46,6 +46,10 @@ _BILL_SLOTS = ("biller_code", "reference_number", "amount", "currency")
 # sits a little below the current baseline (~0.96) so a real regression trips it
 # without the gate being knife-edge.
 MIN_INTENT_ACCURACY = 0.93
+# Over-blocking guard: no non-abusive gold utterance may be flagged INAPPROPRIATE.
+# Flagging a legitimate request as abuse is a high-harm failure, so the gate is
+# zero-tolerance and catches over-blocking regressions for *any* word in CI.
+MAX_INAPPROPRIATE_FALSE_POSITIVES = 0
 MIN_SLOT_F1 = {
     "amount": 0.97,
     "currency": 0.97,
@@ -105,6 +109,8 @@ class Report:
     confusion: dict[str, dict[str, int]] = field(default_factory=dict)
     slots: dict[str, SlotScore] = field(default_factory=dict)
     misses: list[str] = field(default_factory=list)
+    # Non-abusive gold rows that were wrongly predicted INAPPROPRIATE (over-block).
+    over_blocks: list[str] = field(default_factory=list)
 
     @property
     def intent_accuracy(self) -> float:
@@ -218,6 +224,13 @@ def evaluate(rows: list[GoldRow] | None = None) -> Report:
             report.misses.append(
                 f"INTENT {row.text!r}: gold={row.intent.value} pred={pred_intent.value}"
             )
+        if (
+            pred_intent is Intent.INAPPROPRIATE
+            and row.intent is not Intent.INAPPROPRIATE
+        ):
+            report.over_blocks.append(
+                f"OVER-BLOCK {row.text!r}: gold={row.intent.value} flagged as abuse"
+            )
 
         pred_slots = _predict_slots(row.text, language, row.intent)
         scored = _TRANSFER_SLOTS if row.intent is Intent.TRANSFER_MONEY else _BILL_SLOTS
@@ -269,6 +282,12 @@ def format_report(report: Report) -> str:
             continue
         rendered = ", ".join(f"{p}:{c}" for p, c in sorted(preds.items()))
         lines.append(f"  {gold:<16} -> {rendered}")
+    lines.append(
+        f"inappropriate over-blocks: {len(report.over_blocks)} "
+        "(non-abusive rows flagged as abuse)"
+    )
+    for ob in report.over_blocks:
+        lines.append(f"  {ob}")
     if report.misses:
         lines.append(f"misses ({len(report.misses)}):")
         lines.extend(f"  {m}" for m in report.misses)
@@ -286,6 +305,13 @@ def check_thresholds(report: Report) -> list[str]:
     if report.semantic and report.intent_accuracy < MIN_INTENT_ACCURACY:
         failures.append(
             f"intent_accuracy {report.intent_accuracy:.3f} < {MIN_INTENT_ACCURACY}"
+        )
+    # Over-blocking is enforced only under the semantic classifier (the keyword
+    # fallback cannot label INAPPROPRIATE), and is zero-tolerance.
+    if report.semantic and len(report.over_blocks) > MAX_INAPPROPRIATE_FALSE_POSITIVES:
+        failures.append(
+            f"inappropriate_false_positives {len(report.over_blocks)} "
+            f"> {MAX_INAPPROPRIATE_FALSE_POSITIVES}"
         )
     for slot, minimum in MIN_SLOT_F1.items():
         if slot in report.slots and report.slots[slot].f1 < minimum:

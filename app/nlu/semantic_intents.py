@@ -98,6 +98,23 @@ class SemanticIntentClassifier:
         share = weights[best_intent] / total
         # Confidence blends neighbour agreement (share) with the top similarity.
         confidence = round(min(0.5 * share + 0.5 * top.score, 0.99), 4)
+
+        # Abuse needs a higher bar than ordinary intents: a false positive (a
+        # legitimate word like "المخالفة" treated as abuse) is worse than a miss,
+        # and the deterministic blocklist is the real authority for flagging. When
+        # the semantic winner is INAPPROPRIATE but below that bar, defer to the
+        # next-best non-abuse intent instead of over-blocking.
+        if (
+            best_intent is Intent.INAPPROPRIATE
+            and confidence < settings.moderation_semantic_threshold
+        ):
+            others = {i: w for i, w in weights.items() if i is not Intent.INAPPROPRIATE}
+            if not others:
+                return Intent.FALLBACK, confidence
+            best_intent = max(others, key=lambda i: others[i])
+            share = others[best_intent] / total
+            confidence = round(min(0.5 * share + 0.5 * top.score, 0.99), 4)
+
         return best_intent, confidence
 
 

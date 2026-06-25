@@ -12,6 +12,7 @@ from app.conversation import moderation
 from app.conversation.engine import ConversationEngine
 from app.conversation.state import ConversationStatus
 from app.main import app
+from app.schemas import Intent
 
 client = TestClient(app)
 
@@ -84,6 +85,23 @@ def test_moderation_disabled_does_not_redirect(engine: ConversationEngine, monke
     result = engine.handle("you are stupid, send 500 to Ahmed", "m_off")
     assert not result.flagged_terms
     assert result.state.flagged_count == 0
+
+
+def test_legitimate_word_not_over_blocked(engine: ConversationEngine):
+    # "ادفع المخالفة" = "pay the fine": semantically near the abuse cluster but a
+    # real banking request. It must NOT be flagged, and should route to a bill.
+    result = engine.handle("ادفع المخالفة 12345", "m_fine")
+    assert not result.flagged_terms
+    assert result.state.flagged_count == 0
+    assert result.state.intent is not Intent.INAPPROPRIATE
+
+
+def test_genuine_abuse_still_flagged_above_threshold(engine: ConversationEngine):
+    # The higher semantic bar must not stop real abuse from being caught.
+    assert engine.handle("you are so stupid", "m_abuse1").flagged_terms or (
+        engine.handle("you are so stupid", "m_abuse2").state.intent
+        is Intent.INAPPROPRIATE
+    )
 
 
 def test_replies_vary_between_turns(engine: ConversationEngine, monkeypatch):

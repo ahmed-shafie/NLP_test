@@ -79,3 +79,7 @@
 {"text": "اخرس يا تافه", "language": "ar", "intent": "inappropriate", "slots": {}}
 {"text": "this is frustrating, pay my STC bill 778899 amount 320", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "001", "amount": "320", "reference_number": "778899"}}
 {"text": "I urgently need to send 200 to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "200", "currency": "SAR", "recipient": "Sara"}}
+{"text": "ادفع المخالفة", "language": "ar", "intent": "pay_bill", "slots": {}}
+{"text": "ادفع المخالفة 12345", "language": "ar", "intent": "pay_bill", "slots": {}}
+{"text": "pay my fine", "language": "en", "intent": "pay_bill", "slots": {}}
+{"text": "I want to pay a penalty", "language": "en", "intent": "pay_bill", "slots": {}}
