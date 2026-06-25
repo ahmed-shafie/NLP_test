@@ -176,6 +176,13 @@ class Settings(BaseSettings):
     # End the conversation after this many flagged turns in one session.
     moderation_max_strikes: int = 3
 
+    # Abuse-flagging is the highest-harm misclassification, so the semantic safety
+    # net must clear a higher bar than ordinary intents before it labels a turn
+    # INAPPROPRIATE. Below this confidence the next-best non-abuse intent wins, so
+    # legitimate-but-nearby words (e.g. "المخالفة" = a fine) are not over-blocked.
+    # The deterministic blocklist is unaffected and always flags.
+    moderation_semantic_threshold: float = 0.80
+
     # Seed for canned-reply variation. ``None`` -> random (varied) replies;
     # set an int for deterministic replies (used by tests).
     reply_variation_seed: int | None = None

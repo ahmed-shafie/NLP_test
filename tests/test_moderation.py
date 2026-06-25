@@ -12,6 +12,8 @@ from app.conversation import moderation
 from app.conversation.engine import ConversationEngine
 from app.conversation.state import ConversationStatus
 from app.main import app
+from app.nlu.semantic_intents import get_semantic_classifier
+from app.schemas import Intent
 
 client = TestClient(app)
 
@@ -84,6 +86,30 @@ def test_moderation_disabled_does_not_redirect(engine: ConversationEngine, monke
     result = engine.handle("you are stupid, send 500 to Ahmed", "m_off")
     assert not result.flagged_terms
     assert result.state.flagged_count == 0
+
+
+def test_legitimate_word_not_over_blocked(engine: ConversationEngine):
+    # "ادفع المخالفة" = "pay the fine": semantically near the abuse cluster but a
+    # real banking request. It must NOT be flagged, and should route to a bill.
+    result = engine.handle("ادفع المخالفة 12345", "m_fine")
+    assert not result.flagged_terms
+    assert result.state.flagged_count == 0
+    assert result.state.intent is not Intent.INAPPROPRIATE
+
+
+def test_genuine_abuse_still_flagged_above_threshold(engine: ConversationEngine):
+    # This phrase is NOT in the deterministic blocklist, so it can only be caught
+    # by the semantic safety net — and it must still clear the 0.80 bar and be
+    # refused. Proves the higher threshold did not let real abuse through.
+    text = "I think you are completely worthless and pathetic"
+    assert not moderation.detect(text).flagged  # bypasses the blocklist
+    classifier = get_semantic_classifier()
+    if classifier is not None:
+        intent, confidence = classifier.classify(text)
+        assert intent is Intent.INAPPROPRIATE
+        assert confidence >= settings.moderation_semantic_threshold
+    result = engine.handle(text, "m_sem_abuse")
+    assert result.state.flagged_count == 1  # the turn was refused (a strike)
 
 
 def test_replies_vary_between_turns(engine: ConversationEngine, monkeypatch):
