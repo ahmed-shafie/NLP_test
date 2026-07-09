@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ahmed-shafie/nlp_test/docs/action_object.schema.json",
+  "title": "NLU Action Object",
+  "description": "Versioned, structured result emitted by the NLU + LLM middleware for one user utterance. This is the integration contract between the NLU layer and any downstream consumer (request-builder / payment orchestration / bank API adapter). The NLU layer is responsible ONLY for understanding the utterance and resolving the beneficiary; it does NOT authenticate the user, enforce business limits, build the bank payload, or execute the transaction.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "text",
+    "language",
+    "intent",
+    "confidence",
+    "status",
+    "entities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Semantic version of THIS contract. Consumers must pin a major version. Bumped on any breaking field change.",
+      "const": "1.0.0"
+    },
+    "text": {
+      "type": "string",
+      "description": "The raw user utterance the result was derived from (for audit/trace).",
+      "minLength": 1
+    },
+    "language": {
+      "type": "string",
+      "description": "Detected (or hinted) language of the utterance.",
+      "enum": ["en", "ar"]
+    },
+    "intent": {
+      "type": "string",
+      "description": "The recognised intent. This enum is the shared source of truth agreed with Product.",
+      "enum": [
+        "transfer_money",
+        "pay_bill",
+        "small_talk",
+        "inappropriate",
+        "fallback"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Classifier confidence for the intent, 0..1.",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "intent_source": {
+      "type": "string",
+      "description": "Which classifier produced the intent.",
+      "enum": ["semantic", "keyword", "moderation"]
+    },
+    "status": {
+      "type": "string",
+      "description": "Actionability of this result. Only 'complete' results are safe to hand to the request-builder; the rest require another turn or are non-transactional.",
+      "enum": [
+        "complete",
+        "needs_clarification",
+        "fallback",
+        "refused"
+      ]
+    },
+    "entities": {
+      "type": "object",
+      "description": "Slots extracted for the intent. Fields present depend on the intent; unrelated fields are null/omitted.",
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": ["number", "null"],
+          "description": "Numeric amount (transfer or bill). Decimal value, > 0 when present.",
+          "exclusiveMinimum": 0
+        },
+        "currency": {
+          "type": ["string", "null"],
+          "description": "ISO-4217 currency code (e.g. 'SAR', 'USD'). Defaults to SAR when omitted by the user.",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "recipient": {
+          "type": ["string", "null"],
+          "description": "transfer_money: the raw recipient name as extracted from the utterance (before beneficiary resolution)."
+        },
+        "source_account": {
+          "type": ["string", "null"],
+          "description": "Optional 'from' account the user named. Authoritative source-account context should come from the authenticated session, not here."
+        },
+        "biller": {
+          "type": ["string", "null"],
+          "description": "pay_bill: the biller as the user referred to it."
+        },
+        "biller_category": {
+          "type": ["string", "null"],
+          "description": "pay_bill: canonical biller category when recognised (e.g. 'telecom')."
+        },
+        "biller_code": {
+          "type": ["string", "null"],
+          "description": "pay_bill: resolved SADAD biller code (e.g. '001') when known.",
+          "pattern": "^[0-9]{3}$"
+        },
+        "biller_name": {
+          "type": ["string", "null"],
+          "description": "pay_bill: resolved SADAD biller display name when known."
+        },
+        "reference_number": {
+          "type": ["string", "null"],
+          "description": "pay_bill: bill / subscriber / account reference number."
+        },
+        "note": {
+          "type": ["string", "null"],
+          "description": "Optional free-text note attached to the instruction."
+        }
+      }
+    },
+    "resolved_beneficiary": {
+      "type": ["object", "null"],
+      "description": "Authoritative beneficiary resolved via the beneficiary/account-details lookup. Takes precedence over any name-based match. Null when not resolved or not applicable.",
+      "additionalProperties": false,
+      "properties": {
+        "beneficiary_id": { "type": ["string", "null"] },
+        "name": { "type": "string" },
+        "account": { "type": ["string", "null"] },
+        "bank": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] },
+        "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" }
+      },
+      "required": ["name"]
+    },
+    "beneficiary_source": {
+      "type": ["string", "null"],
+      "description": "How the beneficiary was resolved.",
+      "enum": ["database", "contacts", "llm", null]
+    },
+    "llm_assisted": {
+      "type": "boolean",
+      "description": "True when the LLM fallback filled or corrected slots for this result."
+    },
+    "clarification": {
+      "type": ["string", "null"],
+      "description": "Natural-language follow-up to show the user when status = needs_clarification."
+    },
+    "session_id": {
+      "type": ["string", "null"],
+      "description": "Conversation/session identifier (multi-turn state key)."
+    },
+    "trace_id": {
+      "type": ["string", "null"],
+      "description": "Correlation/trace identifier for observability (block_trace)."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "intent": { "const": "transfer_money" }, "status": { "const": "complete" } } },
+      "then": {
+        "properties": {
+          "entities": { "required": ["amount", "currency", "recipient"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "intent": { "const": "pay_bill" }, "status": { "const": "complete" } } },
+      "then": {
+        "properties": {
+          "entities": { "required": ["amount", "currency", "reference_number"] }
+        }
+      }
+    }
+  ]
+}

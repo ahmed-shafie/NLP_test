@@ -1,0 +1,78 @@
+{
+  "transfer_complete": {
+    "schema_version": "1.0.0",
+    "text": "حول 500 ريال إلى أحمد",
+    "language": "ar",
+    "intent": "transfer_money",
+    "confidence": 0.98,
+    "intent_source": "semantic",
+    "status": "complete",
+    "entities": {
+      "amount": 500,
+      "currency": "SAR",
+      "recipient": "أحمد",
+      "source_account": null,
+      "note": null
+    },
+    "resolved_beneficiary": {
+      "beneficiary_id": "BEN_4001",
+      "name": "Ahmed",
+      "account": "SA0380000000608010167519",
+      "bank": "Al Rajhi Bank",
+      "branch": null,
+      "currency": "SAR"
+    },
+    "beneficiary_source": "database",
+    "llm_assisted": false,
+    "clarification": null,
+    "session_id": "sess_9f3c",
+    "trace_id": "trc_2b71"
+  },
+  "bill_complete": {
+    "schema_version": "1.0.0",
+    "text": "pay my STC bill 12345, 200 riyals",
+    "language": "en",
+    "intent": "pay_bill",
+    "confidence": 0.95,
+    "intent_source": "semantic",
+    "status": "complete",
+    "entities": {
+      "biller": "STC",
+      "biller_category": "telecom",
+      "biller_code": "001",
+      "biller_name": "STC",
+      "reference_number": "12345",
+      "amount": 200,
+      "currency": "SAR",
+      "note": null
+    },
+    "resolved_beneficiary": null,
+    "beneficiary_source": null,
+    "llm_assisted": false,
+    "clarification": null,
+    "session_id": "sess_1a2b",
+    "trace_id": "trc_88ce"
+  },
+  "needs_clarification": {
+    "schema_version": "1.0.0",
+    "text": "transfer 300 to Sara",
+    "language": "en",
+    "intent": "transfer_money",
+    "confidence": 0.91,
+    "intent_source": "semantic",
+    "status": "needs_clarification",
+    "entities": {
+      "amount": 300,
+      "currency": "SAR",
+      "recipient": "Sara",
+      "source_account": null,
+      "note": null
+    },
+    "resolved_beneficiary": null,
+    "beneficiary_source": null,
+    "llm_assisted": false,
+    "clarification": "I found two contacts named Sara. Which account should I use?",
+    "session_id": "sess_77aa",
+    "trace_id": "trc_0091"
+  }
+}
