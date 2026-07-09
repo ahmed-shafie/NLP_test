@@ -28,3 +28,6 @@ stanza_resources/
 .vscode/
 .idea/
 .DS_Store
+aiapply_lite/data/outputs/
+aiapply_lite/data/jobs/
+aiapply_lite/data/profile.yaml
