@@ -222,3 +222,86 @@ Action Object `status` above is the normalized, consumer-facing projection.
 3. **Orchestration** — idempotency, retries/timeouts, response normalization.
 4. **Bank API Adapter** — actually call transfer / SADAD / balance endpoints (start with a mock).
 5. **Transactional response** — return real transaction status + bank reference ID (`status: complete` today stops at a *confirmed* action, not an *executed* one).
+
+---
+
+## 6. Deployment & Operational Requirements (to run this brain in a bank)
+These are the concrete requirements to **operate the middleware inside a bank environment**,
+grounded in the repo's actual dependencies.
+
+### 6.1 Runtime & platform
+- **Python 3.11+**, served by **FastAPI 0.115** on **Uvicorn 0.34** (ASGI).
+- **Containerized deploy** (Dockerfile provided) behind the bank's API gateway / reverse proxy
+  (TLS terminated upstream). Horizontally scalable — the app is stateless when session/memory
+  state is externalized (see 6.3).
+- **Egress policy:** the only outbound calls are to the **LLM endpoint** (Ollama) and the
+  **beneficiary lookup**; both must be reachable from the pod/VM and allow-listed. No public
+  internet is required at runtime once models are cached.
+
+### 6.2 NLP / ML model requirements
+| Model / asset | Purpose | Requirement |
+|---|---|---|
+| **spaCy 3.8** + **Stanza 1.10** | tokenization / NER (EN + AR) | language models downloaded & cached in the image or a mounted volume |
+| **sentence-transformers** `paraphrase-multilingual-MiniLM-L12-v2` | FAISS intent embeddings | must be pre-downloaded; set `NLU_PRELOAD_MODELS=true` in prod to warm at boot |
+| **faiss-cpu 1.9** | semantic intent + example index | CPU-only; no GPU required |
+| **LLM** `ollama/qwen2.5:3b` (via LiteLLM 1.89) | narrow fallback only | on-prem **Ollama** server (`NLU_LLM_API_BASE`) — keep the model **in-bank**; do NOT route to an external LLM API for a regulated product |
+
+> **Data-residency note:** the LLM is local (Ollama) by design so no customer text leaves the
+> bank. If a hosted LLM is ever considered, it must clear the Security/Compliance review in §4.5.
+
+### 6.3 Infrastructure & data stores
+- **Session store** — set **`NLU_SESSION_BACKEND=redis`** with a real Redis (`NLU_REDIS_URL`) in
+  production (default is in-memory, single-process only). TTL `NLU_SESSION_TTL_SECONDS` (1800s).
+- **Memory Brain store** — `NLU_MEMORY_STORE_URL` (SQLite by default → point at a managed DB in prod).
+- **Audit sink** — `NLU_AUDIT_SINK=elasticsearch` + `NLU_ELASTICSEARCH_URL` (ELK) for the audit trail.
+- **Beneficiary / account-details source** — see §4.2; enable with `NLU_DB_ENABLED=true` and a
+  read-only credential/endpoint (off by default today).
+
+### 6.4 Configuration & secrets (key env vars)
+| Variable | Prod value / note |
+|---|---|
+| `NLU_PRELOAD_MODELS` | `true` (warm models at startup) |
+| `NLU_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` |
+| `NLU_LLM_ENABLED` / `NLU_LLM_MODEL` / `NLU_LLM_API_BASE` | `true` / `ollama/qwen2.5:3b` / in-bank Ollama URL |
+| `NLU_DB_ENABLED` | `true` + beneficiary lookup endpoint/credential |
+| `NLU_SESSION_BACKEND` / `NLU_REDIS_URL` | `redis` / managed Redis URL |
+| `NLU_AUDIT_ENABLED` / `NLU_AUDIT_SINK` / `NLU_ELASTICSEARCH_URL` | `true` / `elasticsearch` / ELK URL |
+| `NLU_MODERATION_SEMANTIC_THRESHOLD` | `0.80` (abuse over-block guard) |
+| `NLU_MAX_REQUEST_BYTES` | `1000000` (request-size cap) |
+| `NLU_LOG_JSON` / `NLU_LOG_LEVEL` / `NLU_METRICS_ENABLED` | `true` / `INFO` / `true` |
+- **Secrets** (DB credentials, Redis URL, LLM/ELK endpoints) must come from the bank's secret
+  manager / vault — never committed. No secret values live in the repo.
+
+### 6.5 Security & compliance controls (built-in, to be reviewed by §4.5)
+- **No user authentication here** — the middleware trusts an already-authenticated identity (§4.3).
+- **Abuse moderation** guard on every turn (bilingual, with the `المخالفة` over-block fix).
+- **Request-size cap** (`NLU_MAX_REQUEST_BYTES`) and structured JSON logging.
+- **PII handling** — `block_trace` masks flagged terms; confirm redaction + retention against the
+  bank's policy before go-live.
+- **Local-only LLM** — customer text does not leave the bank.
+
+### 6.6 Observability & quality gates (built)
+- **Metrics** — Prometheus (`/metrics`), enable with `NLU_METRICS_ENABLED`.
+- **Tracing** — per-turn `block_trace` + `trace_id`; wire `trace_id` to the bank's correlation ID.
+- **Health** — `GET /health` and `GET /health/ready` for liveness/readiness probes.
+- **Eval gate** — deterministic CI gate (intent accuracy, per-slot F1, zero-tolerance over-block)
+  blocks regressions; **Active Learning** review queue + nightly FAISS hot-swap for continuous
+  improvement.
+
+### 6.7 Non-functional targets (to agree with the bank)
+- **Latency** — deterministic path is sub-100ms typical; the LLM fallback adds seconds (tighten
+  `timeout`, keep it off the ~96% deterministic turns). Agree a per-request SLA.
+- **Availability** — run ≥2 replicas; externalize session/memory (6.3) so any replica can serve
+  any turn.
+- **Capacity** — size Ollama + embedding warm pool for peak concurrent turns.
+
+### 6.8 Go-live checklist
+- [ ] Models pre-baked/cached; `NLU_PRELOAD_MODELS=true`.
+- [ ] Redis session backend + managed memory DB configured.
+- [ ] In-bank Ollama reachable; LLM model pulled.
+- [ ] Beneficiary lookup enabled with read-only credential (§4.2).
+- [ ] Authenticated context contract agreed with channel (§4.3) — *build gap §5.3(1)*.
+- [ ] ELK audit sink + retention approved by Security (§4.5).
+- [ ] Prometheus scrape + health probes wired.
+- [ ] Eval gate green in CI; moderation thresholds signed off.
+- [ ] All §5.2 blocking prerequisites resolved before end-to-end UAT.
