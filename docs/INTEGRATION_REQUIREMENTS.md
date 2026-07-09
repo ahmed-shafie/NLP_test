@@ -142,7 +142,52 @@
 
 ---
 
-## 4. Errors
+## 4. Mandatory attributes per case (per intent)
+The service will keep asking (via `pending_slot`) until the mandatory slots for the detected
+intent are filled, then move to a **confirmation** step, then `complete: true`. The table below
+is what the app should ultimately collect for each case.
+
+### 4.1 `transfer_money`
+| Attribute | Mandatory? | Notes |
+|---|---|---|
+| `amount` | ✅ mandatory | Decimal, must be > 0. Arabic-Indic digits and spelled-out amounts accepted. |
+| `recipient` | ✅ mandatory | Beneficiary name (or resolved via `account_number` on `/nlu/parse`). |
+| `currency` | ⭐ effectively mandatory | ISO code (USD/EUR/GBP/EGP/SAR/AED/KWD/QAR). **Defaults to `SAR`** if the user doesn't say one. |
+| `source_account` | optional | The "from" account, if the user names one. |
+| `note` | optional | Free-text note. |
+| **confirmation** | ✅ required step | User must confirm (yes/no) before `complete: true`. |
+
+### 4.2 `pay_bill`
+| Attribute | Mandatory? | Notes |
+|---|---|---|
+| `biller` (or `biller_code`) | ✅ mandatory | Who is being paid; resolved by name / category / 3-digit SADAD code / typo. Ambiguous → `status: disambiguating`. |
+| `reference_number` | ✅ mandatory | Bill / subscriber / account reference. |
+| `amount` | ✅ mandatory | Decimal, > 0. |
+| `currency` | ⭐ effectively mandatory | Defaults to `SAR` if omitted. |
+| `note` | optional | Free-text note. |
+| **confirmation** | ✅ required step | User must confirm before `complete: true`. |
+
+### 4.3 `small_talk` / `fallback` / `inappropriate`
+No transactional attributes. These return a `reply` only; there is nothing for the app to collect.
+
+> **Rule of thumb:** the app does **not** have to pre-collect these — just relay each user
+> message and read `pending_slot` to know what's still missing. Treat `complete: true` as
+> "all mandatory attributes present and confirmed".
+
+---
+
+## 5. Other things to confirm / know
+- **Currency default:** `SAR` when the user doesn't specify one.
+- **Language:** `en` / `ar`; auto-detected, or send a `language` hint.
+- **`session_id`:** you own its lifecycle — one per conversation, new one per new chat; reuse it every turn.
+- **Confirmation is mandatory** for transfer and bill before completion (yes/no turn).
+- **Amounts:** decimal, must be > 0; Arabic-Indic digits (`٥٠٠`) and words ("a thousand"/"ألف") are parsed.
+- **Moderation:** abusive input returns a redirect `reply` with `flagged_terms` set — no action is created.
+- **Open items to agree with us (not fixed in code):** production **host/base URL**, any **auth header** your gateway injects, **rate limits / timeouts**, and whether the **beneficiary lookup** (`account_number`) will be enabled for your environment.
+
+---
+
+## 6. Errors
 | HTTP | Meaning | What to do |
 |---|---|---|
 | `400` / `422` | Invalid/empty body (e.g. missing `text`) | Fix the payload; show a generic error to the user. |
