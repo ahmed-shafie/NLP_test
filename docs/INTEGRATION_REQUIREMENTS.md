@@ -1,307 +1,168 @@
-# NLU + LLM Middleware — Integration Requirements & Technical Specification
+# NLU + LLM Middleware — Integration Guide
 
 **Component:** NLU + LLM Middleware (bilingual EN/AR banking assistant)
 **Repository:** `ahmed-shafie/NLP_test`
-**Status legend:** ✅ built & running · ⚠️ partial / demo-only · ❌ target, not built
+**Audience:** IT / Infrastructure team and Mobile / Frontend developers integrating with this service.
 
-> This document mirrors the standard integration-contract format, but every schema,
-> endpoint, intent, and field below is reconciled against **what is actually in this
-> codebase today**. Idealized/aspirational items are explicitly marked ❌ *target* so
-> they are not mistaken for delivered features.
+> This document describes **what is implemented today** and exactly **what we need from the
+> IT team and the Mobile developers** to integrate the application with them.
 
 ---
 
-## 1. Executive Summary
-This service is the intelligent conversational layer of the banking architecture. It
-processes bilingual (English/Arabic) natural-language queries, extracts intent, resolves
-entities (e.g. beneficiaries, SADAD billers), and returns a **structured, versioned JSON
-Action Object** for downstream orchestration to build and execute the final core-banking
-call.
-
-The component is **stateless regarding business logic**. It does **not** authenticate the
-user, enforce business rules/limits, construct the final bank payload, handle transaction
-orchestration (retries/idempotency), or execute the transaction. Those are delegated to
-downstream systems.
-
-**What is real today (beyond a plain NLU):** a deterministic-first NLU core with an LLM
-fallback, a stateful conversation engine (multi-turn transfer & bill flows with
-confirmation/disambiguation), an abuse-moderation guard, a Memory Brain (shortcuts/habits),
-`block_trace` observability, and an Active-Learning review queue + eval gate in CI.
-
-## 2. Component Scope and Architecture
-
-### 2.1 Architecture flow (as-built)
-```
-[ Channel / App / Web UI ]
-        |  (text; today: {text, language?, account_number?})   ❌ target: authenticated envelope
-        v
-[ FastAPI ]  ->  [ Conversation Engine ]  --lookup-->  [ Beneficiary / Account-Details source ] ⚠️ off by default
-        |               |
-        |               v
-        |        [ Haystack Pipeline: detect-lang -> moderation -> intent (FAISS)
-        |          -> entities -> contacts -> beneficiary -> LLM fallback ]
-        v
-[ Structured JSON Action Object ]  --->  ❌ [ Request Builder -> Orchestration -> Bank API Adapter -> Core Banking ]
-```
-Key correction vs. an idealized diagram: the **LLM is the last stage inside the linear
-pipeline** (fires only when deterministic slots are incomplete / fallback), not a parallel
-branch. Everything to the right of the Action Object (Request Builder onward) is **not built**.
-
-### 2.2 Deliverables (our side of the contract)
-1. **JSON Action Object** — validated, versioned (`schema_version`), with intent,
-   confidence, entities, `resolved_beneficiary`, and a conversational `status`.
-   ✅ built (see `NLUResponse` / `ConversationResponse`).
-2. **Intent enum & slot dictionary** — stable list of intents + required/optional slots. ✅ built.
-3. **Conversational status semantics** — state machine consumers use to know when an action
-   is ready (`complete`) vs. still clarifying. ✅ built.
-4. **Observability** — per-turn `trace_id` + `block_trace`. ✅ built (NLU steps only; bank-call
-   sub-fields ❌ until a bank call exists).
-
-### 2.3 Exclusions (explicitly not ours)
-- **Authentication & authorization** — assumed done by the channel. ❌ not in this component.
-- **Business-limit enforcement** — funds/daily-limit checks are downstream. ❌ not here.
-- **Payload mapping** — we emit a canonical object; mapping to proprietary core-banking fields is downstream. ❌ not here.
-- **Transaction execution** — we never initiate/commit a transaction. ❌ not here.
+## 1. What this application is
+A FastAPI service that turns a bilingual (English/Arabic) natural-language banking message
+into a **structured JSON result**: it detects the intent (transfer, bill payment, small-talk),
+extracts entities (amount, currency, recipient, biller, reference), resolves the beneficiary,
+and drives a multi-turn conversation (asking for missing details, disambiguating, confirming).
+It exposes both a stateless parse endpoint and a stateful chat endpoint for a mobile/web client.
 
 ---
 
-## 3. Data Contracts: Input and Output
+## 2. What is implemented now
+| Capability | Status | Detail |
+|---|---|---|
+| **REST API (FastAPI)** | ✅ | `/nlu/parse`, `/conversation/text`, `/health`, `/health/ready`, `/metrics` (mirrored under `/v1`). |
+| **Language detection (EN/AR)** | ✅ | Auto-detected per message; can be hinted. |
+| **Intent classification** | ✅ | FAISS semantic classifier + keyword fallback. Intents: `transfer_money`, `pay_bill`, `small_talk`, `inappropriate`, `fallback`. |
+| **Entity extraction** | ✅ | Amount, currency, recipient, source account, biller, biller category/code, reference number — EN + AR (incl. Arabic-Indic digits, spelled-out amounts). |
+| **Transfer flow** | ✅ | Collect amount/currency/recipient → confirm → complete. |
+| **Bill-payment flow (SADAD)** | ✅ | Biller resolution by name / category / 3-digit code / fuzzy typo; disambiguation when ambiguous. |
+| **Contact & beneficiary resolution** | ✅ | Name matching (EN↔AR transliteration); beneficiary lookup by account number (⚠️ off by default — see §4). |
+| **Conversation engine (multi-turn)** | ✅ | Stateful sessions; states `selecting/collecting/disambiguating/confirming/completed/cancelled`. |
+| **Moderation / abuse guard** | ✅ | Refuses abusive input with bilingual redirects; tuned to avoid over-blocking legitimate words. |
+| **Memory Brain** | ✅ | Saved shortcuts + learned habits (favorite recipient, common amounts). |
+| **LLM fallback** | ✅ | On-prem Ollama `qwen2.5:3b`; fires only when the deterministic path is incomplete. |
+| **Observability** | ✅ | Per-turn `block_trace` + `trace_id`; Prometheus `/metrics`. |
+| **Quality gate** | ✅ | Deterministic eval gate in CI + Active-Learning review queue. |
+| **Supported currencies** | ✅ | USD, EUR, GBP, EGP, SAR, AED, KWD, QAR — **default SAR**. |
 
-### 3.1 Input — as-built vs. target
-**As-built** — `POST /nlu/parse` (also mirrored under `/v1`) and `POST /conversation/text`:
+---
+
+## 3. What we need from the Mobile / Frontend developers
+The mobile app is the **channel** that talks to this service. To integrate, the mobile team needs
+the API contract below and must agree to a few responsibilities.
+
+### 3.1 Endpoints to call
+- **Stateful chat (recommended for the app):** `POST /conversation/text`
+- **Stateless single parse (optional):** `POST /nlu/parse`
+
+### 3.2 Request contract (what the app sends)
+```jsonc
+// POST /conversation/text
+{
+  "text": "حول 500 ريال إلى أحمد",   // required: the user's message this turn
+  "session_id": "sess_abc123",        // keep constant across a conversation; create per new chat
+  "language": "ar",                   // optional hint ("en" | "ar"); auto-detected if omitted
+  "user_id": "CUST_10045"             // the authenticated customer id (see 3.5)
+}
+```
 ```jsonc
 // POST /nlu/parse
-{ "text": "حول 500 ريال إلى أحمد", "language": "ar" /*optional*/, "account_number": "..." /*optional*/ }
-
-// POST /conversation/text  (stateful, multi-turn)
-{ "text": "...", "session_id": "sess_...", "language": "ar", "user_id": "CUST_10045" }
+{ "text": "pay my STC bill 12345, 200 riyals", "language": "en" /*optional*/, "account_number": "3000009999" /*optional*/ }
 ```
-There is **no** authenticated request envelope today (no `request_id`, `channel`,
-`user_context`, `source_accounts`). ⚠️
 
-**❌ Target input envelope (recommended for production)** — the channel should send an
-authenticated context wrapper:
+### 3.3 Response contract (what the app receives)
+`POST /conversation/text` returns:
 ```jsonc
 {
-  "request_id": "req_987654321",
-  "timestamp": "2026-07-09T14:30:00Z",
-  "channel": "MOBILE_APP | WEB_PORTAL | WHATSAPP | IVR",
-  "user_context": {
-    "customer_id": "CUST_10045",          // verified, authenticated
-    "session_id": "sess_abc123xyz",
-    "language": "en",
-    "source_accounts": ["1000001234", "2000005678"]
-  },
-  "message": { "text": "Transfer 500 riyals to my brother Ahmed" }
-}
-```
-*Gap to close:* accept and thread `request_id → trace_id`, `session_id`, `customer_id`, and
-`source_accounts` (today `session_id`/`user_id` exist on `/conversation/text`; the rest do not).
-
-### 3.2 Output — the Action Object (as-built)
-Formal schema: [`action_object.schema.json`](./action_object.schema.json); examples:
-[`action_object.example.json`](./action_object.example.json). Grounded in the real
-`NLUResponse` model:
-
-| Field | Type | Notes |
-|---|---|---|
-| `schema_version` | string | `"1.0.0"` (consumers pin major). |
-| `text` | string | Raw utterance (audit/trace). |
-| `language` | enum | `en` \| `ar`. |
-| `intent` | enum | `transfer_money` \| `pay_bill` \| `small_talk` \| `inappropriate` \| `fallback`. |
-| `confidence` | number 0..1 | Intent confidence. |
-| `intent_source` | enum | `semantic` \| `keyword` \| `moderation`. |
-| `status` | enum | `complete` \| `needs_clarification` \| `fallback` \| `refused`. |
-| `entities` | object | Transfer: `amount, currency, recipient, source_account, note`. Bill: `biller, biller_category, biller_code, biller_name, reference_number, amount, currency, note`. |
-| `resolved_beneficiary` | object\|null | `beneficiary_id, name, account, bank, branch, currency`. |
-| `beneficiary_source` | enum\|null | `database` \| `contacts` \| `llm`. |
-| `llm_assisted` | bool | LLM filled/corrected slots. |
-| `clarification` | string\|null | Follow-up text when `needs_clarification`. |
-| `session_id`, `trace_id` | string\|null | Session + correlation IDs. |
-
-**Naming note vs. your idealized PDF (kept honest):** the app uses a **flat** `intent` +
-`confidence` (not a nested `intent: {name, confidence}`), `entities.recipient` (not
-`recipient_name_raw`), and `resolved_beneficiary.{id,name,account,bank}` (not
-`{beneficiary_id, account_number, bank_code, full_name, match_confidence}`). The intent enum
-is **lowercase** and does **not** split `TRANSFER_INTERNAL`/`TRANSFER_EXTERNAL`. These are
-the concrete deltas to decide on before publishing v1 externally.
-
-**Supported currencies (as-built):** USD, EUR, GBP, EGP, SAR, AED, KWD, QAR — **default SAR**.
-
-Example (transfer, complete):
-```json
-{
-  "schema_version": "1.0.0", "text": "حول 500 ريال إلى أحمد", "language": "ar",
-  "intent": "transfer_money", "confidence": 0.98, "intent_source": "semantic",
-  "status": "complete",
-  "entities": { "amount": 500, "currency": "SAR", "recipient": "أحمد" },
-  "resolved_beneficiary": { "beneficiary_id": "BEN_4001", "name": "Ahmed",
-    "account": "SA03...519", "bank": "Al Rajhi Bank", "currency": "SAR" },
-  "beneficiary_source": "database", "llm_assisted": false,
-  "session_id": "sess_9f3c", "trace_id": "trc_2b71"
+  "session_id": "sess_abc123",
+  "reply": "You're sending 500 SAR to Ahmed. Confirm? (yes/no)", // show this to the user
+  "status": "confirming",   // selecting | collecting | disambiguating | confirming | completed | cancelled
+  "language": "ar",
+  "intent": "transfer_money",
+  "pending_slot": null,     // if set, the field we still need (prompt the user for it)
+  "complete": false,        // true only when the action is fully collected + confirmed
+  "slots": { "amount": 500, "currency": "SAR", "recipient": "أحمد" },
+  "transfer": { /* validated transfer object when applicable */ },
+  "bill": null,             // validated bill object for pay_bill
+  "flagged_terms": [],      // non-empty if the message was moderated
+  "block_trace": [ /* per-step trace for debugging */ ]
 }
 ```
 
-### 3.3 Conversation engine status (multi-turn, as-built)
-`/conversation/text` returns `ConversationResponse` with its own state machine
-(`ConversationStatus`): `selecting`, `collecting`, `disambiguating`, `confirming`,
-`completed`, `cancelled` — plus `reply`, `pending_slot`, `slots`, `transfer`/`bill`
-validated objects, `flagged_terms`, `block_trace`. This is the live chat contract; the
-Action Object `status` above is the normalized, consumer-facing projection.
+### 3.4 How the app should drive the conversation
+- Send each user message with the **same `session_id`**; start a new `session_id` for a new chat.
+- Always render `reply` to the user.
+- Loop on `status`: while `collecting`/`disambiguating`/`confirming`, keep sending the user's
+  next message. Treat `complete: true` (status `completed`) as "action ready".
+- If `flagged_terms` is non-empty, the turn was a moderation redirect — just show `reply`.
+- Pass `language` if the app already knows the user's preference; otherwise omit it.
+
+### 3.5 Mobile team responsibilities
+- **Authentication is done by the app/channel**, not by this service. The app must only call the
+  API for an **already-authenticated** user and pass the verified `user_id` (customer id).
+- Manage `session_id` lifecycle (one per conversation) and conversation timeout on the UI side.
+- Do not send secrets or tokens in `text`; this service does not authenticate.
+- Handle standard HTTP errors (400 validation, 5xx) and show a friendly fallback message.
 
 ---
 
-## 4. External Dependencies and Prerequisites
+## 4. What we need from the IT / Infrastructure team
+To host and operate the service, IT must provide the following environment. Config is via `NLU_*`
+environment variables; secrets come from the bank's vault (nothing is committed to the repo).
 
-### 4.1 Core-Banking API team *(highest priority — blocking)*
-- **API specifications** (OpenAPI/Swagger) for every action: internal transfer, external
-  transfer, SADAD bill payment, balance inquiry, beneficiary management.
-- **Exact request/response schemas** — field names, types, required/optional, formats (IBAN
-  rules, amount precision, ISO-4217 currency, dates).
-- **Authentication model** — OAuth2 / mTLS / API key; token issuer + scopes; explicit
-  confirmation auth is **not** owned by this component.
-- **Idempotency & correlation** — required idempotency key / correlation-ID header.
-- **Error catalogue** — codes/messages to map backend failures to user-friendly replies.
-- **Test environment** — stable sandbox/UAT with test accounts, beneficiaries, billers.
-- **Operational metrics** — rate limits, timeouts, SLAs.
-- **Field-mapping rules** — how our canonical slots map to their fields
-  (e.g. `resolved_beneficiary.beneficiary_id → beneficiaryId`, `entities.amount → txn.amount`).
+### 4.1 Runtime & hosting
+- **Python 3.11+** container (Dockerfile provided), run with **Uvicorn** behind the API gateway /
+  reverse proxy with **TLS terminated upstream**.
+- Run **≥2 replicas** for availability; the service is stateless once session/memory state is
+  externalized (see 4.3).
+- **Liveness/readiness probes:** `GET /health` and `GET /health/ready`.
 
-### 4.2 Beneficiary / Account-Details data owners *(blocking)*
-- **Access method** — highly-available, **read-only lookup API** (preferred over direct DB).
-  ⚠️ Today an internal lookup exists but is **OFF by default** (`db_enabled=false`, demo data).
-- **Connection details** — endpoint URLs / connection strings + a secure read-only credential.
-- **Schema & lookup keys** — query by account number / IBAN / alias / customer ID; returned
-  fields (name, account, currency, **account type**, status). *(account-type is ❌ not consumed today.)*
-- **Matching rules** — disambiguation + canonical EN↔AR name formats.
-- **Data scope** — global directory vs. scoped to the authenticated customer's beneficiaries.
-- **PII constraints** — what may be logged / masked / cached.
-
-### 4.3 Identity / Session / Channel team *(blocking)*
-- **Context delivery mechanism** — how authenticated context (customer ID, source accounts,
-  entitlements) reaches us: secure session token (JWT) or dedicated HTTP headers.
-- **Identity confirmation** — formal assurance every inbound request is already
-  authenticated; the middleware performs **no** login/credential validation.
-
-### 4.4 Product / Business team *(blocking)*
-- **Canonical lists** — finalized intent list + slot dictionary (mandatory vs optional per
-  intent), aligned to our enum. *(Decide the `transfer_money` vs `TRANSFER_INTERNAL/EXTERNAL` split.)*
-- **Business rules** — formal confirmation limits (e.g. "max 10,000 SAR") are enforced
-  **downstream**, not in the NLU middleware.
-- **SADAD catalogue** — official, up-to-date biller catalogue (codes + categories) as source
-  of truth. ⚠️ We ship a working `sadad_billers.csv`; production must sync the official list.
-
-### 4.5 Security / Compliance team *(blocking)*
-- **Data policies** — PII redaction + data-residency rules.
-- **Audit requirements** — logging requirements, retention, encryption in transit & at rest.
-
----
-
-## 5. Responsibilities & Blocking Prerequisites
-
-### 5.1 The boundary agreement
-> **We deliver** a validated, versioned JSON Action Object from natural-language input.
-> **They deliver** API specs, auth, sandbox, and beneficiary-data access to map that JSON to
-> a real bank call.
-> **Not ours:** user authentication, limit enforcement, final payload construction,
-> orchestration, and executing the bank call.
-
-### 5.2 Prerequisites checklist
-| # | Prerequisite | Owner | Blocking? |
-|---|---|---|---|
-| 1 | Bank API spec + sandbox + auth | Core-Banking | **Yes** |
-| 2 | Beneficiary lookup access (read-only) | Data owners | **Yes** |
-| 3 | Authenticated identity/context passed in | Identity/Channel | **Yes** |
-| 4 | Canonical intents/slots + SADAD catalogue | Product | **Yes** |
-| 5 | PII / audit / residency policy | Security | **Yes** |
-| 6 | Field-mapping rules (our slots → their fields) | Core-Banking + us | **Yes** |
-
-### 5.3 Our own build gaps to reach full end-to-end (❌ not built)
-1. **Authenticated input envelope** — accept `request_id/channel/user_context/source_accounts`.
-2. **Request Builder** — map the Action Object → validated bank payload (+ account-type check).
-3. **Orchestration** — idempotency, retries/timeouts, response normalization.
-4. **Bank API Adapter** — actually call transfer / SADAD / balance endpoints (start with a mock).
-5. **Transactional response** — return real transaction status + bank reference ID (`status: complete` today stops at a *confirmed* action, not an *executed* one).
-
----
-
-## 6. Deployment & Operational Requirements (to run this brain in a bank)
-These are the concrete requirements to **operate the middleware inside a bank environment**,
-grounded in the repo's actual dependencies.
-
-### 6.1 Runtime & platform
-- **Python 3.11+**, served by **FastAPI 0.115** on **Uvicorn 0.34** (ASGI).
-- **Containerized deploy** (Dockerfile provided) behind the bank's API gateway / reverse proxy
-  (TLS terminated upstream). Horizontally scalable — the app is stateless when session/memory
-  state is externalized (see 6.3).
-- **Egress policy:** the only outbound calls are to the **LLM endpoint** (Ollama) and the
-  **beneficiary lookup**; both must be reachable from the pod/VM and allow-listed. No public
-  internet is required at runtime once models are cached.
-
-### 6.2 NLP / ML model requirements
-| Model / asset | Purpose | Requirement |
-|---|---|---|
-| **spaCy 3.8** + **Stanza 1.10** | tokenization / NER (EN + AR) | language models downloaded & cached in the image or a mounted volume |
-| **sentence-transformers** `paraphrase-multilingual-MiniLM-L12-v2` | FAISS intent embeddings | must be pre-downloaded; set `NLU_PRELOAD_MODELS=true` in prod to warm at boot |
-| **faiss-cpu 1.9** | semantic intent + example index | CPU-only; no GPU required |
-| **LLM** `ollama/qwen2.5:3b` (via LiteLLM 1.89) | narrow fallback only | on-prem **Ollama** server (`NLU_LLM_API_BASE`) — keep the model **in-bank**; do NOT route to an external LLM API for a regulated product |
-
-> **Data-residency note:** the LLM is local (Ollama) by design so no customer text leaves the
-> bank. If a hosted LLM is ever considered, it must clear the Security/Compliance review in §4.5.
-
-### 6.3 Infrastructure & data stores
-- **Session store** — set **`NLU_SESSION_BACKEND=redis`** with a real Redis (`NLU_REDIS_URL`) in
-  production (default is in-memory, single-process only). TTL `NLU_SESSION_TTL_SECONDS` (1800s).
-- **Memory Brain store** — `NLU_MEMORY_STORE_URL` (SQLite by default → point at a managed DB in prod).
-- **Audit sink** — `NLU_AUDIT_SINK=elasticsearch` + `NLU_ELASTICSEARCH_URL` (ELK) for the audit trail.
-- **Beneficiary / account-details source** — see §4.2; enable with `NLU_DB_ENABLED=true` and a
-  read-only credential/endpoint (off by default today).
-
-### 6.4 Configuration & secrets (key env vars)
-| Variable | Prod value / note |
+### 4.2 NLP / LLM models (must be reachable / pre-cached)
+| Asset | Requirement |
 |---|---|
-| `NLU_PRELOAD_MODELS` | `true` (warm models at startup) |
+| spaCy + Stanza language models (EN/AR) | baked into the image or a mounted volume |
+| sentence-transformers `paraphrase-multilingual-MiniLM-L12-v2` | pre-downloaded; set `NLU_PRELOAD_MODELS=true` to warm at boot |
+| faiss-cpu | CPU-only, no GPU required |
+| **On-prem Ollama** running `qwen2.5:3b` | reachable at `NLU_LLM_API_BASE`; keep the LLM **in-bank** — no external LLM API |
+
+### 4.3 Data stores & services
+- **Redis** for sessions in production — set `NLU_SESSION_BACKEND=redis` + `NLU_REDIS_URL`
+  (default is single-process in-memory; not suitable for multi-replica).
+- **Database** for Memory Brain — `NLU_MEMORY_STORE_URL` (SQLite by default → managed DB in prod).
+- **Elasticsearch / ELK** for the audit trail — `NLU_AUDIT_SINK=elasticsearch` + `NLU_ELASTICSEARCH_URL`.
+- **Beneficiary / account-details lookup** — a **read-only** lookup API or DB, enabled with
+  `NLU_DB_ENABLED=true` + endpoint/credential. IT must provide: access method, connection details +
+  read-only credential, queryable keys (account number / IBAN / customer id), returned fields
+  (name, account, currency, status), and PII/logging constraints.
+
+### 4.4 Networking & security
+- **Egress allow-list:** only the Ollama endpoint and the beneficiary lookup need outbound access;
+  no public internet at runtime once models are cached.
+- **Secrets** (Redis URL, DB creds, ELK/Ollama endpoints, beneficiary credential) delivered via the
+  bank's **secret manager / vault** as env vars.
+- **Request size cap** `NLU_MAX_REQUEST_BYTES` (default 1 MB) and structured JSON logging enabled.
+- Confirm **PII redaction, data-residency, retention, and encryption** policies (audit logs +
+  `block_trace` masking) before go-live.
+
+### 4.5 Key configuration (env vars)
+| Variable | Production value / note |
+|---|---|
+| `NLU_PRELOAD_MODELS` | `true` |
 | `NLU_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` |
 | `NLU_LLM_ENABLED` / `NLU_LLM_MODEL` / `NLU_LLM_API_BASE` | `true` / `ollama/qwen2.5:3b` / in-bank Ollama URL |
 | `NLU_DB_ENABLED` | `true` + beneficiary lookup endpoint/credential |
 | `NLU_SESSION_BACKEND` / `NLU_REDIS_URL` | `redis` / managed Redis URL |
 | `NLU_AUDIT_ENABLED` / `NLU_AUDIT_SINK` / `NLU_ELASTICSEARCH_URL` | `true` / `elasticsearch` / ELK URL |
-| `NLU_MODERATION_SEMANTIC_THRESHOLD` | `0.80` (abuse over-block guard) |
-| `NLU_MAX_REQUEST_BYTES` | `1000000` (request-size cap) |
-| `NLU_LOG_JSON` / `NLU_LOG_LEVEL` / `NLU_METRICS_ENABLED` | `true` / `INFO` / `true` |
-- **Secrets** (DB credentials, Redis URL, LLM/ELK endpoints) must come from the bank's secret
-  manager / vault — never committed. No secret values live in the repo.
+| `NLU_METRICS_ENABLED` | `true` (Prometheus `/metrics`) |
+| `NLU_MODERATION_SEMANTIC_THRESHOLD` | `0.80` |
+| `NLU_MAX_REQUEST_BYTES` | `1000000` |
+| `NLU_LOG_JSON` / `NLU_LOG_LEVEL` | `true` / `INFO` |
 
-### 6.5 Security & compliance controls (built-in, to be reviewed by §4.5)
-- **No user authentication here** — the middleware trusts an already-authenticated identity (§4.3).
-- **Abuse moderation** guard on every turn (bilingual, with the `المخالفة` over-block fix).
-- **Request-size cap** (`NLU_MAX_REQUEST_BYTES`) and structured JSON logging.
-- **PII handling** — `block_trace` masks flagged terms; confirm redaction + retention against the
-  bank's policy before go-live.
-- **Local-only LLM** — customer text does not leave the bank.
+---
 
-### 6.6 Observability & quality gates (built)
-- **Metrics** — Prometheus (`/metrics`), enable with `NLU_METRICS_ENABLED`.
-- **Tracing** — per-turn `block_trace` + `trace_id`; wire `trace_id` to the bank's correlation ID.
-- **Health** — `GET /health` and `GET /health/ready` for liveness/readiness probes.
-- **Eval gate** — deterministic CI gate (intent accuracy, per-slot F1, zero-tolerance over-block)
-  blocks regressions; **Active Learning** review queue + nightly FAISS hot-swap for continuous
-  improvement.
+## 5. Integration checklist
+**Mobile / Frontend**
+- [ ] Call `POST /conversation/text` with `text` + a stable `session_id`.
+- [ ] Pass the authenticated `user_id`; never send credentials in `text`.
+- [ ] Render `reply`; loop on `status` until `complete: true`.
+- [ ] Handle `flagged_terms` (moderation) and HTTP errors gracefully.
 
-### 6.7 Non-functional targets (to agree with the bank)
-- **Latency** — deterministic path is sub-100ms typical; the LLM fallback adds seconds (tighten
-  `timeout`, keep it off the ~96% deterministic turns). Agree a per-request SLA.
-- **Availability** — run ≥2 replicas; externalize session/memory (6.3) so any replica can serve
-  any turn.
-- **Capacity** — size Ollama + embedding warm pool for peak concurrent turns.
-
-### 6.8 Go-live checklist
-- [ ] Models pre-baked/cached; `NLU_PRELOAD_MODELS=true`.
-- [ ] Redis session backend + managed memory DB configured.
-- [ ] In-bank Ollama reachable; LLM model pulled.
-- [ ] Beneficiary lookup enabled with read-only credential (§4.2).
-- [ ] Authenticated context contract agreed with channel (§4.3) — *build gap §5.3(1)*.
-- [ ] ELK audit sink + retention approved by Security (§4.5).
-- [ ] Prometheus scrape + health probes wired.
-- [ ] Eval gate green in CI; moderation thresholds signed off.
-- [ ] All §5.2 blocking prerequisites resolved before end-to-end UAT.
+**IT / Infrastructure**
+- [ ] Deploy the container (≥2 replicas) behind the gateway with TLS + health probes.
+- [ ] Pre-cache models; `NLU_PRELOAD_MODELS=true`.
+- [ ] Stand up on-prem Ollama (`qwen2.5:3b`) and allow-list it.
+- [ ] Provide Redis (sessions), a managed DB (memory), and ELK (audit).
+- [ ] Provide read-only beneficiary lookup access + credential (`NLU_DB_ENABLED=true`).
+- [ ] Deliver all secrets via the vault; set the `NLU_*` config above.
+- [ ] Sign off PII redaction / data-residency / retention with Security.
