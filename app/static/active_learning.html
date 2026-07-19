@@ -4,73 +4,52 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Banking NLU Brain — Active Learning</title>
+  <link rel="stylesheet" href="/static/app.css" />
   <style>
-    :root {
-      --bg: #eef3fb; --panel: #ffffff; --panel-2: #f3f7fd; --border: #e2e8f2;
-      --text: #0f1e33; --muted: #64748b; --accent: #2563eb; --accent-2: #059669;
-      --warn: #d97706; --danger: #e11d48; --violet: #7c3aed;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
-    header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-    header h1 { font-size: 20px; margin: 0; }
-    header .sub { color: var(--muted); font-size: 13px; }
-    nav { display: flex; gap: 14px; font-size: 13px; }
-    nav a { text-decoration: none; }
-    .status { margin-left: auto; font-size: 13px; color: var(--muted); }
-    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: middle; }
-    .dot.ok { background: var(--accent-2); } .dot.bad { background: var(--danger); }
-    main { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
-    .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
-    .card h2 .ep { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); background: var(--panel-2); padding: 2px 8px; border-radius: 6px; }
     .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
-    .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
-    .stat .n { font-size: 22px; font-weight: 700; }
+    .stat { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .stat .n { font-size: 22px; font-weight: 800; }
     .stat .l { font-size: 12px; color: var(--muted); }
-    button { background: var(--accent); color: #ffffff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
-    button:hover { filter: brightness(1.08); } button:disabled { opacity: .6; cursor: not-allowed; }
-    button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
-    button.ok { background: var(--accent-2); color: #ffffff; }
-    button.danger { background: var(--danger); color: #ffffff; }
-    select, input[type=text] { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; }
+    button { padding: 8px 14px; font-size: 13px; }
+    select, input[type=text] { padding: 7px 10px; font-size: 13px; }
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .toolbar select, .toolbar input[type=text] { width: auto; min-width: 160px; }
     .toolbar .spacer { flex: 1; }
-    .item { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
-    .item .top { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .item { margin-bottom: 10px; }
+    .item .top { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; padding: 0; border: none; background: none; }
     .item .utt { font-size: 15px; word-break: break-word; }
     .item .meta { color: var(--muted); font-size: 12px; margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; }
     .item .actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-    .badge.pending { background: rgba(245,158,11,.15); color: var(--warn); border: 1px solid rgba(245,158,11,.4); }
-    .badge.auto_approved { background: rgba(56,189,248,.15); color: var(--accent); border: 1px solid rgba(56,189,248,.4); }
-    .badge.approved { background: rgba(34,197,94,.15); color: var(--accent-2); border: 1px solid rgba(34,197,94,.4); }
-    .badge.rejected { background: rgba(248,113,113,.15); color: var(--danger); border: 1px solid rgba(248,113,113,.4); }
-    .badge.llm { background: rgba(168,85,247,.15); color: var(--violet); border: 1px solid rgba(168,85,247,.4); }
-    .muted { color: var(--muted); }
-    .err { color: var(--danger); font-size: 13px; }
+    .badge.pending { background: rgba(217,119,6,.12); color: var(--warn); border: 1px solid rgba(217,119,6,.35); }
+    .badge.auto_approved { background: rgba(37,99,235,.12); color: var(--brand); border: 1px solid rgba(37,99,235,.35); }
+    .badge.approved { background: rgba(5,150,105,.12); color: var(--good); border: 1px solid rgba(5,150,105,.35); }
+    .badge.rejected { background: rgba(225,29,72,.12); color: var(--danger); border: 1px solid rgba(225,29,72,.35); }
     .note { color: var(--muted); font-size: 13px; }
-    footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
-  
-    .card{box-shadow:0 1px 2px rgba(15,30,51,.05),0 10px 30px rgba(37,99,235,.06);}
   </style>
 </head>
 <body>
-  <header>
-    <h1>Active Learning</h1>
-    <span class="sub">Review queue · nightly index hot-swap</span>
-    <nav>
-      <a style="color:var(--muted)" href="/">Simulator</a>
-      <a style="color:var(--muted)" href="/brain">Brain</a>
-      <a style="color:var(--muted)" href="/brain/monitor">Brain monitor</a>
-      <a style="color:var(--accent)" href="/active-learning">Active learning</a>
-      <a style="color:var(--muted)" href="/admin">Connections</a>
-      <a style="color:var(--muted)" href="/admin/audit">Audit monitor</a>
-    </nav>
-    <span class="status"><span id="healthDot" class="dot"></span><span id="healthText">checking…</span></span>
-  </header>
+  <div class="app">
+    <div class="rail">
+      <a class="logo" href="/assistant" title="Home">N</a>
+      <div class="nav">
+        <a class="ic" title="Assistant" href="/assistant">💬</a>
+        <a class="ic" title="Brain" href="/brain">🧠</a>
+        <a class="ic" title="NLU Sandbox" href="/">🧪</a>
+        <a class="ic" title="Insights" href="/brain/monitor">📊</a>
+        <a class="ic active" title="Learning" href="/active-learning">🎓</a>
+        <a class="ic" title="Connections" href="/admin">🔗</a>
+        <a class="ic" title="Audit" href="/admin/audit">🛡️</a>
+      </div>
+      <div class="me" title="user"></div>
+    </div>
+    <div class="main">
+      <div class="top">
+        <div class="av">🎓</div>
+        <div><div class="ttl">Active Learning</div><div class="sub">Review queue · nightly index hot-swap</div></div>
+        <div class="pill" style="margin-left:auto"><span id="healthDot" class="dot"></span><span id="healthText">checking…</span></div>
+      </div>
 
-  <main>
+  <main class="content">
     <section class="card">
       <h2>Queue overview <span class="ep">GET /active-learning/stats</span></h2>
       <div class="stats" id="stats"><div class="note">Loading…</div></div>
@@ -97,9 +76,11 @@
     </section>
   </main>
 
-  <footer>
-    FastAPI + FAISS · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
-  </footer>
+      <footer>
+        FastAPI + FAISS · <a href="/docs">OpenAPI docs</a>
+      </footer>
+    </div>
+  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
