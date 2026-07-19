@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banking Assistant</title>
+<style>
+:root{
+  --bg:#eef3fb;--bg2:#ffffff;--card:#ffffff;--card2:#f3f7fd;--line:#e2e8f2;
+  --text:#0f1e33;--muted:#64748b;--brand:#2563eb;--brand2:#0891b2;--good:#059669;--warn:#d97706;--danger:#e11d48;
+  --grad:linear-gradient(135deg,#2563eb,#06b6d4);
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:radial-gradient(1200px 600px at 80% -10%,#dbeafe 0%,var(--bg) 60%);color:var(--text);height:100vh;overflow:hidden;}
+.app{display:grid;grid-template-columns:76px 1fr 320px;height:100vh;}
+.rail{background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:18px 0;gap:10px;}
+.logo{width:44px;height:44px;border-radius:13px;background:var(--grad);display:grid;place-items:center;font-weight:800;color:#fff;font-size:18px;box-shadow:0 6px 18px rgba(37,99,235,.35);}
+.rail .nav{margin-top:18px;display:flex;flex-direction:column;gap:6px;width:100%;align-items:center;}
+.ic{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;color:var(--muted);font-size:19px;cursor:pointer;position:relative;text-decoration:none;}
+.ic.active{background:var(--card2);color:var(--brand2);}
+.ic.active::before{content:"";position:absolute;left:-14px;top:12px;height:22px;width:4px;border-radius:4px;background:var(--grad);}
+.ic:hover{color:var(--text);}
+.rail .me{margin-top:auto;width:40px;height:40px;border-radius:50%;background:conic-gradient(from 20deg,#2563eb,#06b6d4,#059669,#2563eb);}
+.center{display:flex;flex-direction:column;min-width:0;}
+.top{padding:16px 26px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.7);backdrop-filter:blur(8px);}
+.top .av{width:38px;height:38px;border-radius:11px;background:var(--grad);color:#fff;display:grid;place-items:center;font-size:17px;}
+.top .ttl{font-weight:700;font-size:16px;}
+.top .sub{color:var(--muted);font-size:12.5px;}
+.top .pill{margin-left:auto;font-size:12px;color:var(--muted);background:var(--card2);border:1px solid var(--line);padding:5px 12px;border-radius:999px;}
+.top .pill.ok{color:var(--good);background:rgba(5,150,105,.1);border-color:rgba(5,150,105,.3);}
+.top .lang{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer;background:var(--card);}
+.stream{flex:1;overflow:auto;padding:26px 26px 8px;display:flex;flex-direction:column;gap:16px;}
+.day{align-self:center;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);padding:4px 12px;border-radius:999px;}
+.turn{display:flex;gap:12px;max-width:760px;}
+.turn.me{align-self:flex-end;flex-direction:row-reverse;}
+.av{width:34px;height:34px;border-radius:10px;flex:none;display:grid;place-items:center;font-size:15px;}
+.av.bot{background:var(--grad);color:#fff;}
+.av.meav{background:#e0f2fe;color:var(--brand2);border:1px solid var(--line);}
+.bubble{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 15px;font-size:14.5px;box-shadow:0 8px 24px rgba(30,58,95,.08);white-space:pre-wrap;}
+.turn.me .bubble{background:var(--grad);color:#fff;border:none;}
+.bubble .flag{background:rgba(225,29,72,.12);color:var(--danger);border-radius:4px;padding:0 3px;text-decoration:line-through;}
+.tcard{width:420px;max-width:100%;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 16px 36px rgba(30,58,95,.12);}
+.tcard .hd{padding:14px 18px;border-bottom:1px solid var(--line);}
+.tcard .hd .tag{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--brand2);font-weight:700;}
+.tcard .amt{padding:18px;text-align:center;}
+.tcard .amt .n{font-size:34px;font-weight:800;letter-spacing:-.5px;}
+.tcard .amt .c{color:var(--muted);font-size:13px;margin-top:2px;}
+.tcard .rows{padding:4px 18px 8px;}
+.trow{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);}
+.trow:first-child{border-top:none;}
+.trow .k{color:var(--muted);font-size:12.5px;width:96px;flex:none;}
+.trow .v{font-weight:600;font-size:14px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.chipav{width:26px;height:26px;border-radius:8px;background:#e0f2fe;display:grid;place-items:center;font-size:12px;color:var(--brand2);font-weight:700;}
+.verified{font-size:11px;color:var(--good);background:rgba(5,150,105,.1);padding:2px 8px;border-radius:999px;border:1px solid rgba(5,150,105,.3);}
+.tcard .act{display:flex;gap:10px;padding:14px 18px 18px;}
+.btn{flex:1;border:none;border-radius:12px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;}
+.btn.primary{background:var(--grad);color:#fff;box-shadow:0 8px 20px rgba(37,99,235,.35);}
+.btn.ghost{background:var(--card);color:var(--text);border:1px solid var(--line);flex:0 0 120px;}
+.btn:disabled{opacity:.55;cursor:not-allowed;}
+.steps{display:flex;gap:8px;align-items:center;font-size:11.5px;color:var(--muted);padding:2px 18px 14px;flex-wrap:wrap;}
+.steps .s{display:flex;align-items:center;gap:7px;}
+.steps .d{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10px;background:var(--card);border:1px solid var(--line);}
+.steps .s.done .d{background:var(--good);color:#fff;border:none;}
+.steps .s.now .d{background:var(--grad);color:#fff;border:none;}
+.steps .arw{color:var(--line);}
+.composer{padding:14px 26px 22px;border-top:1px solid var(--line);}
+.qr{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.qchip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-size:13px;color:var(--text);cursor:pointer;}
+.qchip:hover{border-color:var(--brand);}
+.ibox{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:8px 8px 8px 16px;}
+.ibox input{flex:1;background:none;border:none;color:var(--text);font-size:15px;outline:none;}
+.ibox .send{width:42px;height:42px;border-radius:12px;background:var(--grad);display:grid;place-items:center;color:#fff;font-size:18px;border:none;cursor:pointer;}
+.ibox .send:disabled{opacity:.55;cursor:not-allowed;}
+.ctx{background:var(--bg2);border-left:1px solid var(--line);padding:20px;overflow:auto;display:flex;flex-direction:column;gap:16px;}
+.ctitle{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);}
+.pcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 6px 18px rgba(30,58,95,.05);}
+.ben{display:flex;align-items:center;gap:12px;}
+.ben .a{width:44px;height:44px;border-radius:12px;background:var(--grad);display:grid;place-items:center;color:#fff;font-weight:800;}
+.ben .nm{font-weight:700;}.ben .ac{color:var(--muted);font-size:12px;}
+.mini{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:7px 0;border-top:1px solid var(--line);}
+.mini:first-of-type{border-top:none;}.mini .k{color:var(--muted);}
+.sc{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);cursor:pointer;border-radius:8px;}
+.sc:first-of-type{border-top:none;}
+.sc:hover{background:var(--card2);}
+.sc .i{width:32px;height:32px;border-radius:10px;background:#e0f2fe;display:grid;place-items:center;color:var(--brand2);flex:none;}
+.sc .t{font-size:13.5px;font-weight:600;}.sc .s{font-size:11.5px;color:var(--muted);}
+.uid{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);}
+.uid input{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px;color:var(--text);font-size:12px;width:90px;}
+.muted{color:var(--muted);}
+.err{color:var(--danger);font-size:13px;}
+.newbtn{font-size:12px;color:var(--brand);background:none;border:none;cursor:pointer;padding:0;}
+@media (max-width:1080px){.app{grid-template-columns:76px 1fr;}.ctx{display:none;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="rail">
+    <div class="logo">N</div>
+    <div class="nav">
+      <a class="ic active" title="Assistant" href="/assistant">💬</a>
+      <a class="ic" title="Insights" href="/brain/monitor">📊</a>
+      <a class="ic" title="Learning" href="/active-learning">🎓</a>
+      <a class="ic" title="Connections" href="/admin">🔗</a>
+      <a class="ic" title="Audit" href="/admin/audit">🛡️</a>
+      <a class="ic" title="NLU Sandbox" href="/">🧪</a>
+    </div>
+    <div class="me" title="user"></div>
+  </div>
+
+  <div class="center">
+    <div class="top">
+      <div class="av">✦</div>
+      <div><div class="ttl">Banking Assistant</div><div class="sub">Bilingual · understands English &amp; العربية</div></div>
+      <div class="uid" style="margin-left:auto">user <input id="userId" value="demo" spellcheck="false"> <button class="newbtn" id="newSession">New chat</button></div>
+      <div class="lang" id="langBtn" title="Toggle language hint">EN / ع</div>
+      <div class="pill" id="healthPill">● …</div>
+    </div>
+
+    <div class="stream" id="stream">
+      <div class="day">Today</div>
+    </div>
+
+    <div class="composer">
+      <div class="qr" id="quick"></div>
+      <div class="ibox">
+        <input id="msg" placeholder="Message the assistant…  (English or العربية)" autocomplete="off">
+        <button class="send" id="sendBtn">➤</button>
+      </div>
+      <div id="chatErr" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="ctx">
+    <div class="ctitle">In this transaction</div>
+    <div class="pcard" id="ctxCard"><div class="muted" style="font-size:13px">No active transfer or bill yet — say e.g. “send 500 to Ahmed”.</div></div>
+    <div class="ctitle">Quick actions</div>
+    <div class="pcard" id="shortcuts" style="padding:6px 16px"><div class="muted" style="font-size:13px;padding:10px 0">No saved shortcuts.</div></div>
+    <div class="ctitle">Your habits</div>
+    <div class="pcard" id="habits"><div class="muted" style="font-size:13px">—</div></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let sessionId = null;
+let langHint = null; // null = auto
+const AR_RE = /[\u0600-\u06FF]/;
+function userId(){ return $("userId").value.trim() || "demo"; }
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function initials(name){ const t=String(name||"?").trim(); return t? t[0].toUpperCase() : "?"; }
+
+const QUICK = [
+  {label:"💸 Pay a bill", text:"I want to pay a bill"},
+  {label:"🔁 Repeat last transfer", text:"repeat my last transfer"},
+  {label:"send 500 to Ahmed", text:"send 500 to Ahmed"},
+  {label:"حوّل ٢٠٠ ريال إلى محمد", text:"حوّل ٢٠٠ ريال إلى محمد", rtl:true},
+];
+
+async function api(path, opts){
+  opts = opts || {};
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if(!res.ok){
+    const msg = body && body.error ? body.error.message : (body && body.detail ? (typeof body.detail==="string"?body.detail:JSON.stringify(body.detail)) : ("HTTP "+res.status));
+    throw new Error(msg);
+  }
+  return body;
+}
+
+async function checkHealth(){
+  try{ const h = await api("/health"); $("healthPill").className="pill ok"; $("healthPill").textContent="● Online · v"+(h.version||"?"); }
+  catch{ $("healthPill").className="pill"; $("healthPill").textContent="● Offline"; }
+}
+
+function addUser(text){
+  const t=document.createElement("div"); t.className="turn me";
+  t.innerHTML = `<div class="av meav">${esc(initials(userId()))}</div><div class="bubble" dir="auto">${esc(text)}</div>`;
+  $("stream").appendChild(t);
+  const bub = t.querySelector(".bubble");
+  scrollDown();
+  return bub;
+}
+
+function addBot(text){
+  const t=document.createElement("div"); t.className="turn";
+  const col=document.createElement("div"); col.style.cssText="display:flex;flex-direction:column;gap:10px;min-width:0";
+  col.innerHTML = `<div class="bubble" dir="auto">${esc(text)}</div>`;
+  t.innerHTML = `<div class="av bot">✦</div>`;
+  t.appendChild(col);
+  $("stream").appendChild(t);
+  scrollDown();
+  return col; // caller may append a card
+}
+
+function highlightFlagged(node, text, terms){
+  if(!node || !terms || !terms.length) return;
+  const safe = terms.map(x=>String(x).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).filter(Boolean);
+  if(!safe.length) return;
+  const re = new RegExp("("+safe.join("|")+")","gi");
+  node.innerHTML = esc(text).replace(re,'<span class="flag">$1</span>');
+}
+
+function scrollDown(){ $("stream").scrollTop = $("stream").scrollHeight; }
+
+function fmtAmount(a){
+  if(a==null||a==="") return "";
+  const n = Number(a);
+  return isNaN(n) ? String(a) : n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+// Build the transfer/bill review card for confirming/completed states.
+function reviewCard(r){
+  const isBill = r.intent==="pay_bill";
+  const s = r.slots || {};
+  const done = r.status==="completed";
+  const wrap = document.createElement("div");
+  wrap.className = "tcard";
+  const tag = done ? (isBill?"Bill payment · done":"Transfer · done") : (isBill?"Bill payment · review":"Transfer · review");
+  const amount = s.amount!=null ? fmtAmount(s.amount) : "—";
+  const cur = s.currency || "";
+  let rows = "";
+  if(isBill){
+    const billerName = s.biller_name || s.biller || "—";
+    rows += trow("Biller", `<span class="chipav">${esc(initials(billerName))}</span> ${esc(billerName)}${s.biller_code?` <span class="verified">SADAD ${esc(s.biller_code)}</span>`:""}`);
+    if(s.reference_number) rows += trow("Reference", `<span style="font-family:ui-monospace,monospace">${esc(s.reference_number)}</span>`);
+  } else {
+    const rec = s.recipient || "—";
+    rows += trow("To", `<span class="chipav">${esc(initials(rec))}</span> ${esc(rec)}${s.account_number?` <span class="verified">✓ verified</span>`:""}`);
+    if(s.account_number) rows += trow("Account", `<span style="font-family:ui-monospace,monospace">${esc(s.account_number)}</span>`);
+    if(s.source_account) rows += trow("From", esc(s.source_account));
+  }
+  const stepLabels = isBill ? ["Understood","Biller","Confirm","Done"] : ["Understood","Recipient","Confirm","Done"];
+  const stepIdx = done ? 3 : (r.status==="confirming" ? 2 : 1);
+  const steps = stepLabels.map((lb,i)=>{
+    const cls = i<stepIdx ? "done" : (i===stepIdx ? (done && i===3 ? "done":"now") : "");
+    const mark = i<stepIdx || (done&&i===3) ? "✓" : String(i+1);
+    return `<div class="s ${cls}"><span class="d">${mark}</span>${lb}</div>`;
+  }).join('<span class="arw">→</span>');
+  wrap.innerHTML = `
+    <div class="hd"><span class="tag">${tag}</span></div>
+    <div class="amt"><div class="n">${amount} <span style="font-size:18px;color:var(--muted)">${esc(cur)}</span></div>${!cur?'':'<div class="c">amount to '+(isBill?"pay":"transfer")+'</div>'}</div>
+    <div class="rows">${rows}</div>
+    <div class="steps">${steps}</div>
+    ${done ? "" : `<div class="act"><button class="btn ghost" data-edit>Edit</button><button class="btn primary" data-confirm>${isBill?"Confirm payment":"Confirm transfer"}</button></div>`}
+  `;
+  if(!done){
+    wrap.querySelector("[data-confirm]").onclick = () => send(langHint==="ar"?"نعم":"yes");
+    wrap.querySelector("[data-edit]").onclick = () => $("msg").focus();
+  }
+  return wrap;
+}
+function trow(k,v){ return `<div class="trow"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`; }
+
+function renderContext(r){
+  const s = r.slots || {};
+  const isBill = r.intent==="pay_bill";
+  const active = (r.intent==="transfer_money"||isBill) && (s.recipient||s.biller||s.amount);
+  if(!active){
+    $("ctxCard").innerHTML = '<div class="muted" style="font-size:13px">No active transfer or bill yet — say e.g. “send 500 to Ahmed”.</div>';
+    return;
+  }
+  if(isBill){
+    const nm = s.biller_name || s.biller || "—";
+    $("ctxCard").innerHTML = `
+      <div class="ben"><div class="a">${esc(initials(nm))}</div><div><div class="nm" dir="auto">${esc(nm)}</div><div class="ac">${s.biller_code?("SADAD "+esc(s.biller_code)):"bill payment"}</div></div></div>
+      <div style="margin-top:12px">
+        ${mini("Reference", s.reference_number?esc(s.reference_number):"—")}
+        ${mini("Amount", s.amount!=null?(fmtAmount(s.amount)+" "+esc(s.currency||"")):"—")}
+        ${mini("Status", esc(r.status))}
+      </div>`;
+  } else {
+    const nm = s.recipient || "—";
+    $("ctxCard").innerHTML = `
+      <div class="ben"><div class="a">${esc(initials(nm))}</div><div><div class="nm" dir="auto">${esc(nm)}</div><div class="ac">${s.account_number?esc(s.account_number):"recipient"}</div></div></div>
+      <div style="margin-top:12px">
+        ${mini("Amount", s.amount!=null?(fmtAmount(s.amount)+" "+esc(s.currency||"")):"—")}
+        ${mini("From", s.source_account?esc(s.source_account):"default account")}
+        ${mini("Status", esc(r.status))}
+      </div>`;
+  }
+}
+function mini(k,v){ return `<div class="mini"><span class="k">${esc(k)}</span><span dir="auto">${v}</span></div>`; }
+
+async function send(text){
+  text = (text!=null ? text : $("msg").value).trim();
+  if(!text) return;
+  $("chatErr").innerHTML="";
+  const userBub = addUser(text);
+  $("msg").value="";
+  $("sendBtn").disabled=true;
+  // auto language hint from the message if user hasn't forced one
+  const lang = langHint || (AR_RE.test(text) ? "ar" : "en");
+  try{
+    const payload = { text, user_id: userId(), language: lang };
+    if(sessionId) payload.session_id = sessionId;
+    const r = await api("/conversation/text", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload),
+    });
+    sessionId = r.session_id;
+    highlightFlagged(userBub, text, r.flagged_terms);
+    const col = addBot(r.reply);
+    if(r.intent==="transfer_money" || r.intent==="pay_bill"){
+      if(["confirming","completed"].includes(r.status) || (r.slots && (r.slots.amount||r.slots.recipient||r.slots.biller))){
+        if(["confirming","completed"].includes(r.status)) col.appendChild(reviewCard(r));
+      }
+    }
+    renderContext(r);
+    if(r.status==="completed") loadMemory();
+    scrollDown();
+  }catch(err){
+    $("chatErr").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+  }finally{
+    $("sendBtn").disabled=false;
+    $("msg").focus();
+  }
+}
+
+function newSession(){
+  sessionId=null;
+  $("stream").innerHTML='<div class="day">Today</div>';
+  renderContext({});
+  $("msg").focus();
+}
+
+async function loadMemory(){
+  try{
+    const m = await api("/memory/"+encodeURIComponent(userId()));
+    const h = m.habits || {};
+    $("habits").innerHTML = `
+      ${mini("Preferred currency", h.preferred_currency?esc(h.preferred_currency):'<span class="muted">—</span>')}
+      ${mini("Favorite recipient", h.favorite_recipient?esc(h.favorite_recipient):'<span class="muted">—</span>')}
+      ${mini("Transfers learned", String(h.total_transfers ?? 0))}`;
+    const sc = m.shortcuts || [];
+    if(sc.length){
+      $("shortcuts").innerHTML = sc.map((s,i)=>`
+        <div class="sc" data-i="${i}">
+          <div class="i">★</div>
+          <div><div class="t" dir="auto">${esc(s.name)}</div><div class="s" dir="auto">${s.amount?esc(s.amount):"?"} ${s.currency?esc(s.currency):""}${s.recipient?(" → "+esc(s.recipient)):""}</div></div>
+        </div>`).join("");
+      $("shortcuts").querySelectorAll(".sc").forEach(el=>{
+        el.onclick = () => { const s = sc[+el.getAttribute("data-i")]; runShortcut(s); };
+      });
+    } else {
+      $("shortcuts").innerHTML = '<div class="muted" style="font-size:13px;padding:10px 0">No saved shortcuts.</div>';
+    }
+  }catch(err){
+    $("habits").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+  }
+}
+
+function runShortcut(s){
+  if(s.recipient && s.amount){ send(`send ${s.amount} ${s.currency||""} to ${s.recipient}`.trim()); }
+  else { send(s.name); }
+}
+
+function renderQuick(){
+  $("quick").innerHTML="";
+  QUICK.forEach(q=>{
+    const b=document.createElement("button"); b.className="qchip"; b.textContent=q.label;
+    if(q.rtl) b.setAttribute("dir","rtl");
+    b.onclick=()=>send(q.text);
+    $("quick").appendChild(b);
+  });
+}
+
+$("sendBtn").onclick=()=>send();
+$("msg").addEventListener("keydown",(e)=>{ if(e.key==="Enter") send(); });
+$("newSession").onclick=newSession;
+$("userId").addEventListener("change",()=>{ newSession(); loadMemory(); });
+$("langBtn").onclick=()=>{
+  langHint = langHint==="ar" ? "en" : (langHint==="en" ? null : "ar");
+  $("langBtn").textContent = langHint==="ar" ? "ع" : (langHint==="en" ? "EN" : "EN / ع");
+};
+const qpUser = new URLSearchParams(location.search).get("user");
+if(qpUser) $("userId").value = qpUser;
+renderQuick();
+checkHealth();
+loadMemory();
+$("msg").focus();
+</script>
+</body>
+</html>
