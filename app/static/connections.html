@@ -4,71 +4,47 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Banking NLU Brain — Resource Connections</title>
+  <link rel="stylesheet" href="/static/app.css" />
   <style>
-    :root {
-      --bg: #eef3fb; --panel: #ffffff; --panel-2: #f3f7fd; --border: #e2e8f2;
-      --text: #0f1e33; --muted: #64748b; --accent: #2563eb; --accent-2: #059669;
-      --warn: #d97706; --danger: #e11d48;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      background: var(--bg); color: var(--text); line-height: 1.5; }
-    header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex;
-      align-items: baseline; gap: 12px; flex-wrap: wrap; }
-    header h1 { font-size: 20px; margin: 0; }
-    header .sub { color: var(--muted); font-size: 13px; }
-    nav { display: flex; gap: 14px; font-size: 13px; }
-    nav a { text-decoration: none; }
-    main { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
-    .card h2 { font-size: 15px; margin: 0 0 12px; }
     label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
-    textarea, input[type=text], select {
-      width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit; }
     textarea { min-height: 60px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
-    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-    button { background: var(--accent); color: #ffffff; border: none; border-radius: 8px;
-      padding: 9px 15px; font-size: 14px; font-weight: 600; cursor: pointer; }
-    button:hover { filter: brightness(1.08); }
-    button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
-    button.danger { background: rgba(248,113,113,.15); color: var(--danger); border: 1px solid rgba(248,113,113,.4); }
-    button.sm { padding: 5px 10px; font-size: 12px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; font-size: 12px; }
+    button { padding: 9px 15px; font-size: 14px; }
+    button.sm { padding: 5px 10px; font-size: 12px; box-shadow: none; }
     td.mono, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
-    .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-    .badge.active { background: rgba(34,197,94,.15); color: var(--accent-2); border: 1px solid rgba(34,197,94,.4); }
-    .badge.kind { background: rgba(56,189,248,.12); color: var(--accent); border: 1px solid rgba(56,189,248,.3); }
-    .badge.lake { background: rgba(168,85,247,.15); color: #7c3aed; border: 1px solid rgba(168,85,247,.4); }
-    .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; }
-    .msg.ok { display:block; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.4); color: #047857; }
-    .msg.bad { display:block; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.4); color: #e11d48; }
+    .badge.active { background: rgba(5,150,105,.12); color: var(--good); border: 1px solid rgba(5,150,105,.35); }
+    .badge.kind { background: rgba(37,99,235,.1); color: var(--brand); border: 1px solid rgba(37,99,235,.3); }
+    .badge.lake { background: rgba(124,58,237,.12); color: var(--purple); border: 1px solid rgba(124,58,237,.35); }
+    .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; max-width: none; }
+    .msg.ok { display:block; background: rgba(5,150,105,.1); border: 1px solid rgba(5,150,105,.4); color: #047857; }
+    .msg.bad { display:block; background: rgba(225,29,72,.1); border: 1px solid rgba(225,29,72,.4); color: var(--danger); }
     .hint { color: var(--muted); font-size: 12px; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
-  
-    .card{box-shadow:0 1px 2px rgba(15,30,51,.05),0 10px 30px rgba(37,99,235,.06);}
   </style>
 </head>
 <body>
-  <header>
-    <h1>Resource Connections</h1>
-    <span class="sub">Configure external databases &amp; datalake providers</span>
-    <nav>
-      <a style="color:var(--muted)" href="/">Simulator</a>
-      <a style="color:var(--muted)" href="/brain">Brain</a>
-      <a style="color:var(--muted)" href="/brain/monitor">Brain monitor</a>
-      <a style="color:var(--muted)" href="/active-learning">Active learning</a>
-      <a style="color:var(--accent)" href="/admin">Connections</a>
-      <a style="color:var(--muted)" href="/admin/audit">Audit monitor</a>
-    </nav>
-  </header>
+  <div class="app">
+    <div class="rail">
+      <a class="logo" href="/assistant" title="Home">N</a>
+      <div class="nav">
+        <a class="ic" title="Assistant" href="/assistant">💬</a>
+        <a class="ic" title="Brain" href="/brain">🧠</a>
+        <a class="ic" title="NLU Sandbox" href="/">🧪</a>
+        <a class="ic" title="Insights" href="/brain/monitor">📊</a>
+        <a class="ic" title="Learning" href="/active-learning">🎓</a>
+        <a class="ic active" title="Connections" href="/admin">🔗</a>
+        <a class="ic" title="Audit" href="/admin/audit">🛡️</a>
+      </div>
+      <div class="me" title="user"></div>
+    </div>
+    <div class="main">
+      <div class="top">
+        <div class="av">🔗</div>
+        <div><div class="ttl">Connections</div><div class="sub">External databases &amp; datalake providers</div></div>
+      </div>
 
-  <main>
+  <main class="content">
     <section class="card">
       <h2 id="formTitle">Add a connection</h2>
       <div class="grid2">
@@ -118,9 +94,11 @@
     </section>
   </main>
 
-  <footer>
-    FastAPI · provider-agnostic via SQLAlchemy · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
-  </footer>
+      <footer>
+        FastAPI · provider-agnostic via SQLAlchemy · <a href="/docs">OpenAPI docs</a>
+      </footer>
+    </div>
+  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);

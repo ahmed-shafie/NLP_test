@@ -5,68 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Banking NLU Brain — Behavior Monitor</title>
   <script src="/static/vendor/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/app.css" />
   <style>
-    :root {
-      --bg: #eef3fb; --panel: #ffffff; --panel-2: #f3f7fd; --border: #e2e8f2;
-      --text: #0f1e33; --muted: #64748b; --accent: #2563eb; --accent-2: #059669;
-      --warn: #d97706; --danger: #e11d48; --purple: #7c3aed;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
-    header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-    header h1 { font-size: 20px; margin: 0; }
-    header .sub { color: var(--muted); font-size: 13px; }
-    header .status { margin-left: auto; font-size: 13px; color: var(--muted); }
-    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: middle; }
-    .dot.ok { background: var(--accent-2); } .dot.bad { background: var(--danger); }
-    nav { display: flex; gap: 14px; font-size: 13px; }
-    nav a { text-decoration: none; color: var(--muted); } nav a.active { color: var(--accent); }
-    main { max-width: 1200px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
-    .card h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); font-weight: 600; }
+    .card h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: 0; }
     .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    input[type=text] { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
-    button { background: var(--accent); color: #ffffff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
-    button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
-    label.inline { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .toolbar input[type=text] { width: auto; min-width: 200px; }
+    input[type=text] { font-size: 13px; padding: 8px 10px; }
+    button { padding: 8px 14px; font-size: 13px; }
+    label.inline { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin: 0; }
     .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-    .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
-    .stat .n { font-size: 24px; font-weight: 700; }
+    .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: 0 6px 18px rgba(30,58,95,.05); }
+    .stat .n { font-size: 26px; font-weight: 800; }
     .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-    .stat.green .n { color: var(--accent-2); } .stat.accent .n { color: var(--accent); } .stat.purple .n { color: var(--purple); }
+    .stat.green .n { color: var(--good); } .stat.accent .n { color: var(--brand); } .stat.purple .n { color: var(--purple); }
     .charts2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     .chartbox { position: relative; height: 280px; }
-    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-    th { color: var(--muted); font-weight: 600; font-size: 11px; cursor: default; }
+    .scroll table th, .scroll table td { white-space: nowrap; }
     td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
-    tr.clickable { cursor: pointer; } tr.clickable:hover td { background: var(--panel-2); }
+    tr.clickable { cursor: pointer; } tr.clickable:hover td { background: var(--card2); }
     .scroll { overflow: auto; max-height: 440px; }
     .hint { color: var(--muted); font-size: 12px; }
-    .pill { display:inline-block; padding: 3px 10px; border-radius:999px; font-size: 11px; font-weight:600; background: var(--panel-2); border: 1px solid var(--border); }
+    .pill { display:inline-block; padding: 3px 10px; border-radius:999px; font-size: 11px; font-weight:600; background: var(--card2); border: 1px solid var(--line); color: var(--text); }
     .empty { text-align: center; color: var(--muted); padding: 30px; }
-    footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
     @media (max-width: 980px) { .cards { grid-template-columns: repeat(2,1fr); } .charts2 { grid-template-columns: 1fr; } }
-  
-    .card{box-shadow:0 1px 2px rgba(15,30,51,.05),0 10px 30px rgba(37,99,235,.06);}
   </style>
 </head>
 <body>
-  <header>
-    <h1>Brain Behavior Monitor</h1>
-    <span class="sub">Memory Brain observability · habits &amp; shortcuts across users</span>
-    <nav>
-      <a href="/">Simulator</a>
-      <a href="/brain">Brain</a>
-      <a class="active" href="/brain/monitor">Brain monitor</a>
-      <a href="/active-learning">Active learning</a>
-      <a href="/admin">Connections</a>
-      <a href="/admin/audit">Audit</a>
-    </nav>
-    <span class="status"><span id="healthDot" class="dot"></span><span id="healthText">checking…</span></span>
-  </header>
+  <div class="app">
+    <div class="rail">
+      <a class="logo" href="/assistant" title="Home">N</a>
+      <div class="nav">
+        <a class="ic" title="Assistant" href="/assistant">💬</a>
+        <a class="ic" title="Brain" href="/brain">🧠</a>
+        <a class="ic" title="NLU Sandbox" href="/">🧪</a>
+        <a class="ic active" title="Insights" href="/brain/monitor">📊</a>
+        <a class="ic" title="Learning" href="/active-learning">🎓</a>
+        <a class="ic" title="Connections" href="/admin">🔗</a>
+        <a class="ic" title="Audit" href="/admin/audit">🛡️</a>
+      </div>
+      <div class="me" title="user"></div>
+    </div>
+    <div class="main">
+      <div class="top">
+        <div class="av">📊</div>
+        <div><div class="ttl">Brain Insights</div><div class="sub">Habits &amp; shortcuts across users</div></div>
+        <div class="pill" style="margin-left:auto"><span id="healthDot" class="dot"></span><span id="healthText">checking…</span></div>
+      </div>
 
-  <main>
+  <main class="content">
     <section class="card">
       <div class="toolbar">
         <button id="refreshBtn">Refresh</button>
@@ -101,9 +87,11 @@
     </section>
   </main>
 
-  <footer>
-    FastAPI · Memory Brain (SQL + Redis cache) · <a style="color:var(--accent)" href="/docs">OpenAPI docs</a>
-  </footer>
+      <footer>
+        FastAPI · Memory Brain (SQL + Redis cache) · <a href="/docs">OpenAPI docs</a>
+      </footer>
+    </div>
+  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
