@@ -6,9 +6,9 @@
   <title>Banking NLU Brain — Active Learning</title>
   <style>
     :root {
-      --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --border: #334155;
-      --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --accent-2: #22c55e;
-      --warn: #f59e0b; --danger: #f87171; --violet: #c4b5fd;
+      --bg: #eef3fb; --panel: #ffffff; --panel-2: #f3f7fd; --border: #e2e8f2;
+      --text: #0f1e33; --muted: #64748b; --accent: #2563eb; --accent-2: #059669;
+      --warn: #d97706; --danger: #e11d48; --violet: #7c3aed;
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
@@ -28,11 +28,11 @@
     .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
     .stat .n { font-size: 22px; font-weight: 700; }
     .stat .l { font-size: 12px; color: var(--muted); }
-    button { background: var(--accent); color: #04293a; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    button { background: var(--accent); color: #ffffff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
     button:hover { filter: brightness(1.08); } button:disabled { opacity: .6; cursor: not-allowed; }
     button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
-    button.ok { background: var(--accent-2); color: #052e16; }
-    button.danger { background: var(--danger); color: #450a0a; }
+    button.ok { background: var(--accent-2); color: #ffffff; }
+    button.danger { background: var(--danger); color: #ffffff; }
     select, input[type=text] { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; }
     .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
     .toolbar .spacer { flex: 1; }
@@ -51,6 +51,8 @@
     .err { color: var(--danger); font-size: 13px; }
     .note { color: var(--muted); font-size: 13px; }
     footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
+  
+    .card{box-shadow:0 1px 2px rgba(15,30,51,.05),0 10px 30px rgba(37,99,235,.06);}
   </style>
 </head>
 <body>

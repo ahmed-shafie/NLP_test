@@ -6,9 +6,9 @@
   <title>Banking NLU Brain — Resource Connections</title>
   <style>
     :root {
-      --bg: #0f172a; --panel: #1e293b; --panel-2: #273449; --border: #334155;
-      --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8; --accent-2: #22c55e;
-      --warn: #f59e0b; --danger: #f87171;
+      --bg: #eef3fb; --panel: #ffffff; --panel-2: #f3f7fd; --border: #e2e8f2;
+      --text: #0f1e33; --muted: #64748b; --accent: #2563eb; --accent-2: #059669;
+      --warn: #d97706; --danger: #e11d48;
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
@@ -30,7 +30,7 @@
     input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-    button { background: var(--accent); color: #04293a; border: none; border-radius: 8px;
+    button { background: var(--accent); color: #ffffff; border: none; border-radius: 8px;
       padding: 9px 15px; font-size: 14px; font-weight: 600; cursor: pointer; }
     button:hover { filter: brightness(1.08); }
     button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
@@ -43,13 +43,15 @@
     .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
     .badge.active { background: rgba(34,197,94,.15); color: var(--accent-2); border: 1px solid rgba(34,197,94,.4); }
     .badge.kind { background: rgba(56,189,248,.12); color: var(--accent); border: 1px solid rgba(56,189,248,.3); }
-    .badge.lake { background: rgba(168,85,247,.15); color: #c4b5fd; border: 1px solid rgba(168,85,247,.4); }
+    .badge.lake { background: rgba(168,85,247,.15); color: #7c3aed; border: 1px solid rgba(168,85,247,.4); }
     .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; }
-    .msg.ok { display:block; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.4); color: #86efac; }
-    .msg.bad { display:block; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.4); color: #fca5a5; }
+    .msg.ok { display:block; background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.4); color: #047857; }
+    .msg.bad { display:block; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.4); color: #e11d48; }
     .hint { color: var(--muted); font-size: 12px; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
     footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
+  
+    .card{box-shadow:0 1px 2px rgba(15,30,51,.05),0 10px 30px rgba(37,99,235,.06);}
   </style>
 </head>
 <body>
