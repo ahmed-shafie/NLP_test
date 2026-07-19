@@ -7,7 +7,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -110,10 +115,10 @@ def assistant_page() -> FileResponse:
 
 
 @app.get("/brain", include_in_schema=False)
-def brain_simulator_page() -> FileResponse:
-    """Serve the Memory Brain simulator (chat + habits/shortcuts inspector)."""
+def brain_simulator_page() -> RedirectResponse:
+    """The Memory Brain now lives inside the Assistant (Developer mode)."""
 
-    return FileResponse(STATIC_DIR / "brain.html")
+    return RedirectResponse(url="/assistant?dev=1", status_code=307)
 
 
 @app.get("/brain/monitor", include_in_schema=False)

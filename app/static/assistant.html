@@ -89,6 +89,36 @@ body{margin:0;font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Aria
 .muted{color:var(--muted);}
 .err{color:var(--danger);font-size:13px;}
 .newbtn{font-size:12px;color:var(--brand);background:none;border:none;cursor:pointer;padding:0;}
+.devtoggle{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);background:var(--card2);border:1px solid var(--line);padding:5px 11px;border-radius:999px;cursor:pointer;user-select:none;}
+.devtoggle .sw{width:32px;height:18px;border-radius:999px;background:var(--muted);position:relative;transition:background .15s;}
+.devtoggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .15s;}
+body.dev .devtoggle .sw{background:var(--brand);}
+body.dev .devtoggle .sw::after{left:16px;}
+.dev-only{display:none !important;}
+body.dev .dev-only{display:block !important;}
+body.dev .uid.dev-only{display:flex !important;}
+body.dev .inspect.dev-only{display:flex !important;}
+.hint{margin:2px 18px 14px;font-size:12.5px;color:var(--muted);background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:8px 11px;}
+.hint b{color:var(--brand);}
+.inspect{flex-direction:column;border-top:1px solid var(--line);background:var(--bg2);max-height:38vh;overflow:auto;}
+.inspect .ihd{padding:11px 26px;font-weight:700;font-size:13.5px;color:var(--brand2);display:flex;align-items:center;gap:8px;position:sticky;top:0;background:var(--bg2);border-bottom:1px solid var(--line);}
+.inspect .ihd .tt{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600;}
+.inspect .ibody{padding:14px 26px;display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.inspect .chips{grid-column:1/-1;display:flex;gap:7px;flex-wrap:wrap;}
+.inspect .chip{font-size:11.5px;border-radius:999px;padding:4px 10px;border:1px solid var(--line);background:var(--card);}
+.inspect .chip.g{color:var(--good);border-color:rgba(5,150,105,.35);background:rgba(5,150,105,.1);}
+.inspect .chip.b{color:var(--brand);border-color:rgba(37,99,235,.35);background:rgba(37,99,235,.1);}
+.inspect .h{font-size:10.5px;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:6px;}
+.inspect .irow{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0;color:var(--muted);border-top:1px solid var(--line);}
+.inspect .irow:first-of-type{border-top:none;}
+.inspect .irow b{color:var(--text);font-weight:600;}
+.inspect .trace{font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.85;color:var(--muted);}
+.inspect .trace .ok{color:var(--good);} .inspect .trace .sk{color:#94a3b8;} .inspect .trace .er{color:var(--danger);}
+.scform{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:6px;}
+.scform input{border:1px solid var(--line);border-radius:9px;padding:8px 9px;font-size:12.5px;background:var(--card);}
+.scform .full{grid-column:1/-1;}
+.scform button{grid-column:1/-1;background:var(--grad);color:#fff;border:none;border-radius:9px;padding:9px;font-weight:700;font-size:13px;cursor:pointer;}
+.sc .del{margin-left:auto;color:var(--danger);background:none;border:none;cursor:pointer;font-size:14px;padding:0 4px;}
 @media (max-width:1080px){.app{grid-template-columns:76px 1fr;}.ctx{display:none;}}
 </style>
 </head>
@@ -110,14 +140,21 @@ body{margin:0;font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Aria
   <div class="center">
     <div class="top">
       <div class="av">✦</div>
-      <div><div class="ttl">Banking Assistant</div><div class="sub">Bilingual · understands English &amp; العربية</div></div>
-      <div class="uid" style="margin-left:auto">user <input id="userId" value="demo" spellcheck="false"> <button class="newbtn" id="newSession">New chat</button></div>
+      <div><div class="ttl">Banking Assistant</div><div class="sub">Chat + memory in one place · EN &amp; العربية</div></div>
+      <button class="newbtn" id="newSession" style="margin-left:auto">New chat</button>
+      <div class="uid dev-only">user <input id="userId" value="demo" spellcheck="false"></div>
+      <div class="devtoggle" id="devToggle" title="Show the Inspect &amp; Debug panel"><span class="sw"></span> Developer mode</div>
       <div class="lang" id="langBtn" title="Toggle language hint">EN / ع</div>
       <div class="pill" id="healthPill">● …</div>
     </div>
 
     <div class="stream" id="stream">
       <div class="day">Today</div>
+    </div>
+
+    <div class="inspect dev-only" id="inspect">
+      <div class="ihd">🔍 Inspect &amp; Debug <span class="tt" id="inspectTt">no turns yet</span></div>
+      <div class="ibody" id="inspectBody"><div class="muted" style="grid-column:1/-1;font-size:12.5px">Send a message to see intent, slots, block_trace and nearest examples.</div></div>
     </div>
 
     <div class="composer">
@@ -135,6 +172,17 @@ body{margin:0;font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Aria
     <div class="pcard" id="ctxCard"><div class="muted" style="font-size:13px">No active transfer or bill yet — say e.g. “send 500 to Ahmed”.</div></div>
     <div class="ctitle">Quick actions</div>
     <div class="pcard" id="shortcuts" style="padding:6px 16px"><div class="muted" style="font-size:13px;padding:10px 0">No saved shortcuts.</div></div>
+    <div class="pcard dev-only" id="scEdit">
+      <div class="ctitle" style="margin-bottom:8px">Add / update shortcut</div>
+      <div class="scform">
+        <input id="scName" placeholder="name (rent)" spellcheck="false">
+        <input id="scAmount" placeholder="amount (5000)" spellcheck="false">
+        <input id="scCurrency" placeholder="currency (EGP)" spellcheck="false">
+        <input id="scRecipient" placeholder="recipient (Landlord)" spellcheck="false">
+        <button id="scSave">Save shortcut</button>
+      </div>
+      <div id="scErr" style="margin-top:6px"></div>
+    </div>
     <div class="ctitle">Your habits</div>
     <div class="pcard" id="habits"><div class="muted" style="font-size:13px">—</div></div>
   </div>
@@ -241,12 +289,8 @@ function reviewCard(r){
     <div class="amt"><div class="n">${amount} <span style="font-size:18px;color:var(--muted)">${esc(cur)}</span></div>${!cur?'':'<div class="c">amount to '+(isBill?"pay":"transfer")+'</div>'}</div>
     <div class="rows">${rows}</div>
     <div class="steps">${steps}</div>
-    ${done ? "" : `<div class="act"><button class="btn ghost" data-edit>Edit</button><button class="btn primary" data-confirm>${isBill?"Confirm payment":"Confirm transfer"}</button></div>`}
+    ${done ? "" : `<div class="hint">Reply <b>yes</b> to confirm or <b>no</b> to cancel.</div>`}
   `;
-  if(!done){
-    wrap.querySelector("[data-confirm]").onclick = () => send(langHint==="ar"?"نعم":"yes");
-    wrap.querySelector("[data-edit]").onclick = () => $("msg").focus();
-  }
   return wrap;
 }
 function trow(k,v){ return `<div class="trow"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`; }
@@ -305,6 +349,8 @@ async function send(text){
       }
     }
     renderContext(r);
+    setQuick(r.status);
+    if(document.body.classList.contains("dev")) refreshInspect(text, r);
     if(r.status==="completed") loadMemory();
     scrollDown();
   }catch(err){
@@ -336,9 +382,13 @@ async function loadMemory(){
         <div class="sc" data-i="${i}">
           <div class="i">★</div>
           <div><div class="t" dir="auto">${esc(s.name)}</div><div class="s" dir="auto">${s.amount?esc(s.amount):"?"} ${s.currency?esc(s.currency):""}${s.recipient?(" → "+esc(s.recipient)):""}</div></div>
+          <button class="del dev-only" data-del="${esc(s.name)}" title="Delete shortcut">🗑</button>
         </div>`).join("");
       $("shortcuts").querySelectorAll(".sc").forEach(el=>{
         el.onclick = () => { const s = sc[+el.getAttribute("data-i")]; runShortcut(s); };
+      });
+      $("shortcuts").querySelectorAll("[data-del]").forEach(btn=>{
+        btn.onclick = (e) => { e.stopPropagation(); deleteShortcut(btn.getAttribute("data-del")); };
       });
     } else {
       $("shortcuts").innerHTML = '<div class="muted" style="font-size:13px;padding:10px 0">No saved shortcuts.</div>';
@@ -353,14 +403,89 @@ function runShortcut(s){
   else { send(s.name); }
 }
 
-function renderQuick(){
+const CONFIRM_QUICK = [{label:"✅ yes",text:"yes"},{label:"✖ no",text:"no"}];
+function renderChips(list){
   $("quick").innerHTML="";
-  QUICK.forEach(q=>{
+  list.forEach(q=>{
     const b=document.createElement("button"); b.className="qchip"; b.textContent=q.label;
     if(q.rtl) b.setAttribute("dir","rtl");
     b.onclick=()=>send(q.text);
     $("quick").appendChild(b);
   });
+}
+function setQuick(status){ renderChips(status==="confirming" ? CONFIRM_QUICK : QUICK); }
+function renderQuick(){ renderChips(QUICK); }
+
+// ---- Developer mode + Inspect panel ----
+function applyDevMode(on){
+  document.body.classList.toggle("dev", on);
+  try{ localStorage.setItem("assistant.devmode", on ? "1" : "0"); }catch{}
+}
+function traceLine(t){
+  const cls = t.status==="ok" ? "ok" : (t.status==="error" ? "er" : "sk");
+  const mark = t.status==="ok" ? "✓" : (t.status==="error" ? "✗" : "–");
+  const note = t.note ? ` <span class="muted">(${esc(t.note)})</span>` : "";
+  return `<span class="${cls}">${mark}</span> ${esc(t.block)}${note}`;
+}
+async function refreshInspect(text, r){
+  $("inspectTt").textContent = "last turn · “"+text+"”";
+  const s = r.slots || {};
+  let parse=null, sim=null;
+  try{ parse = await api("/nlu/parse", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})}); }catch{}
+  try{ sim = await api(`/nlu/similar?text=${encodeURIComponent(text)}&k=3`); }catch{}
+  const chips = [`<span class="chip b">intent: ${esc(r.intent||(parse&&parse.intent)||"—")}</span>`];
+  if(parse) chips.push(`<span class="chip">source: ${esc(parse.intent_source||"—")}</span>`);
+  chips.push(`<span class="chip">lang: ${esc(r.language||"—")}</span>`);
+  if(parse) chips.push(`<span class="chip">llm: ${parse.llm_assisted?"yes":"no"}</span>`);
+  if(parse && parse.confidence!=null) chips.push(`<span class="chip g">confidence ${(Number(parse.confidence)*100).toFixed(1)}%</span>`);
+  const rows=[];
+  const push=(k,v)=>{ if(v!=null && v!=="") rows.push(`<div class="irow"><span>${esc(k)}</span><b dir="auto">${esc(String(v))}</b></div>`); };
+  push("amount", s.amount); push("currency", s.currency);
+  push("recipient", s.recipient); push("biller", s.biller_name||s.biller);
+  push("reference", s.reference_number); push("status", r.status); push("pending slot", r.pending_slot);
+  const rr = parse && parse.resolved_recipient;
+  if(rr && rr.contact) rows.push(`<div class="irow"><span>resolved contact</span><b dir="auto">${esc(rr.contact.name||"")}${rr.contact.account?(" · "+esc(rr.contact.account)):""} · ${(Number(rr.score)*100).toFixed(1)}%</b></div>`);
+  if(r.flagged_terms && r.flagged_terms.length) rows.push(`<div class="irow"><span>flagged</span><b style="color:var(--danger)">${esc(r.flagged_terms.join(", "))}</b></div>`);
+  const trace = (r.block_trace||[]).map(traceLine).join("<br/>") || '<span class="muted">—</span>';
+  let near = '<span class="muted">—</span>';
+  if(Array.isArray(sim) && sim.length){
+    near = sim.map(x=>`<div class="irow"><span dir="auto">${esc(x.text)}</span><b>${(Number(x.score)*100).toFixed(1)}%</b></div>`).join("");
+  }
+  $("inspectBody").innerHTML = `
+    <div class="chips">${chips.join("")}</div>
+    <div class="isec">
+      <div class="h">ENTITIES / SLOTS</div>
+      ${rows.join("") || '<div class="muted" style="font-size:12.5px">no slots</div>'}
+    </div>
+    <div class="isec">
+      <div class="h">BLOCK_TRACE · ${(r.block_trace||[]).length} blocks</div>
+      <div class="trace">${trace}</div>
+      <div class="h" style="margin-top:12px">NEAREST EXAMPLES</div>
+      ${near}
+    </div>`;
+}
+
+// ---- Shortcut editing (dev) ----
+async function saveShortcut(){
+  const name = $("scName").value.trim();
+  if(!name){ $("scErr").innerHTML = '<div class="err">Name is required.</div>'; return; }
+  const body = { name };
+  const amt = $("scAmount").value.trim(); if(amt) body.amount = amt;
+  const cur = $("scCurrency").value.trim(); if(cur) body.currency = cur;
+  const rec = $("scRecipient").value.trim(); if(rec) body.recipient = rec;
+  $("scErr").innerHTML=""; $("scSave").disabled=true;
+  try{
+    await api("/memory/"+encodeURIComponent(userId())+"/shortcuts", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    $("scName").value=$("scAmount").value=$("scCurrency").value=$("scRecipient").value="";
+    loadMemory();
+  }catch(err){ $("scErr").innerHTML = `<div class="err">${esc(err.message)}</div>`; }
+  finally{ $("scSave").disabled=false; }
+}
+async function deleteShortcut(name){
+  try{
+    await api("/memory/"+encodeURIComponent(userId())+"/shortcuts/"+encodeURIComponent(name), {method:"DELETE"});
+    loadMemory();
+  }catch(err){ $("scErr").innerHTML = `<div class="err">${esc(err.message)}</div>`; }
 }
 
 $("sendBtn").onclick=()=>send();
@@ -371,8 +496,14 @@ $("langBtn").onclick=()=>{
   langHint = langHint==="ar" ? "en" : (langHint==="en" ? null : "ar");
   $("langBtn").textContent = langHint==="ar" ? "ع" : (langHint==="en" ? "EN" : "EN / ع");
 };
+$("devToggle").onclick=()=>applyDevMode(!document.body.classList.contains("dev"));
+$("scSave").onclick=saveShortcut;
 const qpUser = new URLSearchParams(location.search).get("user");
 if(qpUser) $("userId").value = qpUser;
+let devInit=false;
+try{ devInit = localStorage.getItem("assistant.devmode")==="1"; }catch{}
+if(new URLSearchParams(location.search).get("dev")==="1") devInit=true;
+applyDevMode(devInit);
 renderQuick();
 checkHealth();
 loadMemory();
