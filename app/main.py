@@ -102,6 +102,13 @@ def ui() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/assistant", include_in_schema=False)
+def assistant_page() -> FileResponse:
+    """Serve the customer-facing conversational banking assistant UI."""
+
+    return FileResponse(STATIC_DIR / "assistant.html")
+
+
 @app.get("/brain", include_in_schema=False)
 def brain_simulator_page() -> FileResponse:
     """Serve the Memory Brain simulator (chat + habits/shortcuts inspector)."""
