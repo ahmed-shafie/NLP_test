@@ -83,6 +83,18 @@ class AuditEventRow(Base):
     detail: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
 
 
+class AppSetting(Base):
+    """A single JSON-encoded configuration blob keyed by name (e.g. banking core)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+
 @lru_cache(maxsize=1)
 def get_engine() -> Engine:
     """Create (once) the configured admin-store engine and ensure tables exist."""

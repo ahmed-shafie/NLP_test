@@ -7,7 +7,8 @@ from sqlalchemy import create_engine, text
 
 import app.admin.store as store
 import app.db.beneficiary as beneficiary
-from app.admin import connections
+from app.admin import bank_config, connections
+from app.admin.bank_config import BankingCoreConfigUpdate
 from app.admin.schemas import ConnectionCreate, ConnectionUpdate
 from app.config import settings
 
@@ -120,3 +121,33 @@ def test_active_connection_drives_beneficiary_repository(isolated_store, tmp_pat
     assert found is not None
     assert found.name == "Sara Adel"
     assert repo.lookup("EG9999") is None
+
+
+def test_banking_core_config_persists_and_applies(isolated_store, monkeypatch):
+    monkeypatch.setattr(settings, "banking_core_enabled", False)
+    monkeypatch.setattr(settings, "banking_core_url", "http://localhost:8100")
+    monkeypatch.setattr(settings, "banking_core_api_key", None)
+    monkeypatch.setattr(settings, "beneficiary_lookup_enabled", False)
+    monkeypatch.setattr(settings, "beneficiary_db_url", "sqlite:///./x.db")
+
+    result = bank_config.save_config(
+        BankingCoreConfigUpdate(
+            api_enabled=True,
+            api_url="http://core.example:8100",
+            api_timeout=7.5,
+            api_key="secret",
+            lookup_enabled=True,
+            lookup_db_url="sqlite:///./banking-core/banking_core.db",
+            lookup_table="beneficiaries",
+        )
+    )
+
+    # Applied to the live settings object...
+    assert settings.banking_core_enabled is True
+    assert settings.banking_core_url == "http://core.example:8100"
+    assert settings.beneficiary_lookup_enabled is True
+    # ...persisted (a fresh read reflects it) and the key is never returned.
+    reloaded = bank_config.current_config()
+    assert reloaded.api_url == "http://core.example:8100"
+    assert reloaded.api_key_set is True
+    assert not hasattr(result, "api_key")

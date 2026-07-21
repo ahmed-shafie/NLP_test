@@ -117,6 +117,26 @@ class Settings(BaseSettings):
     # Per-query timeout (seconds) for the database lookup.
     db_timeout: float = 10.0
 
+    # ---- Banking Core service (separate app: balance + pre-flight + add beneficiary)
+    # The transfer/bill/balance cases call this external HTTP service. Beneficiary
+    # *lookups* are read directly from the database (see beneficiary_lookup_* below);
+    # this service owns balance, pre-flight funds/FX checks, and adding beneficiaries.
+    banking_core_enabled: bool = False
+    banking_core_url: str = "http://localhost:8100"
+    banking_core_api_key: str | None = None
+    banking_core_timeout: float = 10.0
+
+    # ---- Beneficiary directory (direct DB read for transfer disambiguation) ----
+    # For a transfer, the recipient is resolved by querying the beneficiaries table
+    # directly (by name, EN/AR); several people sharing a first name triggers a
+    # "which one?" disambiguation. This is intentionally a DB read, not an API call.
+    beneficiary_lookup_enabled: bool = False
+    # SQLAlchemy URL for the beneficiaries table. Defaults to the Banking Core demo DB.
+    beneficiary_db_url: str = "sqlite:///./banking-core/banking_core.db"
+    # Table + columns for the name lookup (overridable for a real schema).
+    beneficiary_table: str = "beneficiaries"
+    beneficiary_owner_column: str = "owner_user"
+
     # ---- Admin config store (external resource connections + audit log) ----
     # SQLAlchemy URL for the local store that persists configured connections and
     # audit events. Defaults to a SQLite file next to the project.

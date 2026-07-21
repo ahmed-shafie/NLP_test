@@ -44,6 +44,17 @@ _AR_RECIPIENT_RE = re.compile(
     r"(?:(?:إلى|الى)\s+|(?:(?<=\s)|^)ل)([^\d،,.]{2,40}?)(?:\s+(?:مبلغ|بمبلغ)|$|[،,.])"
 )
 
+# "from my savings", "from current account", "from account ending 9988", ...
+_EN_SOURCE_TYPE_RE = re.compile(
+    r"\bfrom\s+(?:my\s+|the\s+)?"
+    r"(savings|saving|current|checking|credit|salary)(?:\s+account)?\b",
+    re.IGNORECASE,
+)
+_EN_SOURCE_ACCT_RE = re.compile(
+    r"\bfrom\s+(?:my\s+|the\s+)?account\s+(?:ending\s+(?:in\s+)?|number\s+|no\.?\s*)?"
+    r"(\w{2,})",
+    re.IGNORECASE,
+)
 _EN_SOURCE_RE = re.compile(
     r"\bfrom\s+(?:my\s+)?([\w'’-]+(?:\s+[\w'’-]+){0,2}?)\s*account\b", re.IGNORECASE
 )
@@ -114,11 +125,14 @@ def extract_recipient(text: str, language: Language) -> str | None:
 def extract_source_account(text: str, language: Language) -> str | None:
     """Return the source account hint (e.g. "savings"), if mentioned."""
 
-    pattern = _AR_SOURCE_RE if language is Language.AR else _EN_SOURCE_RE
-    match = pattern.search(text)
-    if not match:
-        return None
-    return match.group(1).strip(" ,،.") or None
+    if language is Language.AR:
+        match = _AR_SOURCE_RE.search(text)
+        return match.group(1).strip(" ,،.") or None if match else None
+    for pattern in (_EN_SOURCE_TYPE_RE, _EN_SOURCE_ACCT_RE, _EN_SOURCE_RE):
+        match = pattern.search(text)
+        if match:
+            return match.group(1).strip(" ,،.") or None
+    return None
 
 
 # ---- Bill-payment slot extraction --------------------------------------- #

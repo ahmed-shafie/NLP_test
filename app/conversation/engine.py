@@ -7,11 +7,13 @@ import re
 import uuid
 from decimal import Decimal
 
+from app import banking_core_client
 from app.config import DEFAULT_CURRENCY, settings
 from app.conversation import moderation, templates
 from app.conversation.moderation import ModerationResult
 from app.conversation.state import (
     BILL_REQUIRED_SLOTS,
+    BeneficiaryOption,
     BillerOption,
     ConversationSlots,
     ConversationState,
@@ -23,6 +25,7 @@ from app.data_loader import (
     resolve_biller_by_code,
     resolve_biller_candidates,
 )
+from app.db.directory import get_beneficiary_directory
 from app.memory.schemas import Shortcut
 from app.memory.service import get_memory_brain
 from app.nlu import entities, pipeline
@@ -107,6 +110,53 @@ _CHOICE_FILLERS = {
     "it",
     "s",
 }
+
+
+# Cues that a message is a balance inquiry ("what's my balance", "كم رصيدي").
+_BALANCE_CUES = {"balance", "رصيد", "رصيدي", "الرصيد"}
+_BALANCE_PHRASES = ("how much do i have", "كم عندي", "كم لدي")
+
+# Map account-type words (EN/AR) to a canonical type used by the Banking Core API.
+_ACCOUNT_TYPES: dict[str, str] = {
+    "current": "current",
+    "checking": "current",
+    "جاري": "current",
+    "الجاري": "current",
+    "savings": "savings",
+    "saving": "savings",
+    "توفير": "savings",
+    "التوفير": "savings",
+    "credit": "credit",
+    "ائتمان": "credit",
+    "salary": "salary",
+    "راتب": "salary",
+    "الراتب": "salary",
+}
+
+
+def _account_type(text: str) -> str | None:
+    """Return a canonical source-account type mentioned in ``text``, if any."""
+
+    tokens = _tokens(text)
+    for word, canonical in _ACCOUNT_TYPES.items():
+        if word in tokens:
+            return canonical
+    return None
+
+
+def _is_balance_inquiry(text: str) -> bool:
+    tokens = _tokens(text)
+    if tokens & _BALANCE_CUES:
+        return True
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in _BALANCE_PHRASES)
+
+
+def _mask_account(account: str) -> str:
+    """Show only the last four characters of an account/IBAN."""
+
+    tail = account[-4:] if len(account) >= 4 else account
+    return f"SA••{tail}"
 
 
 def _tokens(text: str) -> set[str]:
@@ -304,9 +354,11 @@ class ConversationEngine:
                 self._apply_memory_defaults(state, text)
             missing = state.slots.first_missing_required(required)
             if missing is None:
-                state.pending_slot = None
-                state.status = ConversationStatus.CONFIRMING
-                return self._finish(state, self._confirm_text(state, lang))
+                if choice is Intent.TRANSFER_MONEY:
+                    pending = self._resolve_beneficiary(state, lang)
+                    if pending is not None:
+                        return pending
+                return self._enter_confirmation(state, lang)
             state.pending_slot = missing
             return self._finish(state, templates.slot_prompt(missing, lang, choice))
 
@@ -352,6 +404,22 @@ class ConversationEngine:
         lang: Language,
         tracer: BlockTracer,
     ) -> ConversationResult:
+        # Mid "add beneficiary" flow: interpret this turn as the account/IBAN.
+        if state.pending_add_name:
+            with tracer.block("orchestrator"):
+                return self._handle_add_beneficiary(state, text, lang)
+
+        # Balance inquiry (its own intent) when starting fresh — answered by the
+        # external Banking Core API, not the slot-filling flow.
+        if (
+            state.intent is None
+            and state.pending_slot is None
+            and _is_balance_inquiry(text)
+        ):
+            with tracer.block("orchestrator") as span:
+                span.annotate("balance_inquiry")
+                return self._handle_balance_inquiry(state, text, lang)
+
         parsed = pipeline.parse(text, lang)
         # Fold the NLU pipeline's own per-block trace into this turn's trace.
         tracer.extend(parsed.block_trace)
@@ -427,9 +495,13 @@ class ConversationEngine:
             state.status = ConversationStatus.COLLECTING
             return self._finish(state, templates.slot_prompt(missing, lang))
 
-        state.pending_slot = None
-        state.status = ConversationStatus.CONFIRMING
-        return self._finish(state, self._confirm_text(state, lang))
+        # Beneficiary check goes DIRECT to the database (not the API): 0 -> offer to
+        # add, 1 -> lock and continue, many (shared first name) -> disambiguate.
+        pending = self._resolve_beneficiary(state, lang)
+        if pending is not None:
+            return pending
+
+        return self._enter_confirmation(state, lang)
 
     def _collect_bill(
         self, state: ConversationState, text: str, lang: Language
@@ -560,7 +632,11 @@ class ConversationEngine:
         lang: Language,
         tracer: BlockTracer,
     ) -> ConversationResult:
-        """Resolve a reply to the "which biller?" question, then continue."""
+        """Resolve a reply to a "which one?" question (biller or beneficiary)."""
+
+        if state.disambiguation_kind == "beneficiary":
+            with tracer.block("orchestrator"):
+                return self._handle_beneficiary_choice(state, text, lang)
 
         with tracer.block("orchestrator"):
             choice = self._match_biller_option(state.biller_options, text)
@@ -628,9 +704,7 @@ class ConversationEngine:
                 state, templates.slot_prompt(missing, lang, Intent.PAY_BILL)
             )
 
-        state.pending_slot = None
-        state.status = ConversationStatus.CONFIRMING
-        return self._finish(state, self._confirm_text(state, lang))
+        return self._enter_confirmation(state, lang)
 
     def _fill_pending_bill(
         self, state: ConversationState, text: str, lang: Language
@@ -842,6 +916,226 @@ class ConversationEngine:
             else templates.alias_not_found(name, lang)
         )
         return self._finish(state, reply)
+
+    # ---- Beneficiary directory (direct DB), balance & pre-flight (API) ------- #
+
+    @staticmethod
+    def _owner(state: ConversationState) -> str:
+        """Owner scope for the Banking Core DB/API (demo user when unauthenticated)."""
+
+        return state.user_id or "demo"
+
+    def _resolve_beneficiary(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult | None:
+        """Look the recipient up DIRECTLY in the beneficiaries DB.
+
+        Returns a :class:`ConversationResult` when the turn must pause (to ask
+        "which one?" or to offer adding a new beneficiary), or ``None`` to
+        continue straight to confirmation.
+        """
+
+        if state.beneficiary_resolved:
+            return None
+        directory = get_beneficiary_directory()
+        if directory is None:
+            state.beneficiary_resolved = True
+            return None
+        name = (state.slots.recipient or "").strip()
+        hits = directory.search(name, self._owner(state))
+        if hits is None:
+            # Directory unavailable — keep the free-text recipient.
+            state.beneficiary_resolved = True
+            return None
+        if not hits:
+            # Nobody matched: offer to add them (write goes through the API).
+            state.pending_add_name = name
+            state.pending_slot = None
+            state.status = ConversationStatus.COLLECTING
+            return self._finish(state, templates.beneficiary_not_found(name, lang))
+        if len(hits) == 1:
+            self._lock_beneficiary(state, hits[0].name, hits[0].account)
+            return None
+        state.beneficiary_options = [
+            BeneficiaryOption(
+                id=h.id,
+                name=h.name,
+                account=h.account,
+                bank=h.bank,
+                currency=h.currency,
+                is_favorite=h.is_favorite,
+            )
+            for h in hits
+        ]
+        state.disambiguation_kind = "beneficiary"
+        state.pending_slot = "recipient"
+        state.status = ConversationStatus.DISAMBIGUATING
+        options = [
+            (h.name, h.bank or "", _mask_account(h.account), h.currency) for h in hits
+        ]
+        return self._finish(state, templates.choose_beneficiary(options, lang))
+
+    @staticmethod
+    def _lock_beneficiary(state: ConversationState, name: str, account: str) -> None:
+        slots = state.slots
+        slots.recipient = name
+        slots.account_number = account
+        state.beneficiary_resolved = True
+        state.beneficiary_options = []
+        state.disambiguation_kind = None
+        state.pending_slot = None
+
+    def _handle_beneficiary_choice(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        choice = self._match_beneficiary_option(state.beneficiary_options, text)
+        if choice is None:
+            options = [
+                (o.name, o.bank or "", _mask_account(o.account), o.currency)
+                for o in state.beneficiary_options
+            ]
+            return self._finish(state, templates.choose_beneficiary(options, lang))
+        self._lock_beneficiary(state, choice.name, choice.account)
+        return self._enter_confirmation(state, lang)
+
+    @staticmethod
+    def _match_beneficiary_option(
+        options: list[BeneficiaryOption], text: str
+    ) -> BeneficiaryOption | None:
+        if not options:
+            return None
+        normalized = normalize(text)
+        digits = "".join(ch for ch in normalize_digits(normalized) if ch.isdigit())
+        # Last-4 digits of an account take priority over a list index.
+        if len(digits) >= 4:
+            for option in options:
+                acct_digits = "".join(ch for ch in option.account if ch.isdigit())
+                if acct_digits.endswith(digits[-4:]):
+                    return option
+        if digits:
+            index = int(digits)
+            if 1 <= index <= len(options):
+                return options[index - 1]
+        for option in options:
+            name = normalize(option.name)
+            if name and (name in normalized or normalized in name):
+                return option
+        return None
+
+    def _handle_add_beneficiary(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        """Collect the account for a not-found beneficiary, then add via the API."""
+
+        name = state.pending_add_name or ""
+        if _matches(text, _NEGATIVE):
+            state.pending_add_name = None
+            state.slots.recipient = None
+            state.pending_slot = "recipient"
+            state.status = ConversationStatus.COLLECTING
+            return self._finish(state, templates.slot_prompt("recipient", lang))
+
+        account = self._extract_account(text)
+        if not account:
+            return self._finish(state, templates.beneficiary_not_found(name, lang))
+
+        created = banking_core_client.add_beneficiary(
+            owner_user=self._owner(state),
+            name=name,
+            account=account,
+            currency=state.slots.currency or DEFAULT_CURRENCY,
+        )
+        state.pending_add_name = None
+        if not created or not created.get("ok"):
+            state.status = ConversationStatus.COLLECTING
+            state.pending_slot = "recipient"
+            state.slots.recipient = None
+            return self._finish(state, templates.beneficiary_add_failed(name, lang))
+        state.slots.recipient = name
+        state.slots.account_number = account
+        state.beneficiary_resolved = True
+        added = templates.beneficiary_added(name, lang)
+        confirmation = self._enter_confirmation(state, lang)
+        confirmation.reply = f"{added} {confirmation.reply}"
+        return confirmation
+
+    @staticmethod
+    def _extract_account(text: str) -> str | None:
+        """Pull an account/IBAN token from a free-text reply."""
+
+        for token in text.replace(",", " ").split():
+            cleaned = token.strip(" .,،؟?")
+            digits = "".join(ch for ch in cleaned if ch.isdigit())
+            if len(digits) >= 4 or (cleaned[:2].upper() == "SA" and len(cleaned) >= 6):
+                return cleaned
+        return None
+
+    def _handle_balance_inquiry(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        """Answer a balance inquiry using the external Banking Core API."""
+
+        account_type = _account_type(text)
+        info = banking_core_client.get_balance(
+            owner_user=self._owner(state), account_type=account_type
+        )
+        state.intent = Intent.BALANCE_INQUIRY
+        state.status = ConversationStatus.COMPLETED
+        if info is None:
+            return self._finish(state, templates.balance_unavailable(lang))
+        reply = templates.balance_reply(
+            info.account_type, info.currency, self._fmt_amount(info.balance), lang
+        )
+        return self._finish(state, reply)
+
+    def _enter_confirmation(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult:
+        """Run pre-flight (advisory), then move to CONFIRMING with the review text."""
+
+        state.pending_slot = None
+        state.status = ConversationStatus.CONFIRMING
+        self._run_preflight(state)
+        reply = self._confirm_text(state, lang)
+        note = templates.warnings_note(state.preflight_warnings, lang)
+        if note:
+            reply = f"{reply} {note}"
+        return self._finish(state, reply)
+
+    def _run_preflight(self, state: ConversationState) -> None:
+        """Call the Banking Core pre-flight API; store advisory warnings on state."""
+
+        state.preflight_warnings = []
+        slots = state.slots
+        if slots.amount is None or not slots.currency:
+            return
+        source_type = (
+            _ACCOUNT_TYPES.get(slots.source_account.lower())
+            if slots.source_account
+            else None
+        )
+        result = None
+        if state.intent is Intent.PAY_BILL:
+            result = banking_core_client.preflight_bill(
+                owner_user=self._owner(state),
+                amount=slots.amount,
+                currency=slots.currency,
+                biller_code=slots.biller_code,
+                reference_number=slots.reference_number or "",
+                source_account=slots.source_account,
+                source_account_type=source_type,
+            )
+        elif state.intent is Intent.TRANSFER_MONEY:
+            result = banking_core_client.preflight_transfer(
+                owner_user=self._owner(state),
+                amount=slots.amount,
+                currency=slots.currency,
+                recipient_account=slots.account_number,
+                source_account=slots.source_account,
+                source_account_type=source_type,
+            )
+        if result is not None:
+            state.preflight_warnings = list(result.warnings)
 
     def _confirm_text(self, state: ConversationState, lang: Language) -> str:
         slots = state.slots

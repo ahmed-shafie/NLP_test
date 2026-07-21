@@ -22,13 +22,13 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Lint (ruff)
-        run: ruff check app tests
+        run: ruff check app banking-core tests
 
       - name: Format check (ruff)
-        run: ruff format --check app tests
+        run: ruff format --check app banking-core tests
 
       - name: Type check (mypy)
-        run: mypy app
+        run: mypy app banking-core
 
       - name: Tests (pytest)
         run: pytest -q

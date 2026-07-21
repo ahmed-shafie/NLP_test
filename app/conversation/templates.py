@@ -156,6 +156,116 @@ def choose_biller(names: list[str], language: Language) -> str:
     return f"I found more than one biller for that — which one? {listing}"
 
 
+def choose_beneficiary(
+    options: list[tuple[str, str, str, str]], language: Language
+) -> str:
+    """Ask which beneficiary is meant when a first name matches several people.
+
+    ``options`` is a list of ``(name, bank, masked_account, currency)`` tuples.
+    """
+
+    lines = []
+    for i, (name, bank, masked, currency) in enumerate(options, start=1):
+        parts = [name]
+        if bank:
+            parts.append(bank)
+        parts.append(masked)
+        parts.append(currency)
+        lines.append(f"{i}. " + " · ".join(parts))
+    listing = "\n".join(lines)
+    count = len(options)
+    first = options[0][0].split()[0] if options else ""
+    if language is Language.AR:
+        return (
+            f'لديك {count} مستفيدين بالاسم "{first}". أيهم تريد التحويل له؟\n'
+            f"{listing}\n"
+            "أجب برقم (١/٢/٣) أو بالاسم الكامل أو بآخر ٤ أرقام."
+        )
+    return (
+        f'You have {count} beneficiaries named "{first}". Which one '
+        f"would you like to transfer to?\n{listing}\n"
+        "Reply with a number (1/2/3), the full name, or the last 4 digits."
+    )
+
+
+def beneficiary_not_found(name: str, language: Language) -> str:
+    """No beneficiary matched; offer to add one via the external API."""
+
+    if language is Language.AR:
+        return (
+            f'لم أجد مستفيدًا باسم "{name}". هل تريد إضافته؟ '
+            'أرسل رقم الحساب/الآيبان لإضافته، أو اكتب "لا" للإلغاء.'
+        )
+    return (
+        f'I couldn\'t find a beneficiary named "{name}". Would you like to add '
+        'them? Send their account/IBAN to add, or reply "no" to cancel.'
+    )
+
+
+def beneficiary_added(name: str, language: Language) -> str:
+    if language is Language.AR:
+        return f'✓ تمت إضافة المستفيد "{name}".'
+    return f'✓ Added beneficiary "{name}".'
+
+
+def beneficiary_add_failed(name: str, language: Language) -> str:
+    if language is Language.AR:
+        return (
+            f'تعذّرت إضافة المستفيد "{name}" الآن. حاول لاحقًا أو استخدم '
+            "مستفيدًا موجودًا."
+        )
+    return (
+        f'I couldn\'t add "{name}" right now. Please try again later or use an '
+        "existing beneficiary."
+    )
+
+
+_ACCOUNT_TYPE_AR: dict[str, str] = {
+    "current": "الجاري",
+    "savings": "التوفير",
+    "credit": "الائتمان",
+    "salary": "الراتب",
+}
+
+
+def balance_reply(
+    account_type: str, currency: str, balance: str, language: Language
+) -> str:
+    if language is Language.AR:
+        label = _ACCOUNT_TYPE_AR.get(account_type, account_type)
+        return f"رصيد حساب {label} هو {balance} {currency}."
+    return f"Your {account_type} account balance is {balance} {currency}."
+
+
+def balance_unavailable(language: Language) -> str:
+    if language is Language.AR:
+        return "تعذّر جلب الرصيد الآن. حاول مرة أخرى لاحقًا."
+    return "I couldn't fetch your balance right now. Please try again later."
+
+
+def warnings_note(warnings: list[str], language: Language) -> str:
+    """Turn raw pre-flight warning codes into a short bilingual advisory line."""
+
+    notes: list[str] = []
+    for warning in warnings:
+        if warning.startswith("low_funds"):
+            short = warning.split(":", 1)[1].strip() if ":" in warning else ""
+            if language is Language.AR:
+                notes.append(f"⚠️ الرصيد غير كافٍ ({short}) — يمكنك المتابعة.")
+            else:
+                notes.append(
+                    f"⚠️ Balance may be insufficient ({short}) — "
+                    "you can still proceed."
+                )
+        elif warning.startswith("fx"):
+            detail = warning.split(":", 1)[1].strip() if ":" in warning else ""
+            if language is Language.AR:
+                notes.append(f"ℹ️ سيتم تحويل العملة ({detail}).")
+            else:
+                notes.append(f"ℹ️ A currency conversion applies ({detail}).")
+    return " ".join(notes)
+
+
 def greeting(language: Language) -> str:
     return _GREETING[language]
 

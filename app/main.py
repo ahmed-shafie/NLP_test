@@ -21,6 +21,7 @@ from app.active_learning.daemon import start_daemon, stop_daemon
 from app.active_learning.router import router as active_learning_router
 from app.active_learning.store import get_store as get_active_learning_store
 from app.admin import audit
+from app.admin.bank_config import load_persisted_into_settings
 from app.admin.router import router as admin_router
 from app.admin.store import get_engine
 from app.config import settings
@@ -57,6 +58,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     # Ensure the admin store (connections + audit log) tables exist.
     get_engine()
+    # Overlay any persisted Banking Core config (per-case API / DB lookup) so
+    # admin edits survive restarts.
+    load_persisted_into_settings()
     # Ensure the Memory Brain store (habits + shortcuts) tables exist.
     if settings.memory_enabled:
         get_memory_store()
