@@ -285,7 +285,7 @@
 
     function bcMsg(ok, text) {
       const el = $("bcMsg");
-      el.className = "msg " + (ok ? "good" : "bad");
+      el.className = "msg " + (ok ? "ok" : "bad");
       el.textContent = text;
     }
     async function loadBankingCore() {

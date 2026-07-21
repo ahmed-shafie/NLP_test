@@ -11,12 +11,24 @@ lookup returns an empty list and the engine keeps the free-text recipient.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Table / column names are interpolated into the lookup SQL, so they must be
+# plain SQL identifiers (optionally schema-qualified). This rejects anything
+# that could inject SQL via the admin-configurable settings.
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?$")
+
+
+def _safe_identifier(value: str, kind: str) -> str:
+    if not _IDENTIFIER_RE.match(value):
+        raise ValueError(f"Invalid {kind} identifier: {value!r}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -38,8 +50,8 @@ class BeneficiaryDirectory:
     def __init__(self, url: str, table: str, owner_column: str) -> None:
         from sqlalchemy import create_engine
 
-        self._table = table
-        self._owner_column = owner_column
+        self._table = _safe_identifier(table, "table")
+        self._owner_column = _safe_identifier(owner_column, "owner column")
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
         self._engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
 

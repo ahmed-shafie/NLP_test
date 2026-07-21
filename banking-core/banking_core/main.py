@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 
 from banking_core import __version__, service
@@ -21,7 +23,9 @@ from banking_core.schemas import (
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     """Enforce the optional shared API key when one is configured."""
 
-    if settings.api_key and x_api_key != settings.api_key:
+    if settings.api_key and not (
+        x_api_key is not None and hmac.compare_digest(x_api_key, settings.api_key)
+    ):
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")
 
 

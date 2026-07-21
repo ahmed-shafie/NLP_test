@@ -162,6 +162,17 @@ def test_search_arabic(directory_db):
     assert hits is not None and len(hits) == 3
 
 
+def test_malicious_identifier_rejected(monkeypatch, directory_db):
+    """A non-identifier table/column name must be rejected, not interpolated."""
+
+    monkeypatch.setattr(settings, "beneficiary_table", "beneficiaries; DROP TABLE x")
+    directory.get_beneficiary_directory.cache_clear()
+    # The factory swallows the ValueError and returns None (lookup disabled).
+    assert directory.get_beneficiary_directory() is None
+    with pytest.raises(ValueError):
+        directory._safe_identifier("owner_user; --", "owner column")
+
+
 # ------------------------- engine disambiguation --------------------------- #
 
 
