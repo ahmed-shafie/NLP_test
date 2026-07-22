@@ -249,6 +249,35 @@ def test_balance_inquiry_arabic(engine, fake_core):
     assert "5000" in result.reply
 
 
+def test_balance_aside_during_disambiguation(engine, directory_db, fake_core):
+    """A balance question mid-disambiguation is answered, then the flow resumes."""
+
+    engine.handle("send 9000 SAR to Ahmed", "b-aside-1")
+    result = engine.handle("what is my savings balance", "b-aside-1")
+    # Balance answered inline, but the transaction is untouched.
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.disambiguation_kind == "beneficiary"
+    assert len(result.state.beneficiary_options) == 3
+    assert "5000" in result.reply
+    assert "which one" in result.reply.lower()
+    # The flow still resolves normally afterwards.
+    picked = engine.handle("2", "b-aside-1")
+    assert picked.state.status is ConversationStatus.CONFIRMING
+    assert picked.state.slots.recipient == "Ahmed Khaled"
+
+
+def test_balance_aside_during_confirmation(engine, directory_db, fake_core):
+    """A balance question at the confirm step keeps the transfer confirmable."""
+
+    engine.handle("send 500 SAR to Mona", "b-aside-2")
+    result = engine.handle("what is my current balance", "b-aside-2")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.recipient == "Mona Ali"
+    assert "5000" in result.reply
+    done = engine.handle("yes", "b-aside-2")
+    assert done.state.status is ConversationStatus.COMPLETED
+
+
 def test_low_funds_warns_without_blocking(engine, directory_db, monkeypatch):
     monkeypatch.setattr(
         bcc,

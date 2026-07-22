@@ -243,6 +243,14 @@ def balance_unavailable(language: Language) -> str:
     return "I couldn't fetch your balance right now. Please try again later."
 
 
+def resume_note(language: Language) -> str:
+    """Short connector shown before re-emitting an in-progress prompt."""
+
+    if language is Language.AR:
+        return "والآن لنكمل —"
+    return "Now, back to it —"
+
+
 def warnings_note(warnings: list[str], language: Language) -> str:
     """Turn raw pre-flight warning codes into a short bilingual advisory line."""
 

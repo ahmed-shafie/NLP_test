@@ -259,6 +259,13 @@ class ConversationEngine:
                 state.reset()
                 state.status = ConversationStatus.CANCELLED
                 result = self._finish(state, templates.cancelled(lang))
+        elif self._is_mid_transaction(state) and _is_balance_inquiry(text):
+            # Allowed "aside": answer a balance question in the middle of a
+            # transfer/bill, then re-emit the current prompt so the flow
+            # resumes untouched (status and slots are preserved).
+            with tracer.block("orchestrator") as span:
+                span.annotate("balance_aside")
+                result = self._answer_balance_aside(state, text, lang)
         elif state.status is ConversationStatus.CONFIRMING:
             result = self._handle_confirmation(state, text, lang, tracer)
         elif state.status is ConversationStatus.DISAMBIGUATING:
@@ -1069,6 +1076,66 @@ class ConversationEngine:
             if len(digits) >= 4 or (cleaned[:2].upper() == "SA" and len(cleaned) >= 6):
                 return cleaned
         return None
+
+    @staticmethod
+    def _is_mid_transaction(state: ConversationState) -> bool:
+        """True when a transfer/bill is in progress and awaiting the user."""
+
+        if state.status in (
+            ConversationStatus.CONFIRMING,
+            ConversationStatus.DISAMBIGUATING,
+        ):
+            return True
+        return state.status is ConversationStatus.COLLECTING and (
+            state.pending_slot is not None
+            or state.pending_add_name is not None
+            or state.intent in (Intent.TRANSFER_MONEY, Intent.PAY_BILL)
+        )
+
+    def _active_prompt(self, state: ConversationState, lang: Language) -> str | None:
+        """Re-emit the question the in-progress flow is currently waiting on."""
+
+        if state.status is ConversationStatus.CONFIRMING:
+            text = self._confirm_text(state, lang)
+            note = templates.warnings_note(state.preflight_warnings, lang)
+            return f"{text} {note}" if note else text
+        if state.status is ConversationStatus.DISAMBIGUATING:
+            if state.disambiguation_kind == "beneficiary":
+                options = [
+                    (o.name, o.bank or "", _mask_account(o.account), o.currency)
+                    for o in state.beneficiary_options
+                ]
+                return templates.choose_beneficiary(options, lang)
+            return templates.choose_biller(
+                [opt.name for opt in state.biller_options], lang
+            )
+        if state.pending_add_name:
+            return templates.beneficiary_not_found(state.pending_add_name, lang)
+        if state.pending_slot:
+            return templates.slot_prompt(state.pending_slot, lang, state.intent)
+        return None
+
+    def _answer_balance_aside(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        """Answer a balance question mid-flow without disturbing the transaction."""
+
+        account_type = _account_type(text)
+        info = banking_core_client.get_balance(
+            owner_user=self._owner(state), account_type=account_type
+        )
+        if info is None:
+            balance_line = templates.balance_unavailable(lang)
+        else:
+            balance_line = templates.balance_reply(
+                info.account_type, info.currency, self._fmt_amount(info.balance), lang
+            )
+        resume = self._active_prompt(state, lang)
+        if resume:
+            reply = f"{balance_line} {templates.resume_note(lang)} {resume}"
+        else:
+            reply = balance_line
+        return self._finish(state, reply)
 
     def _handle_balance_inquiry(
         self, state: ConversationState, text: str, lang: Language
