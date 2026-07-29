@@ -1,4 +1,4 @@
-# Learning Edition — Build a Bilingual NLU "Case" from Scratch
+# Guide — Build a Bilingual NLU "Case" from Scratch
 
 > A guided, teach-yourself walkthrough of the `service-template/` package.
 > Read it top-to-bottom the first time; use it as a reference afterwards.
