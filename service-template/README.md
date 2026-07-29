@@ -13,6 +13,11 @@ emits an action, same as the main app.
 Everything is heavily commented. Every place you need to change to add your own
 case is marked with `# >>> EDIT PER CASE`.
 
+> **New to this? Start with the [Learning Edition](LEARNING.md)** — a guided,
+> teach-yourself walkthrough of every concept (intents, slots, spaCy NER,
+> embeddings + FAISS, the FSM) with a glossary, an end-to-end trace, and a
+> worked "add a new case" exercise.
+
 ```
 text ─▶ language detect ─▶ intent detect ─▶ slot extraction
      ─▶ ask for missing slots (one at a time)
