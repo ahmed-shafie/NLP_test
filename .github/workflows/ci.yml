@@ -22,16 +22,19 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Lint (ruff)
-        run: ruff check app banking-core tests
+        run: ruff check app banking-core tests service-template
 
       - name: Format check (ruff)
-        run: ruff format --check app banking-core tests
+        run: ruff format --check app banking-core tests service-template
 
       - name: Type check (mypy)
-        run: mypy app banking-core
+        run: mypy app banking-core service-template/service_template
 
       - name: Tests (pytest)
         run: pytest -q
+
+      - name: Service template tests (pytest)
+        run: pytest -q service-template/tests
 
       - name: NLU accuracy eval (gold set)
         run: python scripts/eval_nlu.py
