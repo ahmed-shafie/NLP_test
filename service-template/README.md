@@ -26,17 +26,36 @@ text ─▶ language detect ─▶ intent detect ─▶ slot extraction
 
 ## Why it exists
 
-The full app depends on spaCy, Stanza, FAISS, sentence-transformers and an LLM.
-That is a lot to carry when all you want is the **shape** of a new case. This
-template keeps the *same architecture and naming* but swaps the heavy NLU for
-simple, readable regex/keyword logic, so you can:
+This template keeps the *same architecture and naming* as the full app so you
+can copy it, rename it, and fill in the `# >>> EDIT PER CASE` blocks to stand up
+a new conversational case (transfer, pay, …) fast.
 
-- run it instantly with only `fastapi` + `pydantic` + `httpx`,
-- read the whole control flow in one sitting,
-- copy it, rename it, and fill in the `# >>> EDIT PER CASE` blocks.
+### NLU tiers (spaCy + FAISS, **no LLM**)
 
-When you outgrow the simple NLU, replace `extractor.py` in isolation with a real
-classifier (see `app/nlu` and `app/orchestration.py`) — nothing else changes.
+The NLU in `extractor.py` has two tiers and degrades gracefully:
+
+1. **Semantic tier** *(preferred)* — a multilingual **sentence-transformers**
+   embedder indexes the labelled examples in `examples.py` into a **FAISS**
+   vector store (`vectorstore.py` + `semantic_intents.py`); an utterance's
+   intent is the aggregated nearest-neighbour match. **spaCy** PERSON NER pulls
+   the recipient name.
+2. **Deterministic tier** *(always-available fallback)* — regex + keyword logic.
+
+The semantic tier is used when the model is available and confident; otherwise
+the deterministic tier takes over. There is **no LLM** — the production app adds
+an LLM fallback (`app/orchestration.py`), which is intentionally omitted here.
+
+Because each tier degrades to the next, the template still runs even with no
+models installed (it just relies on regex/keywords). To enable the full
+semantic tier, install the models once:
+
+```bash
+python -m spacy download en_core_web_sm   # spaCy NER model
+# the sentence-transformers embedding model downloads automatically on first use
+```
+
+Disable either tier via env vars (`SVC_USE_SEMANTIC_INTENT=false`,
+`SVC_USE_SPACY_NER=false`) — see `config.py`.
 
 ---
 
@@ -79,7 +98,11 @@ curl -s localhost:8200/conversation/text -H 'content-type: application/json' \
 | `schemas.py` | `Intent`/`Language` enums, `ActionSlots`, validated `TransferAction` | `app/schemas.py` |
 | `state.py` | FSM `ConversationStatus` + persisted `ConversationState` | `app/conversation/state.py` |
 | `store.py` | Session persistence (in-memory here) | `app/conversation/store.py` |
-| `extractor.py` | Language/intent detection + slot extraction (regex) | `app/nlu`, `app/orchestration.py` |
+| `extractor.py` | Language/intent detection (semantic + keyword) + slot extraction | `app/nlu`, `app/orchestration.py` |
+| `embeddings.py` | Multilingual sentence-transformers embedder (lazy, cached) | `app/embeddings.py` |
+| `vectorstore.py` | FAISS cosine-similarity index | `app/vectorstore.py` |
+| `examples.py` | Labelled example utterances that seed the FAISS index | `app/nlu/examples.py` |
+| `semantic_intents.py` | FAISS nearest-neighbour intent classifier | `app/nlu/semantic_intents.py` |
 | `prompts.py` | All EN/AR user-facing strings | `app/conversation/templates.py` |
 | `core_client.py` | HTTP client for external pre-flight validation | `app/banking_core_client.py` |
 | `engine.py` | The finite-state machine (the heart) | `app/conversation/engine.py` |
@@ -156,12 +179,28 @@ class BillPaymentAction(BaseModel):  # copy of TransferAction
 BILL_REQUIRED_SLOTS = ("biller", "reference_number", "amount", "currency")
 ```
 
-**3. `extractor.py` — trigger words + how to pull the new slots**
+**3a. `examples.py` — teach the FAISS semantic classifier the new intent**
+
+Add ~6-10 varied English + Arabic example utterances for the new case. No
+retraining or LLM needed — they are embedded and indexed at startup:
+
+```python
+INTENT_EXAMPLES += [
+    ("pay my electricity bill", Intent.PAY_BILL),
+    ("settle internet bill reference 4455", Intent.PAY_BILL),
+    ("ادفع فاتورة الكهرباء", Intent.PAY_BILL),
+    # ...
+]
+```
+
+**3b. `extractor.py` — keyword fallback cues + how to pull the new slots**
+
+The keyword classifier is the fallback for when the embedding model is absent:
 
 ```python
 _BILL_CUES = {"bill", "pay", "sadad", "فاتورة", "سداد"}
 
-def detect_intent(text):
+def _keyword_intent(text):
     tokens = _tokens(_normalize(text))
     if tokens & _BILL_CUES:        # check the more specific case first
         return Intent.PAY_BILL
@@ -224,7 +263,7 @@ service can never hard-block a conversation — pre-flight is advisory by design
 ## What this template deliberately leaves out
 
 - **No GUI** — API + REPL only, by request.
-- **No ML** — regex/keyword NLU instead of spaCy/FAISS/LLM. Swap `extractor.py`.
+- **No LLM** — spaCy + FAISS semantic NLU with a regex/keyword fallback, but no LLM fallback (the app has one in `app/orchestration.py`).
 - **No real DB** — an in-memory directory + in-memory session store. Swap
   `store.py` and `engine._lookup_recipients`.
 - **No execution** — it emits a validated action object; it never moves money.

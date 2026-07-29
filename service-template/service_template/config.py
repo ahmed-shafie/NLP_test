@@ -50,5 +50,29 @@ class Settings(BaseSettings):
     # the current action and resets (prevents infinite loops). 0 disables it.
     max_turns: int = 25
 
+    # ------------------------------------------------------------------ #
+    # NLU backends (spaCy + FAISS). Both are OPTIONAL and degrade gracefully:
+    # if the model/dependency is missing, the extractor silently falls back to
+    # the regex/keyword logic, so the template always runs. There is NO LLM.
+    # ------------------------------------------------------------------ #
+
+    # Semantic intent classification: embed the labelled examples in
+    # ``examples.py`` and classify by nearest neighbour in a FAISS index.
+    use_semantic_intent: bool = True
+    # Multilingual (Arabic + English) sentence-embedding model. Downloaded from
+    # the HuggingFace hub on first use and cached on disk.
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # Nearest neighbours considered when classifying an utterance.
+    semantic_top_k: int = 5
+    # Cosine-similarity floor for accepting a semantic match; below it we treat
+    # the result as FALLBACK and let the keyword classifier have the final say.
+    semantic_intent_threshold: float = 0.45
+
+    # spaCy named-entity recognition for the recipient (PERSON entities).
+    use_spacy_ner: bool = True
+    # spaCy English model. Install once with:
+    #   python -m spacy download en_core_web_sm
+    spacy_model: str = "en_core_web_sm"
+
 
 settings = Settings()

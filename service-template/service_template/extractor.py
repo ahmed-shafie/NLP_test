@@ -1,23 +1,37 @@
 """Language detection, intent detection, and slot extraction.
 
-This is the deliberately *simple* NLU layer of the template. It uses regexes and
-keyword sets so the template runs with no ML dependencies. The production app
-replaces this with a semantic classifier + FAISS retrieval + an LLM fallback
-(see ``app/nlu`` and ``app/orchestration.py``) — but the *interface* is the
-same: text in, structured signals out. You can upgrade this file in isolation
-without touching the engine.
+This is the NLU layer of the template. It has two tiers and **no LLM**:
 
-Everything here is pure functions (no state), which makes them trivial to unit
-test.
+* a **semantic tier** — a FAISS + multilingual-embeddings intent classifier
+  (``semantic_intents.py``) and spaCy PERSON NER for the recipient; and
+* a **deterministic tier** — regex/keyword logic that always works.
+
+The semantic tier is preferred when available and confident; otherwise the
+deterministic tier takes over. Both are controlled by ``settings`` flags and
+degrade gracefully if a model/dependency is missing, so the template always
+runs. This mirrors ``app/nlu`` + ``app/orchestration.py`` (which additionally
+has an LLM fallback — intentionally omitted here).
+
+The functions stay pure/stateless so they are trivial to unit test.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
+from typing import TYPE_CHECKING
 
-from service_template.config import DEFAULT_CURRENCY
+from service_template.config import DEFAULT_CURRENCY, settings
 from service_template.schemas import ActionSlots, Intent, Language
+
+if TYPE_CHECKING:
+    from spacy.language import Language as SpacyPipeline
+
+    from service_template.semantic_intents import SemanticIntentClassifier
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # Language detection
@@ -128,7 +142,33 @@ _STOPWORDS = {
 
 
 def detect_intent(text: str) -> Intent:
-    """Very small keyword classifier. Replace with a real one in production."""
+    """Classify the utterance's intent.
+
+    Two-tier, no LLM: try the FAISS semantic classifier first; if it is
+    unavailable or not confident (returns ``FALLBACK``), defer to the
+    deterministic keyword classifier. This keeps behaviour sensible whether or
+    not the embedding model is installed.
+    """
+
+    if settings.use_semantic_intent:
+        classifier = _get_semantic()
+        if classifier is not None:
+            intent, _confidence = classifier.classify(text)
+            if intent is not Intent.FALLBACK:
+                return intent
+    return _keyword_intent(text)
+
+
+def _get_semantic() -> SemanticIntentClassifier | None:
+    # Imported lazily so importing the extractor never forces faiss/embeddings
+    # to load (and so tests can disable the semantic tier via settings).
+    from service_template.semantic_intents import get_semantic_classifier
+
+    return get_semantic_classifier()
+
+
+def _keyword_intent(text: str) -> Intent:
+    """Deterministic keyword classifier — the always-available fallback."""
 
     tokens = _tokens(_normalize(text))
     if tokens & _TRANSFER_CUES:
@@ -179,7 +219,41 @@ def _extract_currency(text: str) -> str | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def _load_spacy() -> SpacyPipeline | None:
+    """Load and cache the spaCy model, or ``None`` if unavailable.
+
+    Install the model once with ``python -m spacy download en_core_web_sm``.
+    """
+
+    if not settings.use_spacy_ner:
+        return None
+    try:
+        import spacy
+
+        return spacy.load(settings.spacy_model)
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully to regex
+        logger.warning(
+            "spaCy model '%s' unavailable (%s); using regex for recipients.",
+            settings.spacy_model,
+            exc,
+        )
+        return None
+
+
 def _extract_recipient(text: str) -> str | None:
+    """Prefer a spaCy PERSON entity for the recipient; fall back to the regex.
+
+    spaCy NER catches names the regex misses (e.g. no "to"/"for" cue, or names
+    the greedy pattern would mangle). The English model won't tag Arabic names,
+    so Arabic falls through to the regex path below.
+    """
+
+    nlp = _load_spacy()
+    if nlp is not None:
+        people = [ent.text.strip() for ent in nlp(text).ents if ent.label_ == "PERSON"]
+        if people:
+            return people[0]
     match = _RECIPIENT_RE.search(text)
     if not match:
         return None
