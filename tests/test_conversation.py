@@ -87,7 +87,8 @@ def test_bare_recipient_fills_pending(engine: ConversationEngine):
 def test_non_transfer_is_fallback(engine: ConversationEngine):
     result = engine.handle("please do a thing for me", "t8")
     assert result.state.intent is not Intent.TRANSFER_MONEY
-    assert "transfer" in result.reply.lower()
+    # Falls back to offering the two things it can do (send money / pay a bill).
+    assert "(1)" in result.reply and "(2)" in result.reply
 
 
 def test_completed_then_new_dialogue_resets(engine: ConversationEngine):
