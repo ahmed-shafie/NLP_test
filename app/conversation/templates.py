@@ -208,7 +208,15 @@ def beneficiary_added(name: str, language: Language) -> str:
     return f'✓ Added beneficiary "{name}".'
 
 
-def beneficiary_add_failed(name: str, language: Language) -> str:
+def beneficiary_add_failed(
+    name: str, language: Language, reason: str | None = None
+) -> str:
+    if reason:
+        # Surface the specific reason from the banking service (e.g. duplicate
+        # account) instead of a generic "try again later".
+        if language is Language.AR:
+            return f'تعذّرت إضافة المستفيد "{name}": {reason}'
+        return f'I couldn\'t add "{name}": {reason}'
     if language is Language.AR:
         return (
             f'تعذّرت إضافة المستفيد "{name}" الآن. حاول لاحقًا أو استخدم '
@@ -217,6 +225,21 @@ def beneficiary_add_failed(name: str, language: Language) -> str:
     return (
         f'I couldn\'t add "{name}" right now. Please try again later or use an '
         "existing beneficiary."
+    )
+
+
+def beneficiary_add_invalid_account(name: str, language: Language) -> str:
+    """The reply wasn't a plausible account number / IBAN."""
+
+    if language is Language.AR:
+        return (
+            "هذا لا يبدو رقم حساب أو آيبان صالحًا. أرسل آيبان كاملًا (مثل SA "
+            f'متبوعة بأرقام) أو رقم حساب لإضافة "{name}"، أو اكتب "لا" للإلغاء.'
+        )
+    return (
+        "That doesn't look like a valid account number or IBAN. Send a full "
+        f'IBAN (e.g. SA followed by digits) or an account number to add "{name}", '
+        'or reply "no" to cancel.'
     )
 
 

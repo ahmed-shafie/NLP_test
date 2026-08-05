@@ -22,6 +22,7 @@ from app.conversation.state import (
 from app.conversation.store import get_session_store
 from app.data_loader import (
     BillerRecord,
+    canonicalize_recipient,
     resolve_biller_by_code,
     resolve_biller_candidates,
 )
@@ -165,6 +166,68 @@ def _tokens(text: str) -> set[str]:
 
 def _matches(text: str, vocabulary: set[str]) -> bool:
     return bool(_tokens(text) & vocabulary)
+
+
+# Request verbs / fillers (normalized) that leak into a bare recipient answer
+# such as "ابغي احمد" ("I want Ahmed") or "send to Ahmed". Stripped before the
+# remainder is canonicalized to a name.
+_RECIPIENT_FILLERS = {
+    # Arabic colloquial + MSA verbs and prepositions
+    "ابغي",
+    "ابي",
+    "اريد",
+    "عايز",
+    "عاوز",
+    "احب",
+    "حول",
+    "احول",
+    "ارسل",
+    "ابعت",
+    "ادفع",
+    "الى",
+    "ل",
+    "مبلغ",
+    "بمبلغ",
+    # English
+    "i",
+    "want",
+    "to",
+    "send",
+    "transfer",
+    "pay",
+    "wire",
+    "remit",
+    "please",
+    "the",
+    "a",
+    "an",
+    "money",
+    "cash",
+    "some",
+    "for",
+}
+
+
+def _clean_recipient_answer(text: str) -> str | None:
+    """Turn a free-text recipient reply into a name.
+
+    Drops leading/embedded request verbs and prepositions (so "ابغي احمد" →
+    "احمد", "send to Ahmed" → "Ahmed"), then canonicalizes the remaining tokens
+    against the name gazetteer. Returns ``None`` when nothing name-like is left.
+    """
+
+    stripped = text.strip(" .,،؟?")
+    if not stripped:
+        return None
+    kept = [tok for tok in stripped.split() if normalize(tok) not in _RECIPIENT_FILLERS]
+    candidate = " ".join(kept).strip() or stripped
+    return canonicalize_recipient(candidate) or None
+
+
+def _recipient_from_answer(text: str, lang: Language) -> str | None:
+    """Best-effort recipient from a slot answer: surface pattern, else cleanup."""
+
+    return entities.extract_recipient(text, lang) or _clean_recipient_answer(text)
 
 
 def _forget_target(text: str) -> str | None:
@@ -478,8 +541,15 @@ class ConversationEngine:
         explicit_currency = entities.extract_currency(text)
         if not slots.currency and explicit_currency:
             slots.currency = explicit_currency
-        if not slots.recipient and ent.recipient:
-            slots.recipient = ent.recipient
+        if not slots.recipient:
+            if state.pending_slot == "recipient":
+                # We explicitly asked for the recipient, so the whole message is
+                # the answer: trust the deterministic bare-answer parse over the
+                # pipeline's free extraction (which can mangle colloquial input
+                # like "ابغي احمد" into a garbled name).
+                slots.recipient = _recipient_from_answer(text, lang) or ent.recipient
+            elif ent.recipient:
+                slots.recipient = ent.recipient
         if not slots.source_account and ent.source_account:
             slots.source_account = ent.source_account
 
@@ -755,7 +825,7 @@ class ConversationEngine:
             if currency is not None:
                 slots.currency = currency
         elif slot == "recipient" and not slots.recipient:
-            candidate = entities.extract_recipient(text, lang) or text.strip(" .,،؟?")
+            candidate = _recipient_from_answer(text, lang)
             if candidate:
                 slots.recipient = candidate
 
@@ -1044,6 +1114,12 @@ class ConversationEngine:
 
         account = self._extract_account(text)
         if not account:
+            # Nothing account-like at all: if they typed something non-trivial,
+            # tell them the expected format; otherwise just re-ask.
+            if text.strip(" .,،؟?"):
+                return self._finish(
+                    state, templates.beneficiary_add_invalid_account(name, lang)
+                )
             return self._finish(state, templates.beneficiary_not_found(name, lang))
 
         created = banking_core_client.add_beneficiary(
@@ -1057,7 +1133,10 @@ class ConversationEngine:
             state.status = ConversationStatus.COLLECTING
             state.pending_slot = "recipient"
             state.slots.recipient = None
-            return self._finish(state, templates.beneficiary_add_failed(name, lang))
+            reason = created.get("message") if created else None
+            return self._finish(
+                state, templates.beneficiary_add_failed(name, lang, reason)
+            )
         state.slots.recipient = name
         state.slots.account_number = account
         state.beneficiary_resolved = True

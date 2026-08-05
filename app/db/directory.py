@@ -16,8 +16,24 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from app.config import settings
+from app.nlu.normalize import normalize
 
 logger = logging.getLogger(__name__)
+
+
+def _name_matches(needle: str, name: object, name_ar: object) -> bool:
+    """True when the normalized needle is contained in either name column.
+
+    Both sides are run through :func:`normalize`, so Arabic letter-form variants
+    (e.g. alef with/without hamza), diacritics, and casing all collapse before
+    the substring comparison.
+    """
+
+    for value in (name, name_ar):
+        if value and needle in normalize(str(value)):
+            return True
+    return False
+
 
 # Table / column names are interpolated into the lookup SQL, so they must be
 # plain SQL identifiers (optionally schema-qualified). This rejects anything
@@ -69,23 +85,18 @@ class BeneficiaryDirectory:
 
         from sqlalchemy import text
 
-        needle = name.strip()
+        needle = normalize(name)
         if not needle:
             return None
-        prefix = f"{needle.lower()}%"
-        contains = f"%{needle.lower()}%"
         owner_clause = ""
-        params: dict[str, object] = {"prefix": prefix, "contains": contains}
+        params: dict[str, object] = {}
         if owner_user:
-            owner_clause = f"AND {self._owner_column} = :owner"
+            owner_clause = f"WHERE {self._owner_column} = :owner"
             params["owner"] = owner_user
         query = text(
             f"SELECT id, name, name_ar, account, bank, currency, "  # noqa: S608
             f"COALESCE(is_favorite, 0) AS is_favorite "
-            f"FROM {self._table} "
-            f"WHERE (lower(name) LIKE :prefix OR lower(name) LIKE :contains "
-            f"OR lower(COALESCE(name_ar,'')) LIKE :prefix "
-            f"OR lower(COALESCE(name_ar,'')) LIKE :contains) {owner_clause}"
+            f"FROM {self._table} {owner_clause}"
         )
         try:
             with self._engine.connect() as conn:
@@ -93,6 +104,8 @@ class BeneficiaryDirectory:
         except Exception as exc:  # noqa: BLE001 - DB issues must not break a turn
             logger.warning("Beneficiary directory lookup failed for %r: %s", name, exc)
             return None
+        # Match on the normalized form so Arabic alef/hamza variants (احمد vs أحمد),
+        # diacritics, and casing all collapse to the same key before comparing.
         return [
             BeneficiaryHit(
                 id=str(r["id"]),
@@ -104,6 +117,7 @@ class BeneficiaryDirectory:
                 is_favorite=bool(r["is_favorite"]),
             )
             for r in rows
+            if _name_matches(needle, r["name"], r["name_ar"])
         ]
 
 

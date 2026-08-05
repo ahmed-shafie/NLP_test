@@ -162,6 +162,14 @@ def test_search_arabic(directory_db):
     assert hits is not None and len(hits) == 3
 
 
+def test_search_arabic_plain_alef_matches_hamza(directory_db):
+    """ "احمد" (plain alef) must match the stored "أحمد" (alef-with-hamza)."""
+
+    d = directory.get_beneficiary_directory()
+    hits = d.search("احمد", "demo")
+    assert hits is not None and len(hits) == 3
+
+
 def test_malicious_identifier_rejected(monkeypatch, directory_db):
     """A non-identifier table/column name must be rejected, not interpolated."""
 
@@ -211,6 +219,25 @@ def test_single_match_locks_and_confirms(engine, directory_db, fake_core):
     assert result.state.slots.recipient == "Mona Ali"
 
 
+def test_recipient_answer_strips_arabic_verb(engine, directory_db, fake_core):
+    """A colloquial recipient answer ("ابغي احمد") resolves, verb stripped."""
+
+    engine.handle("transfer 500 SAR", "b-verb-1")  # leaves recipient pending
+    result = engine.handle("ابغي احمد", "b-verb-1")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.slots.recipient == "أحمد"
+    assert len(result.state.beneficiary_options) == 3
+
+
+def test_recipient_answer_english_to_phrase(engine, directory_db, fake_core):
+    """ "send to Ahmed" as a slot answer keeps only the name."""
+
+    engine.handle("transfer 500 SAR", "b-verb-2")
+    result = engine.handle("send to Ahmed", "b-verb-2")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert len(result.state.beneficiary_options) == 3
+
+
 # ----------------------------- add beneficiary ----------------------------- #
 
 
@@ -231,6 +258,32 @@ def test_not_found_decline_add(engine, directory_db, fake_core):
     result = engine.handle("no", "b-add-2")
     assert result.state.pending_add_name is None
     assert result.state.pending_slot == "recipient"
+
+
+def test_add_invalid_account_message(engine, directory_db, fake_core):
+    """A non-account reply during the add flow explains the expected format."""
+
+    engine.handle("send 500 SAR to Zeyad", "b-add-3")
+    result = engine.handle("abcd", "b-add-3")
+    assert result.state.pending_add_name == "Zeyad"  # still awaiting the account
+    assert "valid account" in result.reply.lower()
+
+
+def test_add_failed_surfaces_api_reason(engine, directory_db, monkeypatch, fake_core):
+    """A specific failure message from the banking service is shown to the user."""
+
+    monkeypatch.setattr(
+        bcc,
+        "add_beneficiary",
+        lambda **k: {
+            "ok": False,
+            "message": "A beneficiary with that account already exists.",
+        },
+    )
+    engine.handle("send 500 SAR to Zeyad", "b-add-4")
+    result = engine.handle("SA555444333", "b-add-4")
+    assert "already exists" in result.reply
+    assert result.state.pending_add_name is None
 
 
 # ------------------------------ balance / FX ------------------------------- #
