@@ -332,10 +332,13 @@ async function send(text){
   const userBub = addUser(text);
   $("msg").value="";
   $("sendBtn").disabled=true;
-  // auto language hint from the message if user hasn't forced one
-  const lang = langHint || (AR_RE.test(text) ? "ar" : "en");
+  // Language hint: honour a forced choice; otherwise only hint "ar" when the
+  // message actually contains Arabic. For letterless input (e.g. "2") send no
+  // hint so the backend keeps the conversation's language instead of flipping.
+  const lang = langHint || (AR_RE.test(text) ? "ar" : null);
   try{
-    const payload = { text, user_id: userId(), language: lang };
+    const payload = { text, user_id: userId() };
+    if(lang) payload.language = lang;
     if(sessionId) payload.session_id = sessionId;
     const r = await api("/conversation/text", {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload),
