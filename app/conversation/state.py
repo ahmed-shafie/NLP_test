@@ -47,6 +47,7 @@ class BeneficiaryOption(BaseModel):
     bank: str | None = None
     currency: str = "SAR"
     is_favorite: bool = False
+    name_ar: str | None = None
 
 
 class ConversationSlots(BaseModel):

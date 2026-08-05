@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from decimal import Decimal
 
 from app import banking_core_client
@@ -26,7 +27,7 @@ from app.data_loader import (
     resolve_biller_by_code,
     resolve_biller_candidates,
 )
-from app.db.directory import get_beneficiary_directory
+from app.db.directory import BeneficiaryHit, get_beneficiary_directory
 from app.memory.schemas import Shortcut
 from app.memory.service import get_memory_brain
 from app.nlu import entities, pipeline
@@ -230,6 +231,14 @@ def _recipient_from_answer(text: str, lang: Language) -> str | None:
     return entities.extract_recipient(text, lang) or _clean_recipient_answer(text)
 
 
+def _display_name(name: str, name_ar: str | None, lang: Language) -> str:
+    """Prefer the Arabic beneficiary name in Arabic conversations (else English)."""
+
+    if lang is Language.AR and name_ar:
+        return name_ar
+    return name
+
+
 def _forget_target(text: str) -> str | None:
     """If the message is 'forget <name>', return <name>; otherwise ``None``."""
 
@@ -294,7 +303,7 @@ class ConversationEngine:
         state.turns += 1
         if user_id:
             state.user_id = user_id
-        lang = language or detect_language(text)
+        lang = self._effective_language(text, language, loaded)
         state.language = lang
 
         # A fresh utterance after a finished dialogue starts a new transfer.
@@ -343,6 +352,25 @@ class ConversationEngine:
         return result
 
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _effective_language(
+        text: str, override: Language | None, prior: ConversationState | None
+    ) -> Language:
+        """Pick the reply language, keeping the conversation's language sticky.
+
+        An explicit override wins. Otherwise detect from the text, but when the
+        message carries no letters at all (e.g. a bare "2" or an account number)
+        detection is meaningless, so inherit the ongoing conversation's language
+        instead of defaulting to English.
+        """
+
+        if override is not None:
+            return override
+        has_letters = bool(re.search(r"[^\W\d_]", text, re.UNICODE))
+        if not has_letters and prior is not None:
+            return prior.language
+        return detect_language(text)
 
     def _handle_confirmation(
         self,
@@ -1031,7 +1059,11 @@ class ConversationEngine:
             state.status = ConversationStatus.COLLECTING
             return self._finish(state, templates.beneficiary_not_found(name, lang))
         if len(hits) == 1:
-            self._lock_beneficiary(state, hits[0].name, hits[0].account)
+            self._lock_beneficiary(
+                state,
+                _display_name(hits[0].name, hits[0].name_ar, lang),
+                hits[0].account,
+            )
             return None
         state.beneficiary_options = [
             BeneficiaryOption(
@@ -1041,16 +1073,32 @@ class ConversationEngine:
                 bank=h.bank,
                 currency=h.currency,
                 is_favorite=h.is_favorite,
+                name_ar=h.name_ar,
             )
             for h in hits
         ]
         state.disambiguation_kind = "beneficiary"
         state.pending_slot = "recipient"
         state.status = ConversationStatus.DISAMBIGUATING
-        options = [
-            (h.name, h.bank or "", _mask_account(h.account), h.currency) for h in hits
+        return self._finish(
+            state, templates.choose_beneficiary(self._option_rows(hits, lang), lang)
+        )
+
+    @staticmethod
+    def _option_rows(
+        items: Sequence[BeneficiaryHit | BeneficiaryOption], lang: Language
+    ) -> list[tuple[str, str, str, str]]:
+        """Build the (name, bank, masked-account, currency) rows for the prompt."""
+
+        return [
+            (
+                _display_name(it.name, it.name_ar, lang),
+                it.bank or "",
+                _mask_account(it.account),
+                it.currency,
+            )
+            for it in items
         ]
-        return self._finish(state, templates.choose_beneficiary(options, lang))
 
     @staticmethod
     def _lock_beneficiary(state: ConversationState, name: str, account: str) -> None:
@@ -1067,12 +1115,11 @@ class ConversationEngine:
     ) -> ConversationResult:
         choice = self._match_beneficiary_option(state.beneficiary_options, text)
         if choice is None:
-            options = [
-                (o.name, o.bank or "", _mask_account(o.account), o.currency)
-                for o in state.beneficiary_options
-            ]
-            return self._finish(state, templates.choose_beneficiary(options, lang))
-        self._lock_beneficiary(state, choice.name, choice.account)
+            rows = self._option_rows(state.beneficiary_options, lang)
+            return self._finish(state, templates.choose_beneficiary(rows, lang))
+        self._lock_beneficiary(
+            state, _display_name(choice.name, choice.name_ar, lang), choice.account
+        )
         return self._enter_confirmation(state, lang)
 
     @staticmethod
@@ -1094,9 +1141,12 @@ class ConversationEngine:
             if 1 <= index <= len(options):
                 return options[index - 1]
         for option in options:
-            name = normalize(option.name)
-            if name and (name in normalized or normalized in name):
-                return option
+            for candidate in (option.name, option.name_ar):
+                if not candidate:
+                    continue
+                name = normalize(candidate)
+                if name and (name in normalized or normalized in name):
+                    return option
         return None
 
     def _handle_add_beneficiary(

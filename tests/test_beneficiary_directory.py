@@ -19,7 +19,7 @@ import app.db.directory as directory
 from app.config import settings
 from app.conversation.engine import ConversationEngine
 from app.conversation.state import ConversationStatus
-from app.schemas import Intent
+from app.schemas import Intent, Language
 
 _BANKING_CORE = Path(__file__).resolve().parents[1] / "banking-core"
 if str(_BANKING_CORE) not in sys.path:
@@ -236,6 +236,36 @@ def test_recipient_answer_english_to_phrase(engine, directory_db, fake_core):
     result = engine.handle("send to Ahmed", "b-verb-2")
     assert result.state.status is ConversationStatus.DISAMBIGUATING
     assert len(result.state.beneficiary_options) == 3
+
+
+def test_arabic_chat_shows_arabic_names(engine, directory_db, fake_core):
+    """An Arabic conversation lists and confirms with the Arabic name."""
+
+    result = engine.handle("حوّل ٥٠٠ ريال إلى أحمد", "b-ar-names")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert "أحمد خالد" in result.reply  # AR name, not the English "Ahmed Khaled"
+    assert "Ahmed" not in result.reply
+    confirm = engine.handle("2", "b-ar-names")
+    assert confirm.state.status is ConversationStatus.CONFIRMING
+    assert confirm.state.slots.recipient == "أحمد خالد"
+
+
+def test_language_sticks_on_numeric_reply(engine, directory_db, fake_core):
+    """A bare "2" keeps the conversation's Arabic language (not English)."""
+
+    engine.handle("حوّل ٥٠٠ ريال إلى أحمد", "b-ar-stick")
+    confirm = engine.handle("2", "b-ar-stick")
+    assert confirm.state.language is Language.AR
+    assert "تأكيد" in confirm.reply  # Arabic confirmation prompt
+
+
+def test_disambiguation_by_arabic_full_name(engine, directory_db, fake_core):
+    """Selecting by the Arabic full name (plain alef) resolves the beneficiary."""
+
+    engine.handle("حوّل ٥٠٠ ريال إلى أحمد", "b-ar-full")
+    result = engine.handle("احمد خالد", "b-ar-full")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.recipient == "أحمد خالد"
 
 
 # ----------------------------- add beneficiary ----------------------------- #
