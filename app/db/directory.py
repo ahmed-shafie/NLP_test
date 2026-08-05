@@ -14,9 +14,13 @@ import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.nlu.normalize import normalize
+
+if TYPE_CHECKING:
+    from sqlalchemy import RowMapping
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +62,20 @@ class BeneficiaryHit:
     currency: str = "SAR"
     name_ar: str | None = None
     is_favorite: bool = False
+
+
+def _row_to_hit(r: RowMapping) -> BeneficiaryHit:
+    """Map a beneficiaries table row (keyed by column name) to a hit."""
+
+    return BeneficiaryHit(
+        id=str(r["id"]),
+        name=str(r["name"]),
+        account=str(r["account"]),
+        bank=(str(r["bank"]) if r["bank"] is not None else None),
+        currency=str(r["currency"] or "SAR"),
+        name_ar=(str(r["name_ar"]) if r["name_ar"] is not None else None),
+        is_favorite=bool(r["is_favorite"]),
+    )
 
 
 class BeneficiaryDirectory:
@@ -107,18 +125,39 @@ class BeneficiaryDirectory:
         # Match on the normalized form so Arabic alef/hamza variants (احمد vs أحمد),
         # diacritics, and casing all collapse to the same key before comparing.
         return [
-            BeneficiaryHit(
-                id=str(r["id"]),
-                name=str(r["name"]),
-                account=str(r["account"]),
-                bank=(str(r["bank"]) if r["bank"] is not None else None),
-                currency=str(r["currency"] or "SAR"),
-                name_ar=(str(r["name_ar"]) if r["name_ar"] is not None else None),
-                is_favorite=bool(r["is_favorite"]),
-            )
+            _row_to_hit(r)
             for r in rows
             if _name_matches(needle, r["name"], r["name_ar"])
         ]
+
+    def list_all(self, owner_user: str | None) -> list[BeneficiaryHit] | None:
+        """Return every saved beneficiary for ``owner_user`` (favorites first).
+
+        Returns ``None`` when the directory could not be queried (DB/table
+        unavailable), versus ``[]`` when the owner has no beneficiaries saved.
+        """
+
+        from sqlalchemy import text
+
+        owner_clause = ""
+        params: dict[str, object] = {}
+        if owner_user:
+            owner_clause = f"WHERE {self._owner_column} = :owner"
+            params["owner"] = owner_user
+        query = text(
+            f"SELECT id, name, name_ar, account, bank, currency, "  # noqa: S608
+            f"COALESCE(is_favorite, 0) AS is_favorite "
+            f"FROM {self._table} {owner_clause}"
+        )
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(query, params).mappings().all()
+        except Exception as exc:  # noqa: BLE001 - DB issues must not break a turn
+            logger.warning("Beneficiary directory list failed: %s", exc)
+            return None
+        hits = [_row_to_hit(r) for r in rows]
+        hits.sort(key=lambda h: (not h.is_favorite, h.name.lower()))
+        return hits
 
 
 @lru_cache(maxsize=1)

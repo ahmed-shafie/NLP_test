@@ -177,6 +177,9 @@ def _needs_llm(state: dict) -> bool:
     if state["intent"] is Intent.INAPPROPRIATE:
         # Abusive input gets a canned redirect; never sent to the LLM.
         return False
+    if state["intent"] is Intent.LIST_BENEFICIARIES:
+        # Read-only listing handled by the engine; never sent to the LLM.
+        return False
     if state["intent"] is Intent.FALLBACK:
         return True
     entities: TransferEntities = state["entities"]

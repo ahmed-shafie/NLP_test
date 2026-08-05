@@ -24,6 +24,7 @@ class Intent(str, Enum):
     TRANSFER_MONEY = "transfer_money"
     PAY_BILL = "pay_bill"
     BALANCE_INQUIRY = "balance_inquiry"
+    LIST_BENEFICIARIES = "list_beneficiaries"
     SMALL_TALK = "small_talk"
     INAPPROPRIATE = "inappropriate"
     FALLBACK = "fallback"

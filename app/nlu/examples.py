@@ -44,6 +44,20 @@ INTENT_EXAMPLES: list[tuple[str, Intent]] = [
     ("ادفع فاتورة الغاز ٣٢٠ جنيه", Intent.PAY_BILL),
     ("اريد دفع فاتورة الموبايل فودافون", Intent.PAY_BILL),
     ("ادفع فاتورة الكهرباء 778899 بمبلغ 320", Intent.PAY_BILL),
+    # --- list_beneficiaries (English) ---
+    ("show my beneficiaries", Intent.LIST_BENEFICIARIES),
+    ("list my beneficiaries", Intent.LIST_BENEFICIARIES),
+    ("who are my beneficiaries", Intent.LIST_BENEFICIARIES),
+    ("show me all my saved recipients", Intent.LIST_BENEFICIARIES),
+    ("view my payees", Intent.LIST_BENEFICIARIES),
+    ("display my registered beneficiaries", Intent.LIST_BENEFICIARIES),
+    # --- list_beneficiaries (Arabic) ---
+    ("من المستفيدين عندي", Intent.LIST_BENEFICIARIES),
+    ("عرض المستفيدين لدي", Intent.LIST_BENEFICIARIES),
+    ("اعرض قائمة المستفيدين", Intent.LIST_BENEFICIARIES),
+    ("من هم المستفيدين المسجلين عندي", Intent.LIST_BENEFICIARIES),
+    ("وريني المستفيدين المحفوظين", Intent.LIST_BENEFICIARIES),
+    ("كل المستفيدين عندي", Intent.LIST_BENEFICIARIES),
     # --- small_talk / chit-chat (English) ---
     ("hi", Intent.SMALL_TALK),
     ("hello there", Intent.SMALL_TALK),

@@ -154,6 +154,68 @@ def _is_balance_inquiry(text: str) -> bool:
     return any(phrase in lowered for phrase in _BALANCE_PHRASES)
 
 
+# Cues that a message asks to *list* saved beneficiaries ("show my beneficiaries",
+# "من المستفيدين عندي"). Normalized so Arabic letter-form variants collapse. A
+# beneficiary noun plus a list/possessive marker distinguishes "show my
+# beneficiaries" from "send money to a beneficiary".
+_LIST_BENE_NOUNS = {
+    normalize(w)
+    for w in (
+        "beneficiaries",
+        "beneficiary",
+        "payees",
+        "payee",
+        "المستفيدين",
+        "مستفيدين",
+        "المستفيدون",
+        "المستفيد",
+        "مستفيد",
+        "مستفيدي",
+        # common misspelling that drops the yaa (المستف[ي]دين)
+        "المستفدين",
+        "مستفدين",
+        "المستفدون",
+    )
+}
+_LIST_BENE_MARKERS = {
+    normalize(w)
+    for w in (
+        "list",
+        "show",
+        "view",
+        "see",
+        "display",
+        "my",
+        "all",
+        "who",
+        "which",
+        "saved",
+        "registered",
+        "عرض",
+        "اعرض",
+        "اظهر",
+        "وريني",
+        "ورني",
+        "قائمة",
+        "من",
+        "مين",
+        "كل",
+        "عندي",
+        "لدي",
+        "المسجلين",
+        "مسجلين",
+        "اللي",
+    )
+}
+
+
+def _is_list_beneficiaries(text: str) -> bool:
+    tokens = {normalize(t) for t in _tokens(text)}
+    if not tokens & _LIST_BENE_NOUNS:
+        return False
+    return bool(tokens & _LIST_BENE_MARKERS)
+
+
 def _mask_account(account: str) -> str:
     """Show only the last four characters of an account/IBAN."""
 
@@ -518,6 +580,18 @@ class ConversationEngine:
                 span.annotate("balance_inquiry")
                 return self._handle_balance_inquiry(state, text, lang)
 
+        # "Show my beneficiaries" (read-only) when starting fresh — deterministic
+        # cue check beats the semantic classifier, which otherwise reads the word
+        # "beneficiary" as a transfer and wrongly asks for an amount.
+        if (
+            state.intent is None
+            and state.pending_slot is None
+            and _is_list_beneficiaries(text)
+        ):
+            with tracer.block("orchestrator") as span:
+                span.annotate("list_beneficiaries")
+                return self._handle_list_beneficiaries(state, lang)
+
         parsed = pipeline.parse(text, lang)
         # Fold the NLU pipeline's own per-block trace into this turn's trace.
         tracer.extend(parsed.block_trace)
@@ -532,6 +606,11 @@ class ConversationEngine:
                 return self._handle_inappropriate(
                     state, ModerationResult(True, "severe"), lang
                 )
+
+            # Semantic fallback for a "list my beneficiaries" phrasing the
+            # deterministic cue check above didn't catch (read-only).
+            if state.intent is None and parsed.intent is Intent.LIST_BENEFICIARIES:
+                return self._handle_list_beneficiaries(state, lang)
 
             # Smart chooser: determine transfer vs bill, or ask the customer.
             if state.intent not in (Intent.TRANSFER_MONEY, Intent.PAY_BILL):
@@ -1283,6 +1362,24 @@ class ConversationEngine:
             info.account_type, info.currency, self._fmt_amount(info.balance), lang
         )
         return self._finish(state, reply)
+
+    def _handle_list_beneficiaries(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult:
+        """List the customer's saved beneficiaries (read-only; never transfers)."""
+
+        state.intent = Intent.LIST_BENEFICIARIES
+        state.status = ConversationStatus.COMPLETED
+        directory = get_beneficiary_directory()
+        if directory is None:
+            return self._finish(state, templates.beneficiaries_unavailable(lang))
+        hits = directory.list_all(self._owner(state))
+        if hits is None:
+            return self._finish(state, templates.beneficiaries_unavailable(lang))
+        if not hits:
+            return self._finish(state, templates.no_beneficiaries(lang))
+        rows = self._option_rows(hits, lang)
+        return self._finish(state, templates.list_beneficiaries(rows, lang))
 
     def _enter_confirmation(
         self, state: ConversationState, lang: Language

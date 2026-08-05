@@ -156,13 +156,8 @@ def choose_biller(names: list[str], language: Language) -> str:
     return f"I found more than one biller for that — which one? {listing}"
 
 
-def choose_beneficiary(
-    options: list[tuple[str, str, str, str]], language: Language
-) -> str:
-    """Ask which beneficiary is meant when a first name matches several people.
-
-    ``options`` is a list of ``(name, bank, masked_account, currency)`` tuples.
-    """
+def _option_lines(options: list[tuple[str, str, str, str]]) -> str:
+    """Render ``(name, bank, masked_account, currency)`` tuples as numbered rows."""
 
     lines = []
     for i, (name, bank, masked, currency) in enumerate(options, start=1):
@@ -172,7 +167,18 @@ def choose_beneficiary(
         parts.append(masked)
         parts.append(currency)
         lines.append(f"{i}. " + " · ".join(parts))
-    listing = "\n".join(lines)
+    return "\n".join(lines)
+
+
+def choose_beneficiary(
+    options: list[tuple[str, str, str, str]], language: Language
+) -> str:
+    """Ask which beneficiary is meant when a first name matches several people.
+
+    ``options`` is a list of ``(name, bank, masked_account, currency)`` tuples.
+    """
+
+    listing = _option_lines(options)
     first = options[0][0].split()[0] if options else ""
     if language is Language.AR:
         return (
@@ -240,6 +246,53 @@ def beneficiary_add_invalid_account(name: str, language: Language) -> str:
         f'IBAN (e.g. SA followed by digits) or an account number to add "{name}", '
         'or reply "no" to cancel.'
     )
+
+
+def list_beneficiaries(
+    options: list[tuple[str, str, str, str]], language: Language
+) -> str:
+    """Show the customer's saved beneficiaries (read-only, no transfer started).
+
+    ``options`` is a list of ``(name, bank, masked_account, currency)`` tuples.
+    """
+
+    listing = _option_lines(options)
+    count = len(options)
+    if language is Language.AR:
+        word = "مستفيد" if count == 1 else "مستفيدين"
+        return (
+            f"عندك {count} {word} محفوظين 👇\n"
+            f"{listing}\n"
+            "تحب تحوّل لأحدهم؟ قل لي الاسم."
+        )
+    word = "beneficiary" if count == 1 else "beneficiaries"
+    return (
+        f"You have {count} saved {word} 👇\n"
+        f"{listing}\n"
+        "Want to send money to one of them? Just tell me the name."
+    )
+
+
+def no_beneficiaries(language: Language) -> str:
+    """The customer has no saved beneficiaries yet."""
+
+    if language is Language.AR:
+        return (
+            "ما عندك مستفيدين محفوظين للحين 🙂 — تحب تضيف واحد؟ "
+            "قل لي الاسم ورقم الحساب/الآيبان."
+        )
+    return (
+        "You don't have any saved beneficiaries yet 🙂 — want to add one? "
+        "Just tell me the name and their account/IBAN."
+    )
+
+
+def beneficiaries_unavailable(language: Language) -> str:
+    """The beneficiary directory could not be reached."""
+
+    if language is Language.AR:
+        return "تعذّر جلب قائمة المستفيدين الآن. حاول مرة أخرى لاحقًا."
+    return "I couldn't fetch your beneficiaries right now. Please try again later."
 
 
 _ACCOUNT_TYPE_AR: dict[str, str] = {

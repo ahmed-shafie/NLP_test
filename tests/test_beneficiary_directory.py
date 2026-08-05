@@ -387,3 +387,72 @@ def test_fx_note_without_blocking(engine, directory_db, monkeypatch):
     result = engine.handle("send 100 USD to Mona", "b-fx-2")
     assert result.state.status is ConversationStatus.CONFIRMING
     assert any("fx" in w for w in result.state.preflight_warnings)
+
+
+# ----------------------- list beneficiaries (read-only) -------------------- #
+
+
+def test_list_all_returns_favorites_first(directory_db):
+    d = directory.get_beneficiary_directory()
+    hits = d.list_all("demo")
+    assert hits is not None and len(hits) == 4
+    # Ahmed Hassan is the only favorite (is_favorite=1) -> sorted first.
+    assert hits[0].name == "Ahmed Hassan"
+
+
+def test_list_all_unknown_owner_is_empty(directory_db):
+    d = directory.get_beneficiary_directory()
+    assert d.list_all("nobody") == []
+
+
+def test_list_beneficiaries_arabic(engine, directory_db):
+    result = engine.handle("من المستفيدين عندي", "b-list-ar")
+    assert result.state.intent is Intent.LIST_BENEFICIARIES
+    assert result.state.status is ConversationStatus.COMPLETED
+    # Arabic names shown, and it never asks for a transfer amount.
+    assert "أحمد حسن" in result.reply
+    assert "كم المبلغ" not in result.reply
+
+
+def test_list_beneficiaries_arabic_misspelled(engine, directory_db):
+    """The common misspelling المستف[ي]دين still lists, never starts a transfer."""
+
+    result = engine.handle("من المستفدين عندي", "b-list-ar-typo")
+    assert result.state.intent is Intent.LIST_BENEFICIARIES
+    assert result.state.status is ConversationStatus.COMPLETED
+    assert "أحمد" in result.reply
+
+
+def test_list_beneficiaries_english(engine, directory_db):
+    result = engine.handle("show my beneficiaries", "b-list-en")
+    assert result.state.intent is Intent.LIST_BENEFICIARIES
+    assert "Ahmed Hassan" in result.reply
+    assert "Mona Ali" in result.reply
+
+
+def test_list_beneficiaries_does_not_start_transfer(engine, directory_db):
+    result = engine.handle("عرض المستفيدين لدي", "b-list-notransfer")
+    assert result.state.status is not ConversationStatus.COLLECTING
+    assert result.state.pending_slot is None
+    assert result.state.slots.amount is None
+    assert result.state.slots.recipient is None
+
+
+def test_list_beneficiaries_masks_account(engine, directory_db):
+    result = engine.handle("list my beneficiaries", "b-list-mask")
+    assert "SA••7777" in result.reply
+    assert "SA1122330000007777" not in result.reply
+
+
+def test_list_beneficiaries_empty(engine, directory_db):
+    result = engine.handle("show my beneficiaries", "b-list-empty", user_id="nobody")
+    assert result.state.intent is Intent.LIST_BENEFICIARIES
+    assert "don't have any saved beneficiaries" in result.reply.lower()
+
+
+def test_list_beneficiaries_unavailable(engine, directory_db, monkeypatch):
+    monkeypatch.setattr(settings, "beneficiary_lookup_enabled", False)
+    directory.get_beneficiary_directory.cache_clear()
+    result = engine.handle("show my beneficiaries", "b-list-unavail")
+    assert result.state.intent is Intent.LIST_BENEFICIARIES
+    assert "couldn't fetch your beneficiaries" in result.reply.lower()
