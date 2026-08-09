@@ -243,6 +243,15 @@ def test_unknown_biller_then_valid_one_resumes(engine: ConversationEngine):
     assert result.state.pending_slot == "reference_number"
 
 
+def test_arabic_letter_spelled_biller_starts_bill_flow(engine: ConversationEngine):
+    # "اس تي سي" is STC; the semantic classifier must not divert this to the
+    # read-only beneficiary listing.
+    result = engine.handle("ادفع ل اس تي سي", "ls1")
+    assert result.state.intent is Intent.PAY_BILL
+    assert result.state.slots.biller_code == "001"
+    assert result.state.pending_slot == "reference_number"
+
+
 def test_unknown_biller_rejected_in_arabic(engine: ConversationEngine):
     engine.handle("ابغى ادفع فاتورة", "ub4")
     result = engine.handle("شركة نجم", "ub4")

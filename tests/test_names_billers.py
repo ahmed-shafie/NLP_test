@@ -63,6 +63,25 @@ def test_biller_colloquial_water_spellings(term: str):
     assert resolve_biller_gazetteer(f"ادفع فاتورة {term}").biller_code == "015"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ادفع فاتورة اس تي سي",  # brand spelled out letter-by-letter in Arabic
+        "ادفع ل اس تي سي",
+        "ادفع لاس تي سي",  # "ل" fused onto the first token
+        "فاتورة إس تي سي",
+    ],
+)
+def test_biller_arabic_letter_spelling_of_stc(text: str):
+    assert resolve_biller_gazetteer(text).biller_code == "001"
+
+
+def test_biller_matches_through_fused_arabic_prefix():
+    # "للمياه" is "لـ" + "المياه"; "وزين" is "و" + "زين".
+    assert resolve_biller_gazetteer("ادفع فاتورة وزين").biller_code == "044"
+    assert resolve_biller_gazetteer("فاتورة للكهرباء").biller_code == "002"
+
+
 def test_biller_semantic_disabled_by_default():
     # Arbitrary chit-chat must not be mis-resolved to a near-neighbour biller.
     assert resolve_biller_gazetteer("hello") is None

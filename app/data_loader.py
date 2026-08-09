@@ -164,6 +164,18 @@ def resolve_biller_by_code(token: str) -> BillerRecord | None:
     return _biller_by_code().get(code) if code else None
 
 
+# Extra spellings customers use for a specific biller, keyed by SADAD code.
+# Mostly Latin brand names written out letter-by-letter in Arabic ("اس تي سي"),
+# which no amount of normalization derives from the catalogue name.
+_BILLER_ALIASES: dict[str, tuple[str, ...]] = {
+    "001": ("اس تي سي", "اس تي سى", "الاتصالات السعودية", "stc"),
+    "005": ("موبايلي", "mobily"),
+    "044": ("زين", "زين السعودية", "zain"),
+    "151": ("فيرجن", "فيرجن موبايل"),
+    "207": ("stc pay", "اس تي سي باي"),
+}
+
+
 @lru_cache(maxsize=1)
 def _biller_name_index() -> list[tuple[tuple[str, ...], BillerRecord]]:
     """Normalized name-token tuples paired with their biller, longest first.
@@ -174,7 +186,8 @@ def _biller_name_index() -> list[tuple[tuple[str, ...], BillerRecord]]:
 
     index: list[tuple[tuple[str, ...], BillerRecord]] = []
     for rec in load_billers():
-        for name in (rec.name_en, rec.name_ar):
+        names = (rec.name_en, rec.name_ar, *_BILLER_ALIASES.get(rec.biller_code, ()))
+        for name in names:
             tokens = tuple(normalize_tokens(name))
             if tokens:
                 index.append((tokens, rec))
@@ -205,17 +218,42 @@ def resolve_biller_gazetteer(text: str) -> BillerRecord | None:
     return candidates[0] if candidates else None
 
 
+# Arabic proclitics that fuse onto the next word, longest first: "لاس تي سي" =
+# "ل" + "اس تي سي", "للمياه" = "لـ" + "المياه", "وزين" = "و" + "زين".
+_AR_PROCLITICS = ("لل", "بال", "وال", "فال", "كال", "ل", "ب", "ف", "و", "ك")
+
+
+def _unprefixed_tokens(tokens: list[str]) -> list[str]:
+    """Drop a fused Arabic proclitic from each token (keeping 2-letter words)."""
+
+    out = []
+    for token in tokens:
+        for prefix in _AR_PROCLITICS:
+            if token.startswith(prefix) and len(token) - len(prefix) >= 2:
+                token = token[len(prefix) :]
+                break
+        out.append(token)
+    return out
+
+
 def _gazetteer_candidates(text: str) -> list[BillerRecord]:
     """Exact name match (one record) or a generic-term group (one or several)."""
 
     tokens = normalize_tokens(text)
     if not tokens:
         return []
-    for name_tokens, rec in _biller_name_index():
+    index = _biller_name_index()
+    for name_tokens, rec in index:
         if _contains_subsequence(tokens, name_tokens):
             return [rec]
+    # Retry once with fused Arabic proclitics removed.
+    stripped = _unprefixed_tokens(tokens)
+    if stripped != tokens:
+        for name_tokens, rec in index:
+            if _contains_subsequence(stripped, name_tokens):
+                return [rec]
     by_code = _biller_by_code()
-    token_set = set(tokens)
+    token_set = set(tokens) | set(stripped)
     for term, codes in _GENERIC_BILLER_GROUPS.items():
         if normalize(term) in token_set:
             recs = [by_code[c] for c in codes if c in by_code]

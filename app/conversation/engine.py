@@ -608,14 +608,19 @@ class ConversationEngine:
                     state, ModerationResult(True, "severe"), lang
                 )
 
-            # Semantic fallback for a "list my beneficiaries" phrasing the
-            # deterministic cue check above didn't catch (read-only).
-            if state.intent is None and parsed.intent is Intent.LIST_BENEFICIARIES:
-                return self._handle_list_beneficiaries(state, lang)
-
             # Smart chooser: determine transfer vs bill, or ask the customer.
             if state.intent not in (Intent.TRANSFER_MONEY, Intent.PAY_BILL):
                 action = self._decide_action(state, text, lang, parsed)
+                # Semantic fallback for a "list my beneficiaries" phrasing the
+                # deterministic cue check above didn't catch (read-only). Only
+                # when nothing points at a concrete bill/transfer, so the
+                # classifier can't hijack e.g. "ادفع فاتورة ...".
+                if (
+                    state.intent is None
+                    and action is None
+                    and parsed.intent is Intent.LIST_BENEFICIARIES
+                ):
+                    return self._handle_list_beneficiaries(state, lang)
                 if action is None:
                     # Warm chit-chat reply for pure greetings/thanks; then wait
                     # in SELECTING so a follow-up choice/request is understood.
