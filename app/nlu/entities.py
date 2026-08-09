@@ -155,7 +155,40 @@ _EN_BILLER_RE = re.compile(
 )
 # Free-text biller after "فاتورة" (e.g. "فاتورة شركة الكهرباء").
 _AR_BILLER_RE = re.compile(r"فاتورة\s+([^\d،,.]{2,30})")
-_BILLER_STOPWORDS = {"my", "the", "a", "an", "your", "our", "this", "pay"}
+# Words that are never part of a biller name. Besides articles/possessives this
+# covers the request preamble ("I want to pay a bill", "I need to settle a bill")
+# so the verb phrase is not mistaken for the biller.
+_BILLER_STOPWORDS = {
+    "my",
+    "the",
+    "a",
+    "an",
+    "your",
+    "our",
+    "this",
+    "pay",
+    "paying",
+    "settle",
+    "settling",
+    "i",
+    "we",
+    "you",
+    "me",
+    "us",
+    "want",
+    "wants",
+    "wanna",
+    "need",
+    "needs",
+    "would",
+    "like",
+    "to",
+    "please",
+    "let",
+    "can",
+    "could",
+    "help",
+}
 
 
 def _strip_biller_stopwords(value: str) -> str:

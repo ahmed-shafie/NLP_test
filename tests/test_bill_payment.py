@@ -50,6 +50,22 @@ def test_extract_biller_freetext_fallback():
     assert code is None
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I want to pay a bill",
+        "I need to pay a bill",
+        "I want to pay bill",
+        "I would like to pay a bill",
+        "can you help me pay a bill",
+    ],
+)
+def test_extract_biller_ignores_request_preamble(text: str):
+    # The verb phrase of a bare "pay a bill" request is not a biller name, so the
+    # engine still asks *which* bill instead of jumping to the reference number.
+    assert extract_biller(text, Language.EN) == (None, None, None)
+
+
 def test_extract_reference_number_with_cue():
     assert extract_reference_number("ref 778899") == "778899"
 
