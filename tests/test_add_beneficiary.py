@@ -117,6 +117,16 @@ def test_standalone_add_arabic(engine, writes):
     assert done.state.status is ConversationStatus.COMPLETED
 
 
+def test_arabic_stays_arabic_through_invalid_iban(engine, writes):
+    """An account-shaped reply carries no language signal, valid or not."""
+
+    engine.handle("اضف مستفيد جديد", "add-ar2")
+    engine.handle("نورة سعد", "add-ar2")
+    rejected = engine.handle("SA9820000001234567891234", "add-ar2")  # bad checksum
+    assert "الآيبان" in rejected.reply
+    assert rejected.state.language.value == "ar"
+
+
 def test_one_shot_splits_name_and_account(engine, writes):
     """Name and IBAN in one message land in separate slots, not one blob."""
 

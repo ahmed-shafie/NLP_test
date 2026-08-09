@@ -296,6 +296,20 @@ def _is_list_beneficiaries(text: str) -> bool:
     return bool(tokens & _LIST_BENE_MARKERS)
 
 
+# An account-shaped message: digits/separators behind at most a country code
+# ("SA03 8000 …"). Its letters say nothing about the customer's language.
+_ACCOUNT_SHAPED = re.compile(r"^[A-Za-z]{0,2}[\d\s\u00a0-]+$")
+
+
+def _carries_language_signal(text: str) -> bool:
+    """False for messages detection can't judge: bare numbers, IBANs, "2"."""
+
+    stripped = text.strip(" .,،؟?")
+    if not re.search(r"[^\W\d_]", stripped, re.UNICODE):
+        return False
+    return not _ACCOUNT_SHAPED.match(stripped)
+
+
 def _mask_account(account: str) -> str:
     """Show only the last four characters of an account/IBAN."""
 
@@ -510,12 +524,8 @@ class ConversationEngine:
 
         if override is not None:
             return override
-        if prior is not None:
-            has_letters = bool(re.search(r"[^\W\d_]", text, re.UNICODE))
-            if not has_letters:
-                return prior.language
-            if accounts.validate_account(text.strip(" .,،؟?"))[0] is not None:
-                return prior.language
+        if prior is not None and not _carries_language_signal(text):
+            return prior.language
         return detect_language(text)
 
     def _handle_confirmation(
