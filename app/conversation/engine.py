@@ -166,6 +166,13 @@ _LIST_BENE_NOUNS = {
         "beneficiary",
         "payees",
         "payee",
+        # frequent misspellings of "beneficiary"
+        "benificary",
+        "benificiary",
+        "benificaries",
+        "benificiaries",
+        "beneficary",
+        "beneficaries",
         "المستفيدين",
         "مستفيدين",
         "المستفيدون",
@@ -186,6 +193,8 @@ _LIST_BENE_MARKERS = {
         "view",
         "see",
         "display",
+        "check",
+        "browse",
         "my",
         "all",
         "who",
@@ -206,6 +215,15 @@ _LIST_BENE_MARKERS = {
         "المسجلين",
         "مسجلين",
         "اللي",
+        # colloquial "let me see" verbs: ابغى اشوف المستفيدين
+        "اشوف",
+        "أشوف",
+        "شوف",
+        "شف",
+        "يشوف",
+        "نشوف",
+        "استعرض",
+        "راجع",
     )
 }
 
@@ -287,12 +305,29 @@ def _is_add_beneficiary(text: str) -> bool:
     return bool(tokens & _ADD_BENE_VERBS)
 
 
+# Nouns a genuine add request names its target with. The semantic classifier
+# leans on phrasing alone, which puts unrelated requests ("ادفع المخالفة") next
+# to "أضف مستفيد" in embedding space, so its verdict needs one of these present.
+_ADD_TARGET_NOUNS = _LIST_BENE_NOUNS | {
+    normalize(w) for w in ("recipient", "recipients", "contact", "مستلم", "كمستفيد")
+}
+
+
+def _names_a_beneficiary(text: str) -> bool:
+    """True when the message actually mentions a beneficiary/payee/recipient."""
+
+    return bool({normalize(t) for t in _tokens(text)} & _ADD_TARGET_NOUNS)
+
+
 def _is_list_beneficiaries(text: str) -> bool:
     tokens = {normalize(t) for t in _tokens(text)}
     if not tokens & _LIST_BENE_NOUNS:
         return False
     if tokens & _ADD_BENE_VERBS:  # "add a beneficiary" is not a listing request
         return False
+    if tokens <= _LIST_BENE_NOUNS:
+        # The noun on its own ("beneficiaries", "المستفدين") only ever asks to see them.
+        return True
     return bool(tokens & _LIST_BENE_MARKERS)
 
 
@@ -723,11 +758,23 @@ class ConversationEngine:
                 # deterministic cue check above didn't catch (read-only). Only
                 # when nothing points at a concrete bill/transfer, so the
                 # classifier can't hijack e.g. "ادفع فاتورة ...".
-                if state.intent is None and action is None:
-                    if parsed.intent is Intent.ADD_BENEFICIARY:
+                if (
+                    state.intent is None
+                    and action is None
+                    # The classifier alone is not enough: "ادفع المخالفة" sits
+                    # close to the beneficiary phrasings in embedding space, so
+                    # the message must actually name a beneficiary/payee.
+                    and _names_a_beneficiary(text)
+                    and parsed.intent
+                    in (Intent.ADD_BENEFICIARY, Intent.LIST_BENEFICIARIES)
+                ):
+                    if parsed.intent is Intent.ADD_BENEFICIARY and not (
+                        _is_list_beneficiaries(text)
+                    ):
+                        # "ابغى اشوف المستفيدين" reads as an add request to the
+                        # classifier; an explicit viewing cue always wins.
                         return self._start_add_beneficiary(state, text, lang)
-                    if parsed.intent is Intent.LIST_BENEFICIARIES:
-                        return self._handle_list_beneficiaries(state, lang)
+                    return self._handle_list_beneficiaries(state, lang)
                 if action is None:
                     # Warm chit-chat reply for pure greetings/thanks; then wait
                     # in SELECTING so a follow-up choice/request is understood.

@@ -433,6 +433,32 @@ def test_list_beneficiaries_arabic_misspelled(engine, directory_db):
     assert "أحمد" in result.reply
 
 
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "list my beneficiary",  # singular
+        "list my benificary",  # misspelled
+        "beneficiaries",  # the bare noun
+        "who are my beneficiaries",
+        "show me the list of my payees",
+        "check my beneficiaries",
+        "المستفدين",  # bare, misspelled
+        "قائمة المستفيدين",
+        "وش المستفيدين اللي عندي",
+        "ابغى اشوف المستفيدين",  # colloquial "let me see"
+        "شوف المستفيدين",
+    ],
+)
+def test_list_phrasings_all_list(engine, directory_db, phrase):
+    """Every way of asking to see beneficiaries lists them, read-only."""
+
+    result = engine.handle(phrase, f"b-list-{abs(hash(phrase))}")
+    assert result.state.intent is Intent.LIST_BENEFICIARIES
+    assert result.state.status is ConversationStatus.COMPLETED
+    assert result.state.pending_add_name is None
+    assert result.transfer is None
+
+
 def test_list_beneficiaries_english(engine, directory_db):
     result = engine.handle("show my beneficiaries", "b-list-en")
     assert result.state.intent is Intent.LIST_BENEFICIARIES

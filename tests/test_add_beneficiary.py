@@ -117,6 +117,18 @@ def test_standalone_add_arabic(engine, writes):
     assert done.state.status is ConversationStatus.COMPLETED
 
 
+@pytest.mark.parametrize("phrase", ["ادفع المخالفة", "ادفع فاتورة", "pay a bill"])
+def test_payment_requests_never_enter_the_add_flow(engine, writes, phrase):
+    """A payment phrasing must not be pulled into add/list by the classifier."""
+
+    result = engine.handle(phrase, f"no-add-{abs(hash(phrase))}")
+    assert result.state.pending_add_name is None
+    assert result.state.intent is not Intent.ADD_BENEFICIARY
+    assert "آيبان" not in result.reply
+    assert "IBAN" not in result.reply
+    assert not writes
+
+
 def test_arabic_stays_arabic_through_invalid_iban(engine, writes):
     """An account-shaped reply carries no language signal, valid or not."""
 
