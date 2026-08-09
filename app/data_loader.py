@@ -131,6 +131,13 @@ def _billers_by_category() -> dict[str, tuple[BillerRecord, ...]]:
     }
 
 
+@lru_cache(maxsize=1)
+def biller_categories() -> tuple[str, ...]:
+    """The distinct SADAD categories in the catalogue, alphabetically."""
+
+    return tuple(sorted({r.category for r in load_billers() if r.category}))
+
+
 def _as_biller_code(token: str) -> str | None:
     """Return the SADAD code a short numeric token denotes, else ``None``.
 

@@ -213,6 +213,44 @@ def test_multi_turn_bill_flow(engine: ConversationEngine):
     assert r4.bill.reference_number == "4455123"
 
 
+# --------------------------- unknown biller ------------------------------- #
+
+
+def test_unknown_biller_is_rejected_one_shot(engine: ConversationEngine):
+    # Only SADAD-catalogue billers can be paid: free text is not accepted.
+    result = engine.handle("pay my Acme Telecom bill", "ub1")
+    assert result.state.intent is Intent.PAY_BILL
+    assert result.state.slots.biller is None
+    assert result.state.pending_slot == "biller"
+    assert "isn't in our list of billers" in result.reply
+    assert "Acme Telecom" in result.reply
+
+
+def test_unknown_biller_is_rejected_when_asked(engine: ConversationEngine):
+    engine.handle("I want to pay a bill", "ub2")
+    result = engine.handle("Acme Telecom", "ub2")
+    assert result.state.slots.biller is None
+    assert result.state.pending_slot == "biller"
+    assert "Acme Telecom" in result.reply
+
+
+def test_unknown_biller_then_valid_one_resumes(engine: ConversationEngine):
+    engine.handle("I want to pay a bill", "ub3")
+    engine.handle("Acme Telecom", "ub3")
+    result = engine.handle("STC", "ub3")
+    assert result.state.slots.biller == "STC"
+    assert result.state.slots.biller_code == "001"
+    assert result.state.pending_slot == "reference_number"
+
+
+def test_unknown_biller_rejected_in_arabic(engine: ConversationEngine):
+    engine.handle("ابغى ادفع فاتورة", "ub4")
+    result = engine.handle("شركة نجم", "ub4")
+    assert result.state.slots.biller is None
+    assert "غير موجود في قائمة المزوّدين" in result.reply
+    assert "شركة نجم" in result.reply
+
+
 # ------------------------------- chooser ---------------------------------- #
 
 

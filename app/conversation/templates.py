@@ -156,6 +156,41 @@ def choose_biller(names: list[str], language: Language) -> str:
     return f"I found more than one biller for that — which one? {listing}"
 
 
+_BILLER_CATEGORY_AR: dict[str, str] = {
+    "Utilities": "الخدمات (كهرباء/مياه/غاز)",
+    "Telecom & Internet": "الاتصالات والإنترنت",
+    "Government Services": "الخدمات الحكومية",
+    "Education": "التعليم",
+    "Banking & Finance": "البنوك والتمويل",
+    "Insurance": "التأمين",
+    "Travel & Transportation": "السفر والنقل",
+    "Media & Entertainment": "الإعلام والترفيه",
+    "Services": "خدمات أخرى",
+}
+
+
+def biller_not_found(name: str, categories: list[str], language: Language) -> str:
+    """The named biller isn't in the SADAD catalogue — say so and re-ask.
+
+    States plainly that this is a bill payment and the biller is unknown, then
+    lists the supported categories so the customer can name a valid one.
+    """
+
+    if language is Language.AR:
+        listing = "، ".join(_BILLER_CATEGORY_AR.get(c, c) for c in categories)
+        return (
+            f'هذه عملية دفع فاتورة، لكن "{name}" غير موجود في قائمة المزوّدين '
+            f"لدينا. الفئات المتاحة: {listing}. "
+            "اكتب اسم المزوّد الصحيح أو رقم سداد الخاص به."
+        )
+    listing = ", ".join(categories)
+    return (
+        f'This is a bill payment, but "{name}" isn\'t in our list of billers. '
+        f"Available categories: {listing}. "
+        "Please give the correct biller name or its SADAD code."
+    )
+
+
 def _option_lines(options: list[tuple[str, str, str, str]]) -> str:
     """Render ``(name, bank, masked_account, currency)`` tuples as numbered rows."""
 

@@ -23,6 +23,7 @@ from app.conversation.state import (
 from app.conversation.store import get_session_store
 from app.data_loader import (
     BillerRecord,
+    biller_categories,
     canonicalize_recipient,
     resolve_biller_by_code,
     resolve_biller_candidates,
@@ -741,20 +742,25 @@ class ConversationEngine:
         if record is not None:
             self._set_biller(slots, record, lang)
             return None
-        # No catalogue match: keep the free-text biller (or the raw answer when
-        # we explicitly asked "which bill?").
-        biller, category, biller_code = entities.extract_biller(
-            text, lang, allow_semantic=True
-        )
+        # No catalogue match. Only billers in the SADAD catalogue can be paid, so
+        # rather than accepting free text we tell the customer the biller isn't
+        # on the list and ask again. Stay silent when they named nothing yet
+        # (e.g. they only answered the reference-number question).
+        # Quote the customer's own wording back: when they were answering "which
+        # bill?" the whole reply is the name, otherwise use the extracted span.
+        named: str | None
         if state.pending_slot == "biller":
-            slots.biller = biller or text.strip(" .,،؟?")
-            slots.biller_category = category
-            slots.biller_code = biller_code
-        elif biller:
-            slots.biller = biller
-            slots.biller_category = category
-            slots.biller_code = biller_code
-        return None
+            named = text.strip(" .,،؟?")
+        else:
+            named, _, _ = entities.extract_biller(text, lang, allow_semantic=True)
+        if not named:
+            return None
+        state.pending_slot = "biller"
+        state.status = ConversationStatus.COLLECTING
+        return self._finish(
+            state,
+            templates.biller_not_found(named, list(biller_categories()), lang),
+        )
 
     @staticmethod
     def _set_biller(
