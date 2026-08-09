@@ -70,7 +70,21 @@ def test_extract_recipient_ar():
 def test_extract_recipient_ar_before_amount(text):
     """The name is readable whether the amount leads or trails it."""
 
-    assert extract_recipient(text, Language.AR) == "ساره"
+    assert extract_recipient(text, Language.AR) == "سارة"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("حولي الي عبدالله 500", "عبدالله"),  # not the gazetteer's "عبداللة"
+        ("حولي الي سارة عادل 500", "سارة عادل"),  # not the tashkeel'd "عَادِل"
+        ("حولي الي احمد 500", "أحمد"),  # hamza restoration still applies
+    ],
+)
+def test_extract_recipient_spelling(text, expected):
+    """Gazetteer typo/hamza fixes are kept; its worse spellings are declined."""
+
+    assert extract_recipient(text, Language.AR) == expected
 
 
 def test_extract_recipient_ar_keeps_full_name():

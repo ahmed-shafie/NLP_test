@@ -22,7 +22,12 @@ from rapidfuzz import fuzz, process
 from rapidfuzz.distance import Levenshtein
 
 from app.config import settings
-from app.nlu.normalize import normalize, normalize_digits, normalize_tokens
+from app.nlu.normalize import (
+    normalize,
+    normalize_digits,
+    normalize_tokens,
+    strip_diacritics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -537,6 +542,23 @@ def is_known_name(text: str) -> bool:
     return any(lookup_name(tok) is not None for tok in normalize_tokens(text))
 
 
+def _preferred_spelling(raw: str, canonical: str) -> str:
+    """Choose between the customer's spelling and the gazetteer's canonical one.
+
+    The gazetteer restores hamza and fixes typos (احمد -> أحمد), which we want,
+    but some of its entries are the worse spelling of a pair: they carry
+    tashkeel (عادل -> عَادِل) or swap a final haa for taa marbuta
+    (عبدالله -> عبداللة). Those two we decline, since the name is echoed back
+    to the customer.
+    """
+
+    canonical = strip_diacritics(canonical)
+    ends_haa = {raw[-1:], canonical[-1:]} <= {"ه", "ة"}
+    if ends_haa and raw[:-1] == canonical[:-1]:
+        return raw
+    return canonical
+
+
 def canonicalize_recipient(candidate: str) -> str:
     """Correct each token of a recipient against the gazetteer where possible.
 
@@ -549,5 +571,5 @@ def canonicalize_recipient(candidate: str) -> str:
     out: list[str] = []
     for raw in candidate.split():
         canonical = lookup_name(raw)
-        out.append(canonical if canonical is not None else raw)
+        out.append(_preferred_spelling(raw, canonical) if canonical else raw)
     return " ".join(out) if out else candidate
