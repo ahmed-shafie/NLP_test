@@ -58,6 +58,20 @@ INTENT_EXAMPLES: list[tuple[str, Intent]] = [
     ("من هم المستفيدين المسجلين عندي", Intent.LIST_BENEFICIARIES),
     ("وريني المستفيدين المحفوظين", Intent.LIST_BENEFICIARIES),
     ("كل المستفيدين عندي", Intent.LIST_BENEFICIARIES),
+    # --- add_beneficiary (English) ---
+    ("add a new beneficiary", Intent.ADD_BENEFICIARY),
+    ("I want to add a beneficiary", Intent.ADD_BENEFICIARY),
+    ("save a new payee", Intent.ADD_BENEFICIARY),
+    ("register a beneficiary please", Intent.ADD_BENEFICIARY),
+    ("add Sara Ali as a beneficiary", Intent.ADD_BENEFICIARY),
+    ("create a new recipient", Intent.ADD_BENEFICIARY),
+    # --- add_beneficiary (Arabic) ---
+    ("اضف مستفيد جديد", Intent.ADD_BENEFICIARY),
+    ("أضف مستفيد", Intent.ADD_BENEFICIARY),
+    ("ابغى اضيف مستفيد جديد", Intent.ADD_BENEFICIARY),
+    ("سجل مستفيد جديد عندي", Intent.ADD_BENEFICIARY),
+    ("ضيف سارة علي كمستفيد", Intent.ADD_BENEFICIARY),
+    ("اريد اضافة مستفيد", Intent.ADD_BENEFICIARY),
     # --- small_talk / chit-chat (English) ---
     ("hi", Intent.SMALL_TALK),
     ("hello there", Intent.SMALL_TALK),

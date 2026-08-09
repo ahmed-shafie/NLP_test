@@ -90,8 +90,12 @@ class ConversationState(BaseModel):
     disambiguation_kind: str | None = None  # "biller" | "beneficiary"
     # Whether the transfer recipient has been resolved to a directory beneficiary.
     beneficiary_resolved: bool = False
-    # In-progress "add beneficiary" flow: the name we are collecting an account for.
+    # In-progress "add beneficiary" flow: the name we are collecting an account
+    # for, the validated account awaiting confirmation, and whether adding was
+    # triggered mid-transfer (so the transfer resumes once they're saved).
     pending_add_name: str | None = None
+    pending_add_account: str | None = None
+    add_resumes_transfer: bool = False
     # Advisory pre-flight notes (low funds / FX) shown at confirmation; never block.
     preflight_warnings: list[str] = Field(default_factory=list)
     turns: int = 0
@@ -114,4 +118,6 @@ class ConversationState(BaseModel):
         self.disambiguation_kind = None
         self.beneficiary_resolved = False
         self.pending_add_name = None
+        self.pending_add_account = None
+        self.add_resumes_transfer = False
         self.preflight_warnings = []

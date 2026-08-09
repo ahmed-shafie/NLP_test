@@ -21,6 +21,9 @@ from app.conversation.engine import ConversationEngine
 from app.conversation.state import ConversationStatus
 from app.schemas import Intent, Language
 
+# A structurally valid Saudi IBAN (24 chars, mod-97 checks out).
+VALID_IBAN = "SA0380000000608010167519"
+
 _BANKING_CORE = Path(__file__).resolve().parents[1] / "banking-core"
 if str(_BANKING_CORE) not in sys.path:
     sys.path.insert(0, str(_BANKING_CORE))
@@ -277,10 +280,16 @@ def test_not_found_offers_add_then_adds(engine, directory_db, fake_core):
     assert result.state.pending_add_name == "Zeyad"
     assert "add" in result.reply.lower()
 
-    added = engine.handle("SA555444333", "b-add-1")
-    assert added.state.status is ConversationStatus.CONFIRMING
+    # The account is held pending: one confirmation covers the add + transfer.
+    quoted = engine.handle(VALID_IBAN, "b-add-1")
+    assert quoted.state.status is ConversationStatus.CONFIRMING
+    assert quoted.state.pending_add_account == VALID_IBAN
+    assert quoted.state.slots.account_number is None  # not saved yet
+
+    added = engine.handle("yes", "b-add-1")
     assert added.state.slots.recipient == "Zeyad"
-    assert added.state.slots.account_number == "SA555444333"
+    assert added.state.slots.account_number == VALID_IBAN
+    assert added.transfer is not None
 
 
 def test_not_found_decline_add(engine, directory_db, fake_core):
@@ -296,7 +305,7 @@ def test_add_invalid_account_message(engine, directory_db, fake_core):
     engine.handle("send 500 SAR to Zeyad", "b-add-3")
     result = engine.handle("abcd", "b-add-3")
     assert result.state.pending_add_name == "Zeyad"  # still awaiting the account
-    assert "valid account" in result.reply.lower()
+    assert "valid iban" in result.reply.lower()
 
 
 def test_add_failed_surfaces_api_reason(engine, directory_db, monkeypatch, fake_core):
@@ -311,7 +320,8 @@ def test_add_failed_surfaces_api_reason(engine, directory_db, monkeypatch, fake_
         },
     )
     engine.handle("send 500 SAR to Zeyad", "b-add-4")
-    result = engine.handle("SA555444333", "b-add-4")
+    engine.handle(VALID_IBAN, "b-add-4")
+    result = engine.handle("yes", "b-add-4")
     assert "already exists" in result.reply
     assert result.state.pending_add_name is None
 

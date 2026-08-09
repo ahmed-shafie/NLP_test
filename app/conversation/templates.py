@@ -268,6 +268,92 @@ def beneficiary_add_failed(
     )
 
 
+def ask_beneficiary_name(language: Language) -> str:
+    """Opening question of the standalone add-beneficiary flow."""
+
+    if language is Language.AR:
+        return "تمام — وش اسم المستفيد اللي تبي تضيفه؟"
+    return "Sure — what's the name of the beneficiary you'd like to add?"
+
+
+def ask_beneficiary_account(name: str, language: Language) -> str:
+    if language is Language.AR:
+        return f'وش رقم الآيبان أو الحساب الخاص بـ "{name}"؟'
+    return f'And what\'s the IBAN or account number for "{name}"?'
+
+
+# Why an account was rejected -> how to fix it, per language.
+_ACCOUNT_ERRORS: dict[str, dict[Language, str]] = {
+    "iban_length": {
+        Language.EN: (
+            "that IBAN isn't the right length — a Saudi IBAN is 24 characters "
+            "(SA + 22 digits)"
+        ),
+        Language.AR: ("طول الآيبان غير صحيح — الآيبان السعودي 24 خانة (SA + 22 رقمًا)"),
+    },
+    "iban_checksum": {
+        Language.EN: (
+            "that IBAN failed its checksum, so there's a typo in it somewhere"
+        ),
+        Language.AR: "الآيبان ما نجح في التحقق الحسابي، يعني فيه خطأ مطبعي",
+    },
+    "too_short": {
+        Language.EN: "that's too short for an account number",
+        Language.AR: "هذا قصير جدًا ليكون رقم حساب",
+    },
+    "not_an_account": {
+        Language.EN: "that doesn't look like an IBAN or an account number",
+        Language.AR: "هذا ما يبدو آيبان ولا رقم حساب",
+    },
+}
+
+
+def beneficiary_invalid_account(name: str, reason: str, language: Language) -> str:
+    """Explain precisely why the account was rejected and re-ask."""
+
+    detail = _ACCOUNT_ERRORS.get(reason, _ACCOUNT_ERRORS["not_an_account"])[language]
+    if language is Language.AR:
+        return (
+            f"{detail}. أرسل آيبان صحيح (مثل SA0380000000608010167519) أو رقم "
+            f'حساب لإضافة "{name}"، أو اكتب "لا" للإلغاء.'
+        )
+    return (
+        f"Sorry, {detail}. Please send a valid IBAN (e.g. SA0380000000608010167519) "
+        f'or an account number to add "{name}", or reply "no" to cancel.'
+    )
+
+
+def confirm_add_beneficiary(name: str, masked: str, language: Language) -> str:
+    if language is Language.AR:
+        return f"للتأكيد — أضيف المستفيد {name} على الحساب {masked}؟ (نعم/لا)"
+    return f"Just to confirm — add {name} with account {masked}? (yes/no)"
+
+
+def confirm_add_then_transfer(
+    name: str, masked: str, amount: str, currency: str, language: Language
+) -> str:
+    """One question for the mid-transfer case: save them *and* send the money."""
+
+    if language is Language.AR:
+        return (
+            f"للتأكيد — أضيف {name} على الحساب {masked} وأحوّل له "
+            f"{amount} {currency}؟ (نعم/لا)"
+        )
+    return (
+        f"Just to confirm — add {name} with account {masked} and send them "
+        f"{amount} {currency}? (yes/no)"
+    )
+
+
+def beneficiary_add_completed(name: str, masked: str, language: Language) -> str:
+    if language is Language.AR:
+        return f"تمّ ✅ — أضفت {name} ({masked}) لقائمة المستفيدين. " "تحب تحوّل له الآن؟"
+    return (
+        f"Done ✅ — {name} ({masked}) is saved to your beneficiaries. "
+        "Want to send them money now?"
+    )
+
+
 def beneficiary_add_invalid_account(name: str, language: Language) -> str:
     """The reply wasn't a plausible account number / IBAN."""
 
