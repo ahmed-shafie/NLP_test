@@ -271,6 +271,28 @@ def test_disambiguation_by_arabic_full_name(engine, directory_db, fake_core):
     assert result.state.slots.recipient == "أحمد خالد"
 
 
+@pytest.mark.parametrize(
+    "phrase",
+    ["حولي الي منى 500", "حولي الى منى 500", "حولي الي منى ٥٠٠", "حول 500 لمنى"],
+)
+def test_colloquial_arabic_transfer_keeps_name_and_amount(
+    engine, directory_db, fake_core, phrase
+):
+    """Colloquial "حولي الي <name> <amount>" fills both slots in one turn.
+
+    The semantic classifier reads some of these as a listing request, so the
+    chooser overrules it — the slots must still be extracted.
+    """
+
+    result = engine.handle(phrase, f"b-ar-colloq-{abs(hash(phrase))}")
+    assert result.state.intent is Intent.TRANSFER_MONEY
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.recipient == "منى علي"
+    assert result.state.slots.amount == Decimal("500")
+    assert result.state.slots.currency == "SAR"
+    assert result.state.language is Language.AR
+
+
 # ----------------------------- add beneficiary ----------------------------- #
 
 

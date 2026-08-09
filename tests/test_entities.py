@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from app.nlu.entities import (
     extract_amount,
     extract_currency,
@@ -53,6 +55,26 @@ def test_extract_recipient_en():
 def test_extract_recipient_ar():
     result = extract_recipient("حوّل ألف جنيه إلى أحمد", Language.AR)
     assert result == "أحمد"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "حولي الي سارة 500",  # colloquial "الي", amount last
+        "حولي الى سارة 500",
+        "حوّل إلى سارة ٥٠٠",  # Arabic-Indic digits
+        "حول 500 الى سارة",  # amount first (already worked)
+        "حول 100 لسارة",  # attached lam
+    ],
+)
+def test_extract_recipient_ar_before_amount(text):
+    """The name is readable whether the amount leads or trails it."""
+
+    assert extract_recipient(text, Language.AR) == "ساره"
+
+
+def test_extract_recipient_ar_keeps_full_name():
+    assert extract_recipient("حولي الي خالد فهد 500", Language.AR) == "خالد فهد"
 
 
 def test_extract_source_account_en():

@@ -39,6 +39,7 @@ from app.schemas import (
     Intent,
     Language,
     NLUResponse,
+    TransferEntities,
     TransferRequest,
 )
 from app.trace import BlockTracer
@@ -799,7 +800,18 @@ class ConversationEngine:
         slots = state.slots
 
         # Merge newly extracted slots (never overwrite an already-filled slot).
+        # The pipeline only extracts when its own classifier says "transfer", so
+        # when the chooser overruled it ("حولي الي سارة 500" reads as a listing
+        # request to the classifier) the slots have to be filled here instead.
         ent = parsed.entities
+        if parsed.intent is not Intent.TRANSFER_MONEY:
+            ent = TransferEntities(
+                amount=ent.amount or entities.extract_amount(text),
+                currency=ent.currency or entities.extract_currency(text),
+                recipient=ent.recipient or entities.extract_recipient(text, lang),
+                source_account=ent.source_account
+                or entities.extract_source_account(text, lang),
+            )
         if slots.amount is None and ent.amount is not None:
             slots.amount = ent.amount
         # Only adopt a currency the user *explicitly* stated this turn; the

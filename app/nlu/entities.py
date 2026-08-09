@@ -39,9 +39,12 @@ _AMOUNT_RE = re.compile(
 _EN_RECIPIENT_RE = re.compile(
     r"\bto\s+(?:my\s+)?(?:friend\s+|account\s+|number\s+)?([A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*){0,2})",
 )
-# "إلى أحمد" / "الى احمد" / "لأحمد" (ل only when preceded by whitespace/start)
+# "إلى أحمد" / "الى احمد" / "لأحمد" (ل only when preceded by whitespace/start).
+# "الي" is the common colloquial spelling of "إلى". The name also ends at a
+# trailing amount, so "حوّل الى سارة 500" reads the recipient as "سارة".
 _AR_RECIPIENT_RE = re.compile(
-    r"(?:(?:إلى|الى)\s+|(?:(?<=\s)|^)ل)([^\d،,.]{2,40}?)(?:\s+(?:مبلغ|بمبلغ)|$|[،,.])"
+    r"(?:(?:إلى|الى|الي)\s+|(?:(?<=\s)|^)ل)"
+    r"([^\d،,.]{2,40}?)(?:\s+(?:مبلغ|بمبلغ)|\s*[\d٠-٩]|$|[،,.])"
 )
 
 # "from my savings", "from current account", "from account ending 9988", ...
