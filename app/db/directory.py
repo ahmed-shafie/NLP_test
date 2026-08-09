@@ -86,8 +86,14 @@ class BeneficiaryDirectory:
 
         self._table = _safe_identifier(table, "table")
         self._owner_column = _safe_identifier(owner_column, "owner column")
-        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-        self._engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+        if url.startswith("sqlite"):
+            self._engine = create_engine(
+                url, pool_pre_ping=True, connect_args={"check_same_thread": False}
+            )
+        else:
+            # Server-backed (Postgres): recycle pooled connections so an idle
+            # worker doesn't reuse one the server has already dropped.
+            self._engine = create_engine(url, pool_pre_ping=True, pool_recycle=1800)
 
     def search(self, name: str, owner_user: str | None) -> list[BeneficiaryHit] | None:
         """Return beneficiaries whose name starts with / contains ``name``.
@@ -113,8 +119,7 @@ class BeneficiaryDirectory:
             params["owner"] = owner_user
         query = text(
             f"SELECT id, name, name_ar, account, bank, currency, "  # noqa: S608
-            f"COALESCE(is_favorite, 0) AS is_favorite "
-            f"FROM {self._table} {owner_clause}"
+            f"is_favorite FROM {self._table} {owner_clause}"
         )
         try:
             with self._engine.connect() as conn:
@@ -146,8 +151,7 @@ class BeneficiaryDirectory:
             params["owner"] = owner_user
         query = text(
             f"SELECT id, name, name_ar, account, bank, currency, "  # noqa: S608
-            f"COALESCE(is_favorite, 0) AS is_favorite "
-            f"FROM {self._table} {owner_clause}"
+            f"is_favorite FROM {self._table} {owner_clause}"
         )
         try:
             with self._engine.connect() as conn:

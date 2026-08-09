@@ -7,8 +7,12 @@ beneficiary set deliberately contains several people who share a first name
 
 from __future__ import annotations
 
+import argparse
 from decimal import Decimal
 
+from sqlalchemy import func, select
+
+from banking_core.config import settings
 from banking_core.db import (
     Account,
     Base,
@@ -158,17 +162,47 @@ BILLERS: list[dict[str, object]] = [
 ]
 
 
-def seed() -> None:
-    """(Re)create the schema and load the demo rows (fresh ORM instances)."""
+def is_empty() -> bool:
+    """True when the database holds no accounts yet."""
 
-    Base.metadata.drop_all(get_engine())
     init_db()
+    with session_scope() as session:
+        return session.scalar(select(func.count()).select_from(Account)) == 0
+
+
+def seed(reset: bool = True) -> bool:
+    """Load the demo rows; return whether anything was written.
+
+    ``reset=True`` drops and re-creates the schema — fine for the local SQLite
+    file, destructive against a shared Postgres, so the startup path and the
+    ``--if-empty`` flag use ``reset=False`` and skip a populated database.
+    """
+
+    if reset:
+        Base.metadata.drop_all(get_engine())
+    init_db()
+    if not reset and not is_empty():
+        return False
     with session_scope() as session:
         session.add_all(Account(**row) for row in ACCOUNTS)
         session.add_all(Beneficiary(**row) for row in BENEFICIARIES)
         session.add_all(Biller(**row) for row in BILLERS)
+    return True
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Seed the Banking Core database.")
+    parser.add_argument(
+        "--if-empty",
+        action="store_true",
+        help="Only seed when the database has no accounts (never drops data).",
+    )
+    args = parser.parse_args()
+    if seed(reset=not args.if_empty):
+        print(f"Seeded banking_core database at {settings.db_url}.")
+    else:
+        print(f"Database at {settings.db_url} already populated; left untouched.")
 
 
 if __name__ == "__main__":
-    seed()
-    print("Seeded banking_core database.")
+    main()

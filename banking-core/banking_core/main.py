@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
@@ -18,6 +19,9 @@ from banking_core.schemas import (
     PreflightResult,
     PreflightTransferRequest,
 )
+from banking_core.seed import seed
+
+logger = logging.getLogger(__name__)
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -34,7 +38,12 @@ app = FastAPI(title=settings.app_name, version=__version__)
 
 @app.on_event("startup")
 def _startup() -> None:
-    init_db()
+    """Provision the schema, and demo rows on a brand-new (empty) database."""
+
+    if settings.auto_create_tables:
+        init_db()
+    if settings.seed_on_startup and seed(reset=False):
+        logger.info("Seeded demo data into the empty database.")
 
 
 @app.get("/health")

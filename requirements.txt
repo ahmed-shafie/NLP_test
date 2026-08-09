@@ -11,6 +11,9 @@ numpy==2.4.6
 haystack-ai==2.30.1
 litellm==1.89.1
 SQLAlchemy==2.0.36
+# Postgres driver for the Banking Core database (accounts/beneficiaries/billers)
+# and the NLU beneficiary read path. Unused when running on SQLite.
+psycopg[binary]==3.2.3
 elasticsearch==8.17.0
 prometheus-client==0.21.1
 redis==5.2.1

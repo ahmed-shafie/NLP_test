@@ -60,10 +60,24 @@ class Biller(Base):
 
 @lru_cache(maxsize=1)
 def get_engine() -> Engine:
-    connect_args = (
-        {"check_same_thread": False} if settings.db_url.startswith("sqlite") else {}
+    """Engine for the configured database (SQLite locally, Postgres deployed)."""
+
+    if settings.db_url.startswith("sqlite"):
+        # SQLite is single-file and shared across the app's threads.
+        return create_engine(
+            settings.db_url,
+            pool_pre_ping=True,
+            connect_args={"check_same_thread": False},
+        )
+    # Server-backed databases (Postgres): pool connections and recycle them so a
+    # long-idle container doesn't hand out a connection the server already closed.
+    return create_engine(
+        settings.db_url,
+        pool_pre_ping=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_recycle=1800,
     )
-    return create_engine(settings.db_url, pool_pre_ping=True, connect_args=connect_args)
 
 
 @lru_cache(maxsize=1)

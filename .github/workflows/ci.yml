@@ -8,6 +8,24 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+
+    # Banking Core runs on Postgres in deployment; raw SQL that works on SQLite
+    # can still fail there (boolean vs integer, etc.), so the suite runs on both.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: banking
+          POSTGRES_PASSWORD: banking
+          POSTGRES_DB: banking_core
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U banking -d banking_core"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -32,6 +50,8 @@ jobs:
 
       - name: Tests (pytest)
         run: pytest -q
+        env:
+          BANKING_CORE_TEST_DB_URL: postgresql+psycopg://banking:banking@localhost:5432/banking_core
 
       - name: NLU accuracy eval (gold set)
         run: python scripts/eval_nlu.py
