@@ -289,7 +289,17 @@ SUPPORTED_CURRENCIES: dict[str, set[str]] = {
 # kept as the free-text biller the customer typed.
 BILLER_CATEGORIES: dict[str, set[str]] = {
     "electricity": {"electricity", "power", "كهرباء", "الكهرباء"},
-    "water": {"water", "مياه", "المياه", "مية"},
+    # "موية"/"مويه" are the colloquial Gulf spellings of "مياه".
+    "water": {
+        "water",
+        "مياه",
+        "المياه",
+        "مية",
+        "موية",
+        "الموية",
+        "مويه",
+        "المويه",
+    },
     "gas": {"gas", "غاز", "الغاز"},
     "internet": {"internet", "wifi", "نت", "النت", "انترنت", "إنترنت"},
     "mobile": {

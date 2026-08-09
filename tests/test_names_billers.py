@@ -57,6 +57,12 @@ def test_biller_generic_alias_maps_to_sadad_code():
     assert resolve_biller_gazetteer("water").biller_code == "015"
 
 
+@pytest.mark.parametrize("term", ["مياه", "المياه", "مية", "موية", "الموية", "مويه"])
+def test_biller_colloquial_water_spellings(term: str):
+    # "موية"/"مويه" is how customers say "مياه" in the Gulf dialect.
+    assert resolve_biller_gazetteer(f"ادفع فاتورة {term}").biller_code == "015"
+
+
 def test_biller_semantic_disabled_by_default():
     # Arbitrary chit-chat must not be mis-resolved to a near-neighbour biller.
     assert resolve_biller_gazetteer("hello") is None
