@@ -1,0 +1,20 @@
+{"text": "محمد نور يحتاج 500 ريال", "recipient": "محمد نور", "why": "name first, no cue word"}
+{"text": "أحمد حسن حول له 200", "recipient": "أحمد حسن", "why": "name before the verb"}
+{"text": "سارة عادل تحتاج تحويل 300 ريال", "recipient": "سارة عادل", "why": "name as subject"}
+{"text": "حول 500 الي محمد", "recipient": "محمد", "why": "colloquial الي spelling of إلى"}
+{"text": "حول 500 إلى محمد نور من حسابي الجاري", "recipient": "محمد نور", "why": "trailing source-account phrase"}
+{"text": "ودّي 300 لسارة", "recipient": "سارة", "why": "dialect verb ودّي"}
+{"text": "طيّر 200 لمنى علي", "recipient": "منى علي", "why": "dialect verb + two-token name"}
+{"text": "أبغى أرسل 250 لأحمد خالد", "recipient": "أحمد خالد", "why": "dialect أبغى + ل prefix on name"}
+{"text": "لو سمحت حول لليلى عمر 400 ريال", "recipient": "ليلى عمر", "why": "politeness preamble, amount after the name"}
+{"text": "ابعت لمحمد سعد مبلغ 120", "recipient": "محمد سعد", "why": "amount cue after the name"}
+{"text": "حوّل 1000 لأخوي عبدالله", "recipient": "عبدالله", "why": "relation word before the name"}
+{"text": "ارسل 75 ريال لمنى", "recipient": "منى", "why": "simple baseline case"}
+{"text": "حول 500 إلى حسابي", "recipient": null, "why": "own account, not a person"}
+{"text": "حول 300 إلى حساب التوفير", "recipient": null, "why": "account type, not a person"}
+{"text": "كم رصيدي", "recipient": null, "why": "balance question, no recipient"}
+{"text": "ابغى ادفع فاتورة الكهرباء", "recipient": null, "why": "bill intent, no recipient"}
+{"text": "شكرا على مساعدتك", "recipient": null, "why": "small talk"}
+{"text": "الي فيه مشكلة في التطبيق كلمني", "recipient": null, "why": "الي as a relative pronoun, not a cue"}
+{"text": "ابغى اضيف مستفيد جديد", "recipient": null, "why": "add-beneficiary intent, no name yet"}
+{"text": "وين اقرب فرع لكم", "recipient": null, "why": "out of scope"}

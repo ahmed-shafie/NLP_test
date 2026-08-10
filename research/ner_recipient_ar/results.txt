@@ -1,0 +1,164 @@
+slices: [('gold(37)', 37), ('hard(20)', 20), ('massive-neg(400)', 400), ('massive-per(200)', 200)]
+
+### current: regex cue + name gazetteer
+  gold(37): 37/37 = 1.000
+  hard(20): 10/20 = 0.500   (false positives on 8 negatives: 4)
+     x محمد نور يحتاج 500 ريال  gold='محمد نور' pred=None
+     x أحمد حسن حول له 200  gold='أحمد حسن' pred='ه'
+     x سارة عادل تحتاج تحويل 300 ريال  gold='سارة عادل' pred=None
+     x حول 500 إلى محمد نور من حسابي الجاري  gold='محمد نور' pred='محمد نور من حساب الجاري'
+     x لو سمحت حول لليلى عمر 400 ريال  gold='ليلى عمر' pred='و سمحت حول ليلى عمر'
+     x حوّل 1000 لأخوي عبدالله  gold='عبدالله' pred='أخوي عبدالله'
+     x حول 500 إلى حسابي  gold=None pred='حساب'
+     x حول 300 إلى حساب التوفير  gold=None pred='حساب التوفير'
+     ... 2 more
+  massive-neg(400): 329/400 = 0.823   (false positives on 400 negatives: 71)
+     x كم نحتاج لحين نوصل المطار  gold=None pred='حين نوصل المطار'
+     x هل لدي أي طلبات صداقة جديدة  gold=None pred='دى أي طلبات صداقة جديدة'
+     x شغل لي قائمة الموسيقى حقي  gold=None pred='ي قائمة الموسيقى حقي'
+     x بالله عليك اتاكد لي من ايميل الوظائف  gold=None pred='ي من إيميلي الوظائف'
+     x اشتريت تذاكر مباريات تحضيرية لكرة القدم  gold=None pred='كرة القدم'
+     x قولي لي القائمة اللي كتبتها قبل يومين  gold=None pred='ي القائمة اللي كتبتها قبل يمين'
+     x دور لي شيء ممتع نفس اخر بودكاست سعودي جيمر  gold=None pred='ي شيء ممتع نفس اخر بودكاست سعودين جيمر'
+     x نشر في تويتر زيارتي إلى مصر  gold=None pred='مصر'
+     ... 63 more
+  massive-per(200): 2/200 = 0.010
+     x ضيف حمد و سعد في تقويم المهرجان  gold='حمد' pred=None
+     x هل تعرف رقم الهاتف الخاص بمها محمد  gold='الخاص بمها محمد' pred=None
+     x شوف الإيميل اذا وصلني أي شي من ليلى  gold='ليلى' pred='يلى'
+     x حفل استقبال بنت وجدان  gold='وجدان' pred=None
+     x ضيف إني بقابل ماجد بكره الساعة ثلاثة  gold='ماجد' pred=None
+     x أرسل email لمريم  gold='لمريم' pred='مريم'
+     x latest bill simmons podcast  gold='bill simmons' pred=None
+     x أرسل email لمها عن اجتماع الميزانية  gold='لمها' pred='مها عن اجتماع الميزانية'
+     ... 190 more
+  mean latency: 1.2 ms/utterance
+  (stanza unavailable: Resources file not found at: /home/ubuntu/stanza_resources/resources.json  Try to download the model again.)
+
+### HF CAMeL-Lab/bert-base-arabic-camelbert-mix-ner
+  gold(37): 16/37 = 0.432
+     x حول 100 إلى محمد  gold='محمد' pred=None
+     x ابعث 1000 ريال إلى سارة  gold='ساره' pred=None
+     x حول 300 درهم لعلي  gold='علي' pred=None
+     x ابعت 200 جنيه لمحمد  gold='محمد' pred=None
+     x حول 250 إلى أحمد  gold='أحمد' pred=None
+     x ارسل 60 يورو إلى سارة  gold='ساره' pred=None
+     x حول 700 إلى ليلى  gold='ليلى' pred=None
+     x حول 80 درهم إلى سارة  gold='ساره' pred=None
+     ... 13 more
+  hard(20): 14/20 = 0.700   (false positives on 8 negatives: 0)
+     x سارة عادل تحتاج تحويل 300 ريال  gold='سارة عادل' pred=None
+     x حول 500 الي محمد  gold='محمد' pred=None
+     x ودّي 300 لسارة  gold='سارة' pred=None
+     x طيّر 200 لمنى علي  gold='منى علي' pred=None
+     x لو سمحت حول لليلى عمر 400 ريال  gold='ليلى عمر' pred=None
+     x ارسل 75 ريال لمنى  gold='منى' pred=None
+  massive-neg(400): 392/400 = 0.980   (false positives on 400 negatives: 8)
+     x شغل نقاده حق رابح صقر  gold=None pred='رابح صقر'
+     x ملحم بركات  gold=None pred='ملحم بركات'
+     x شغل الأغنية الثانية من أغاني تامر حسني  gold=None pred='تامر حسني'
+     x أبغاه يقدر يحسب الجواب من نتائج البحث مثل ما يسوي أحمد المصري  gold=None pred='أحمد المصري'
+     x خل ارتاح لمحمد عبده جاهزة عشان تشغلها بعد هذي  gold=None pred='محمد عبده'
+     x انطيني الأخبار من قناة العربية  gold=None pred='انطيني'
+     x رولا فينا نستمع للرد على جميع البودكاست  gold=None pred='رولا فينا'
+     x محمد عبده  gold=None pred='محمد عبده'
+  massive-per(200): 121/200 = 0.605
+     x هل تعرف رقم الهاتف الخاص بمها محمد  gold='الخاص بمها محمد' pred='محمد'
+     x شوف الإيميل اذا وصلني أي شي من ليلى  gold='ليلى' pred=None
+     x حفل استقبال بنت وجدان  gold='وجدان' pred='وجد'
+     x أرسل email لمريم  gold='لمريم' pred='مريم'
+     x latest bill simmons podcast  gold='bill simmons' pred=None
+     x أرسل email لمها عن اجتماع الميزانية  gold='لمها' pred=None
+     x اكتب email جديد لسعود  gold='لسعود' pred='عود'
+     x وين بيكون حفل عيد ميلاد فاطمة  gold='فاطمة' pred=None
+     ... 71 more
+  mean latency: 7.9 ms/utterance
+
+### HF CAMeL-Lab/bert-base-arabic-camelbert-msa-ner
+  gold(37): 24/37 = 0.649
+     x حول 300 درهم لعلي  gold='علي' pred=None
+     x ابعت 90 لعلي  gold='علي' pred=None
+     x حول 700 إلى ليلى  gold='ليلى' pred=None
+     x حول 80 درهم إلى سارة  gold='ساره' pred=None
+     x ابعت 5000 ريال لمحمد  gold='محمد' pred=None
+     x أرسل 75 ريال إلى ليلى عمر  gold='ليلى عمر' pred='يلى عمر'
+     x حولي الي منى 250  gold='منى' pred=None
+     x ابغى احول 400 لمنى  gold='منى' pred=None
+     ... 5 more
+  hard(20): 17/20 = 0.850   (false positives on 8 negatives: 0)
+     x ودّي 300 لسارة  gold='سارة' pred=None
+     x لو سمحت حول لليلى عمر 400 ريال  gold='ليلى عمر' pred='يلى'
+     x ارسل 75 ريال لمنى  gold='منى' pred=None
+  massive-neg(400): 385/400 = 0.963   (false positives on 400 negatives: 15)
+     x أرسل أخبار كاظم  gold=None pred='كاظم'
+     x شغل نقاده حق رابح صقر  gold=None pred='رابح صقر'
+     x ملحم بركات  gold=None pred='ملحم بركات'
+     x شغل الأغنية الثانية من أغاني تامر حسني  gold=None pred='تامر حسني'
+     x زينه عماد  gold=None pred='زينه عماد'
+     x أبغاه يقدر يحسب الجواب من نتائج البحث مثل ما يسوي أحمد المصري  gold=None pred='أحمد المصري'
+     x خل ارتاح لمحمد عبده جاهزة عشان تشغلها بعد هذي  gold=None pred='محمد عبده'
+     x انطيني الأخبار من قناة العربية  gold=None pred='انطيني'
+     ... 7 more
+  massive-per(200): 130/200 = 0.650
+     x هل تعرف رقم الهاتف الخاص بمها محمد  gold='الخاص بمها محمد' pred='بمها محمد'
+     x شوف الإيميل اذا وصلني أي شي من ليلى  gold='ليلى' pred='يلى'
+     x حفل استقبال بنت وجدان  gold='وجدان' pred='وجد'
+     x أرسل email لمريم  gold='لمريم' pred='يم'
+     x latest bill simmons podcast  gold='bill simmons' pred=None
+     x أرسل email لمها عن اجتماع الميزانية  gold='لمها' pred=None
+     x اكتب email جديد لسعود  gold='لسعود' pred='سعود'
+     x وصلني أي email جديد من عمر ولا لا  gold='عمر' pred=None
+     ... 62 more
+  mean latency: 8.1 ms/utterance
+
+### HF /home/ubuntu/ner-poc/model-per
+  gold(37): 34/37 = 0.919
+     x حول 700 إلى ليلى  gold='ليلى' pred='يلى'
+     x أرسل 75 ريال إلى ليلى عمر  gold='ليلى عمر' pred='يلى عمر'
+     x تكفى حول 80 لليلى  gold='ليلى' pred='يلى'
+  hard(20): 19/20 = 0.950   (false positives on 8 negatives: 0)
+     x لو سمحت حول لليلى عمر 400 ريال  gold='ليلى عمر' pred='يلى عمر'
+  massive-neg(400): 392/400 = 0.980   (false positives on 400 negatives: 8)
+     x أرسل أخبار كاظم  gold=None pred='كاظم'
+     x ملحم بركات  gold=None pred='ملحم بركات'
+     x زينه عماد  gold=None pred='عماد'
+     x أبغاه يقدر يحسب الجواب من نتائج البحث مثل ما يسوي أحمد المصري  gold=None pred='أحمد المصري'
+     x خل ارتاح لمحمد عبده جاهزة عشان تشغلها بعد هذي  gold=None pred='محمد عبده'
+     x ذكرني بموعدي الثلاثاء مع منى  gold=None pred='منى'
+     x أرسل email إلى أمير المنطقة  gold=None pred='المنطقة'
+     x محمد عبده  gold=None pred='محمد'
+  massive-per(200): 151/200 = 0.755
+     x هل تعرف رقم الهاتف الخاص بمها محمد  gold='الخاص بمها محمد' pred='بمها محمد'
+     x شوف الإيميل اذا وصلني أي شي من ليلى  gold='ليلى' pred='يلى'
+     x أرسل email لمريم  gold='لمريم' pred='مريم'
+     x latest bill simmons podcast  gold='bill simmons' pred=None
+     x أرسل email لمها عن اجتماع الميزانية  gold='لمها' pred='مها'
+     x سوي قائمة لجدول حفلات داليا مبارك  gold='داليا مبارك' pred=None
+     x اكتب email جديد لسعود  gold='لسعود' pred='سعود'
+     x أرسل email لخالد واسأله في أي وقت بيكون في البيت الليلة  gold='لخالد' pred='خالد'
+     ... 41 more
+  mean latency: 8.3 ms/utterance
+
+### HF fine-tuned + beneficiary-directory tie-break
+  gold(37): 37/37 = 1.000
+  hard(20): 20/20 = 1.000   (false positives on 8 negatives: 0)
+  massive-neg(400): 392/400 = 0.980   (false positives on 400 negatives: 8)
+     x أرسل أخبار كاظم  gold=None pred='كاظم'
+     x ملحم بركات  gold=None pred='ملحم بركات'
+     x زينه عماد  gold=None pred='عماد'
+     x أبغاه يقدر يحسب الجواب من نتائج البحث مثل ما يسوي أحمد المصري  gold=None pred='أحمد المصري'
+     x خل ارتاح لمحمد عبده جاهزة عشان تشغلها بعد هذي  gold=None pred='محمد عبده'
+     x ذكرني بموعدي الثلاثاء مع منى  gold=None pred='منى'
+     x أرسل email إلى أمير المنطقة  gold=None pred='المنطقة'
+     x محمد عبده  gold=None pred='محمد'
+  massive-per(200): 153/200 = 0.765
+     x هل تعرف رقم الهاتف الخاص بمها محمد  gold='الخاص بمها محمد' pred='بمها محمد'
+     x أرسل email لمريم  gold='لمريم' pred='مريم'
+     x latest bill simmons podcast  gold='bill simmons' pred=None
+     x أرسل email لمها عن اجتماع الميزانية  gold='لمها' pred='مها'
+     x سوي قائمة لجدول حفلات داليا مبارك  gold='داليا مبارك' pred=None
+     x اكتب email جديد لسعود  gold='لسعود' pred='سعود'
+     x أرسل email لخالد واسأله في أي وقت بيكون في البيت الليلة  gold='لخالد' pred='خالد'
+     x ممكن ترسل دعوة من التقويم لسامي و جمانة للفطور الساعة احدعش الظهر يوم الثلوث  gold='لسامي و جمانة' pred='سامي'
+     ... 39 more
+  mean latency: 8.4 ms/utterance
