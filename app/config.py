@@ -214,6 +214,19 @@ class Settings(BaseSettings):
     # set an int for deterministic replies (used by tests).
     reply_variation_seed: int | None = None
 
+    # Rotate between the hand-written phrasings of a conversational reply so the
+    # assistant doesn't sound canned. Disable for byte-stable replies (tests).
+    reply_variation_enabled: bool = True
+
+    # Let the local LLM re-word CONVERSATIONAL replies only (see
+    # app/conversation/phrasing.py). Money-critical replies are never rewritten.
+    # Off by default: fluency is opt-in, determinism is the default.
+    reply_rewrite_enabled: bool = False
+
+    # Latency budget for a rewrite. On timeout the template is sent as-is, so this
+    # is the worst case a customer can wait for the extra fluency.
+    reply_rewrite_timeout: float = 0.8
+
     # ---- Conversation (multi-turn slot filling) ----
     conversation_enabled: bool = True
 

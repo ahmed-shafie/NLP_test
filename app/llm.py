@@ -50,6 +50,17 @@ _RESPONSE_SYSTEM_PROMPT = (
 )
 
 
+_REPHRASE_SYSTEM_PROMPT = (
+    "You rephrase replies for a bilingual (English/Arabic) Saudi banking assistant. "
+    "Rewrite the reply so it sounds natural and warm, in the SAME language and the "
+    "same colloquial register, keeping the SAME meaning and the same question. "
+    "Rules: keep every number, code, currency and masked account EXACTLY as given; "
+    "never add a number, an account or a promise that is not there; at most two "
+    "short sentences; ask at most one question; no financial advice; plain text "
+    "only, no preamble and no quotes around the reply."
+)
+
+
 def _parse_json_object(content: str) -> dict:
     """Extract the first JSON object from an LLM response (tolerates code fences)."""
 
@@ -187,6 +198,37 @@ class LLMExceptionHandler:
             return None
         content = content.strip()
         return content or None
+
+    def rephrase(self, text: str, language: str, timeout: float) -> str | None:
+        """Re-word an already-written reply, keeping its meaning and every value.
+
+        Only ever called for ``Tier.CONVERSATIONAL`` replies (see
+        ``app.conversation.phrasing``), and the caller discards anything the guard
+        does not accept, so a bad rewrite costs a template fallback and nothing more.
+        """
+
+        import litellm
+
+        try:
+            response = litellm.completion(
+                model=self.model,
+                api_base=self.api_base,
+                timeout=timeout,
+                temperature=0.7,
+                max_tokens=80,
+                messages=[
+                    {"role": "system", "content": _REPHRASE_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"language={language}\nreply={text}",
+                    },
+                ],
+            )
+            content = response["choices"][0]["message"]["content"] or ""
+        except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
+            logger.warning("LLM rephrase failed: %s", exc)
+            return None
+        return content.strip() or None
 
 
 def _server_reachable(api_base: str, timeout: float = 2.0) -> bool:
