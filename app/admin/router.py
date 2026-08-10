@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
-from app.admin import audit, connections, elk
+from app import banking_core_client
+from app.admin import audit, bank_config, connections, elk
+from app.admin.bank_config import BankingCoreConfig, BankingCoreConfigUpdate
 from app.admin.schemas import (
     PROVIDER_PRESETS,
     AuditEvent,
@@ -163,6 +165,50 @@ def test_saved(
         detail={"id": connection_id, "ok": result.ok, "message": result.message},
     )
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Banking Core configuration (per-case: transfer / pay-bill / lookup / add)
+# --------------------------------------------------------------------------- #
+@router.get("/banking-core/config", response_model=BankingCoreConfig)
+def banking_core_config() -> BankingCoreConfig:
+    """Return the live Banking Core config (the API key value is never exposed)."""
+
+    return bank_config.current_config()
+
+
+@router.put("/banking-core/config", response_model=BankingCoreConfig)
+def update_banking_core_config(
+    payload: BankingCoreConfigUpdate, request: Request
+) -> BankingCoreConfig:
+    """Persist and apply per-case Banking Core settings."""
+
+    result = bank_config.save_config(payload)
+    audit.record(
+        "banking_core.config.update",
+        category="admin",
+        actor=_actor(request),
+        detail={
+            "api_enabled": result.api_enabled,
+            "lookup_enabled": result.lookup_enabled,
+        },
+    )
+    return result
+
+
+@router.post("/banking-core/health", response_model=ConnectionTestResult)
+def banking_core_health(request: Request) -> ConnectionTestResult:
+    """Ping the Banking Core service /health endpoint."""
+
+    ok = banking_core_client.health()
+    audit.record(
+        "banking_core.health",
+        category="admin",
+        actor=_actor(request),
+        outcome="success" if ok else "error",
+    )
+    message = "Banking Core reachable." if ok else "Banking Core unreachable."
+    return ConnectionTestResult(ok=ok, message=message)
 
 
 # --------------------------------------------------------------------------- #

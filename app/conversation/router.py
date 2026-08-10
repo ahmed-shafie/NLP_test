@@ -26,6 +26,7 @@ def _to_response(result: ConversationResult) -> ConversationResponse:
         transfer=result.transfer,
         bill=result.bill,
         flagged_terms=result.flagged_terms,
+        warnings=state.preflight_warnings,
         block_trace=result.block_trace,
     )
 

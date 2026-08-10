@@ -29,12 +29,57 @@ services:
       NLU_LLM_API_BASE: "${NLU_LLM_API_BASE:-http://ollama:11434}"
       # ELK is optional; the service degrades gracefully when absent.
       NLU_ELK_ENABLED: "${NLU_ELK_ENABLED:-false}"
+      # Banking Core: balances, pre-flight checks and beneficiary writes.
+      NLU_BANKING_CORE_ENABLED: "true"
+      NLU_BANKING_CORE_URL: "http://banking-core:8100"
+      # Beneficiary *reads* go straight to the same Postgres database.
+      NLU_BENEFICIARY_LOOKUP_ENABLED: "true"
+      NLU_BENEFICIARY_DB_URL: "postgresql+psycopg://${POSTGRES_USER:-banking}:${POSTGRES_PASSWORD:-banking}@postgres:5432/${POSTGRES_DB:-banking_core}"
     volumes:
       # Persist downloaded models (sentence-transformers, Stanza) and the Memory
       # Brain SQLite store so they survive container restarts.
       - model_cache:/home/appuser/.cache
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      banking-core:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Downstream core-banking stand-in. Owns the accounts / beneficiaries /
+  # billers tables in Postgres; the NLU never writes to them directly.
+  banking-core:
+    build:
+      context: ./banking-core
+    ports:
+      - "8100:8100"
+    environment:
+      BANKING_CORE_DB_URL: "postgresql+psycopg://${POSTGRES_USER:-banking}:${POSTGRES_PASSWORD:-banking}@postgres:5432/${POSTGRES_DB:-banking_core}"
+      # Load the demo accounts/beneficiaries the first time only; an already
+      # populated database is left untouched.
+      BANKING_CORE_SEED_ON_STARTUP: "${BANKING_CORE_SEED_ON_STARTUP:-true}"
+      BANKING_CORE_API_KEY: "${BANKING_CORE_API_KEY:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-banking}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-banking}"
+      POSTGRES_DB: "${POSTGRES_DB:-banking_core}"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Wait for real readiness: banking-core migrates/seeds on startup.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-banking} -d ${POSTGRES_DB:-banking_core}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   redis:
@@ -57,3 +102,4 @@ services:
 volumes:
   model_cache:
   ollama_models:
+  postgres_data:

@@ -50,7 +50,13 @@ class RequestIdFilter(logging.Filter):
 
 
 # Verbose third-party loggers we keep at WARNING so app logs stay readable.
-_NOISY_LOGGERS = ("haystack", "httpx", "httpcore", "elastic_transport")
+_NOISY_LOGGERS = ("haystack", "httpx", "httpcore")
+
+# Loggers we pin to ERROR: when Elasticsearch/Logstash isn't running (common in
+# local dev), the transport layer emits a WARNING "Node ... has failed" storm on
+# every request even though audit shipping degrades gracefully. Keep only real
+# errors so the console stays clean without needing NLU_AUDIT_SINK=none.
+_QUIET_LOGGERS = ("elastic_transport", "elasticsearch")
 
 
 def configure_logging() -> None:
@@ -71,3 +77,5 @@ def configure_logging() -> None:
     root.handlers = [handler]
     for name in _NOISY_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
+    for name in _QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.ERROR)

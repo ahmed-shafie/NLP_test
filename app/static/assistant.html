@@ -204,20 +204,44 @@ const QUICK = [
   {label:"حوّل ٢٠٠ ريال إلى محمد", text:"حوّل ٢٠٠ ريال إلى محمد", rtl:true},
 ];
 
-async function api(path, opts){
+async function api(path, opts, retries){
   opts = opts || {};
-  const res = await fetch(path, opts);
-  const body = await res.json().catch(() => ({}));
-  if(!res.ok){
-    const msg = body && body.error ? body.error.message : (body && body.detail ? (typeof body.detail==="string"?body.detail:JSON.stringify(body.detail)) : ("HTTP "+res.status));
-    throw new Error(msg);
+  // Retry transient network failures (a dropped/loading connection surfaces as
+  // fetch's TypeError "Failed to fetch"). The NLU layer performs no real banking
+  // side effects, so re-sending a lost request is safe.
+  retries = (retries==null) ? 3 : retries;
+  for(let attempt=0; ; attempt++){
+    try{
+      const res = await fetch(path, opts);
+      const body = await res.json().catch(() => ({}));
+      if(!res.ok){
+        const msg = body && body.error ? body.error.message : (body && body.detail ? (typeof body.detail==="string"?body.detail:JSON.stringify(body.detail)) : ("HTTP "+res.status));
+        throw new Error(msg);
+      }
+      return body;
+    }catch(err){
+      if(!(err instanceof TypeError) || attempt>=retries){
+        if(err instanceof TypeError) throw new Error("Couldn't reach the assistant — it may still be warming up. Please try again.");
+        throw err;
+      }
+      await new Promise(r=>setTimeout(r, 800*(attempt+1)));
+    }
   }
-  return body;
 }
 
 async function checkHealth(){
-  try{ const h = await api("/health"); $("healthPill").className="pill ok"; $("healthPill").textContent="● Online · v"+(h.version||"?"); }
+  try{ const h = await api("/health", null, 1); $("healthPill").className="pill ok"; $("healthPill").textContent="● Online · v"+(h.version||"?"); }
   catch{ $("healthPill").className="pill"; $("healthPill").textContent="● Offline"; }
+}
+
+// Trigger the (lazy) model load in the background on page open so the first
+// chat message is fast instead of blocking ~10-20s while the model loads.
+async function warmUp(){
+  $("healthPill").className="pill"; $("healthPill").textContent="● Warming up…";
+  try{
+    await api("/nlu/parse", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:"hi"})}, 6);
+  }catch{}
+  checkHealth();
 }
 
 function addUser(text){
@@ -332,10 +356,13 @@ async function send(text){
   const userBub = addUser(text);
   $("msg").value="";
   $("sendBtn").disabled=true;
-  // auto language hint from the message if user hasn't forced one
-  const lang = langHint || (AR_RE.test(text) ? "ar" : "en");
+  // Language hint: honour a forced choice; otherwise only hint "ar" when the
+  // message actually contains Arabic. For letterless input (e.g. "2") send no
+  // hint so the backend keeps the conversation's language instead of flipping.
+  const lang = langHint || (AR_RE.test(text) ? "ar" : null);
   try{
-    const payload = { text, user_id: userId(), language: lang };
+    const payload = { text, user_id: userId() };
+    if(lang) payload.language = lang;
     if(sessionId) payload.session_id = sessionId;
     const r = await api("/conversation/text", {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload),
@@ -505,7 +532,7 @@ try{ devInit = localStorage.getItem("assistant.devmode")==="1"; }catch{}
 if(new URLSearchParams(location.search).get("dev")==="1") devInit=true;
 applyDevMode(devInit);
 renderQuick();
-checkHealth();
+warmUp();
 loadMemory();
 $("msg").focus();
 </script>

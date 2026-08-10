@@ -5,13 +5,16 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from collections.abc import Sequence
 from decimal import Decimal
 
+from app import banking_core_client
 from app.config import DEFAULT_CURRENCY, settings
 from app.conversation import moderation, templates
 from app.conversation.moderation import ModerationResult
 from app.conversation.state import (
     BILL_REQUIRED_SLOTS,
+    BeneficiaryOption,
     BillerOption,
     ConversationSlots,
     ConversationState,
@@ -20,12 +23,15 @@ from app.conversation.state import (
 from app.conversation.store import get_session_store
 from app.data_loader import (
     BillerRecord,
+    biller_categories,
+    canonicalize_recipient,
     resolve_biller_by_code,
     resolve_biller_candidates,
 )
+from app.db.directory import BeneficiaryHit, get_beneficiary_directory
 from app.memory.schemas import Shortcut
 from app.memory.service import get_memory_brain
-from app.nlu import entities, pipeline
+from app.nlu import accounts, entities, pipeline
 from app.nlu.lang import detect_language
 from app.nlu.normalize import normalize, normalize_digits
 from app.schemas import (
@@ -33,6 +39,7 @@ from app.schemas import (
     Intent,
     Language,
     NLUResponse,
+    TransferEntities,
     TransferRequest,
 )
 from app.trace import BlockTracer
@@ -109,12 +116,476 @@ _CHOICE_FILLERS = {
 }
 
 
+# Cues that a message is a balance inquiry ("what's my balance", "كم رصيدي").
+# Normalized, so Arabic letter forms (رصيدى) and trailing punctuation ("balance?")
+# still match.
+_BALANCE_CUES = {
+    normalize(w)
+    for w in (
+        "balance",
+        "ballance",
+        "رصيد",
+        "رصيدي",
+        "الرصيد",
+        "فلوسي",
+    )
+}
+_BALANCE_PHRASES = tuple(
+    normalize(p)
+    for p in (
+        "how much do i have",
+        "how much money",
+        "how much is left",
+        "what is left in my account",
+        "available funds",
+        "do i have enough",
+        "كم عندي",
+        "كم لدي",
+        "كم باقي",
+        "كم الفلوس",
+        "موجود في حسابي",
+        "موجود بحسابي",
+    )
+)
+
+# Map account-type words (EN/AR) to a canonical type used by the Banking Core API.
+_ACCOUNT_TYPES: dict[str, str] = {
+    "current": "current",
+    "checking": "current",
+    "جاري": "current",
+    "الجاري": "current",
+    "savings": "savings",
+    "saving": "savings",
+    "توفير": "savings",
+    "التوفير": "savings",
+    "credit": "credit",
+    "ائتمان": "credit",
+    "salary": "salary",
+    "راتب": "salary",
+    "الراتب": "salary",
+}
+
+
+def _account_type(text: str) -> str | None:
+    """Return a canonical source-account type mentioned in ``text``, if any."""
+
+    tokens = _tokens(text)
+    for word, canonical in _ACCOUNT_TYPES.items():
+        if word in tokens:
+            return canonical
+    return None
+
+
+def _is_balance_inquiry(text: str) -> bool:
+    normalized = normalize(text)
+    if set(normalized.split()) & _BALANCE_CUES:
+        return True
+    return any(phrase in normalized for phrase in _BALANCE_PHRASES)
+
+
+# Cues that a message asks to *list* saved beneficiaries ("show my beneficiaries",
+# "من المستفيدين عندي"). Normalized so Arabic letter-form variants collapse. A
+# beneficiary noun plus a list/possessive marker distinguishes "show my
+# beneficiaries" from "send money to a beneficiary".
+_LIST_BENE_NOUNS = {
+    normalize(w)
+    for w in (
+        "beneficiaries",
+        "beneficiary",
+        "payees",
+        "payee",
+        # frequent misspellings of "beneficiary"
+        "benificary",
+        "benificiary",
+        "benificaries",
+        "benificiaries",
+        "beneficary",
+        "beneficaries",
+        "المستفيدين",
+        "مستفيدين",
+        "المستفيدون",
+        "المستفيد",
+        "مستفيد",
+        "مستفيدي",
+        # common misspelling that drops the yaa (المستف[ي]دين)
+        "المستفدين",
+        "مستفدين",
+        "المستفدون",
+        # "أضف مستفيداً" — the tanween's alef survives diacritic stripping
+        "مستفيدا",
+        "المستفيدا",
+        "contacts",
+    )
+}
+_LIST_BENE_MARKERS = {
+    normalize(w)
+    for w in (
+        "list",
+        "show",
+        "view",
+        "see",
+        "display",
+        "check",
+        "browse",
+        "my",
+        "all",
+        "who",
+        "which",
+        "saved",
+        "registered",
+        "عرض",
+        "اعرض",
+        "اظهر",
+        "وريني",
+        "ورني",
+        "قائمة",
+        "من",
+        "مين",
+        "كل",
+        "عندي",
+        "لدي",
+        "المسجلين",
+        "مسجلين",
+        "اللي",
+        # colloquial "let me see" verbs: ابغى اشوف المستفيدين
+        "اشوف",
+        "أشوف",
+        "شوف",
+        "شف",
+        "يشوف",
+        "نشوف",
+        "استعرض",
+        "راجع",
+    )
+}
+
+
+# Verbs that turn a beneficiary noun into an *add* request rather than a list one.
+_ADD_BENE_VERBS = {
+    normalize(w)
+    for w in (
+        "add",
+        "adding",
+        "save",
+        "store",
+        "register",
+        "create",
+        "new",
+        "اضف",
+        "أضف",
+        "اضافة",
+        "إضافة",
+        "اضيف",
+        "أضيف",
+        "ضيف",
+        "سجل",
+        "احفظ",
+        "جديد",
+        "جديدا",
+        "جديدة",
+    )
+}
+
+
+# Dropped when reading a name out of "add Sara Ali as a beneficiary".
+_ADD_REQUEST_STOPWORDS = (
+    _ADD_BENE_VERBS
+    | _LIST_BENE_NOUNS
+    | {
+        normalize(w)
+        for w in (
+            "a",
+            "an",
+            "the",
+            "as",
+            "my",
+            "please",
+            "i",
+            "want",
+            "need",
+            "would",
+            "like",
+            "to",
+            "for",
+            "recipient",
+            "contact",
+            "ابغى",
+            "ابغي",
+            "اريد",
+            "أريد",
+            "عايز",
+            "لو",
+            "سمحت",
+            "رجاء",
+            "من",
+            "فضلك",
+            "عندي",
+            "لدي",
+            "باسم",
+            "كمستفيد",
+        )
+    }
+)
+
+
+def _is_add_beneficiary(text: str) -> bool:
+    """True for "add a beneficiary" style requests (checked before listing)."""
+
+    tokens = {normalize(t) for t in _tokens(text)}
+    if not tokens & _LIST_BENE_NOUNS:
+        return False
+    return bool(tokens & _ADD_BENE_VERBS)
+
+
+# Nouns a genuine add request names its target with. The semantic classifier
+# leans on phrasing alone, which puts unrelated requests ("ادفع المخالفة") next
+# to "أضف مستفيد" in embedding space, so its verdict needs one of these present.
+_ADD_TARGET_NOUNS = _LIST_BENE_NOUNS | {
+    normalize(w) for w in ("recipient", "recipients", "contact", "مستلم", "كمستفيد")
+}
+
+
+def _names_a_beneficiary(text: str) -> bool:
+    """True when the message actually mentions a beneficiary/payee/recipient."""
+
+    return bool({normalize(t) for t in _tokens(text)} & _ADD_TARGET_NOUNS)
+
+
+def _is_list_beneficiaries(text: str) -> bool:
+    tokens = {normalize(t) for t in _tokens(text)}
+    if not tokens & _LIST_BENE_NOUNS:
+        return False
+    if tokens & _ADD_BENE_VERBS:  # "add a beneficiary" is not a listing request
+        return False
+    if tokens <= _LIST_BENE_NOUNS:
+        # The noun on its own ("beneficiaries", "المستفدين") only ever asks to see them.
+        return True
+    return bool(tokens & _LIST_BENE_MARKERS)
+
+
+# Verbs that make a loose bill/recipient cue actionable (normalized tokens).
+_PAY_VERBS = {
+    normalize(w)
+    for w in (
+        "pay",
+        "paying",
+        "paid",
+        "settle",
+        "ادفع",
+        "أدفع",
+        "دفع",
+        "ادفعها",
+        "سدد",
+        "اسدد",
+        "تسديد",
+        "أسدد",
+    )
+}
+_TRANSFER_VERBS = {
+    normalize(w)
+    for w in (
+        "send",
+        "sending",
+        "transfer",
+        "transfers",
+        "wire",
+        "remit",
+        "move",
+        "حول",
+        "حولي",
+        "أحول",
+        "احول",
+        "تحويل",
+        "ارسل",
+        "أرسل",
+        "ابعت",
+        "ابعث",
+    )
+}
+
+
+def _has_verb(text: str, verbs: set[str]) -> bool:
+    return bool({normalize(t) for t in _tokens(text)} & verbs)
+
+
+def decide_action(
+    text: str,
+    lang: Language,
+    parsed_intent: Intent,
+    shortcut_intent: Intent | None = None,
+) -> Intent | None:
+    """Pick the flow for a new dialogue, or ``None`` when it's unclear.
+
+    Bill signals (biller keyword / "bill" / "فاتورة") win; otherwise a transfer
+    signal (transfer intent, a matched shortcut, or a recipient) selects the
+    transfer flow. When neither is present we ask the customer to choose.
+
+    A *resolved biller alone* is not enough, and neither is a *recipient alone*:
+    both extractors are deliberately generous ("mobile" resolves to STC, the
+    20k-name gazetteer matches most Arabic words), so an unrelated question
+    ("change my mobile number", "قل لي نكتة") would otherwise open a payment
+    flow. Those loose cues now need a pay/transfer verb or an amount alongside
+    them; without one we return ``None`` and ask.
+    """
+
+    bills = entities.extract_bill_entities(text, lang)
+    if (
+        parsed_intent is Intent.PAY_BILL
+        or entities.has_bill_word(text)
+        or (bills.biller is not None and _has_verb(text, _PAY_VERBS))
+    ):
+        return Intent.PAY_BILL
+    if parsed_intent is Intent.TRANSFER_MONEY:
+        return Intent.TRANSFER_MONEY
+    if shortcut_intent is Intent.TRANSFER_MONEY:  # set by a matched shortcut
+        return Intent.TRANSFER_MONEY
+    if entities.extract_recipient(text, lang) and (
+        entities.extract_amount(text) is not None or _has_verb(text, _TRANSFER_VERBS)
+    ):
+        return Intent.TRANSFER_MONEY
+    return None
+
+
+def route_fresh_turn(
+    text: str, lang: Language, parsed_intent: Intent, confidence: float = 1.0
+) -> Intent:
+    """The intent a first turn is routed to, in the order :meth:`_collect` uses.
+
+    Shared with the eval harness (:mod:`app.eval.harness`) so the scored intent
+    is the one the customer actually gets: the deterministic cues below overrule
+    the classifier, so scoring the classifier alone measures a decision the
+    engine never makes. ``FALLBACK`` stands for the abstain path — the
+    "transfer or bill?" prompt we fall back to rather than guess a flow.
+    """
+
+    if moderation.detect(text).flagged:
+        return Intent.INAPPROPRIATE
+    if _is_add_beneficiary(text):
+        return Intent.ADD_BENEFICIARY
+    if _is_balance_inquiry(text):
+        return Intent.BALANCE_INQUIRY
+    if _is_list_beneficiaries(text):
+        return Intent.LIST_BENEFICIARIES
+    if settings.moderation_enabled and parsed_intent is Intent.INAPPROPRIATE:
+        return Intent.INAPPROPRIATE
+    if templates.is_small_talk(text):
+        return Intent.SMALL_TALK
+    action = decide_action(text, lang, parsed_intent)
+    if (
+        action is None
+        and _names_a_beneficiary(text)
+        and parsed_intent in (Intent.ADD_BENEFICIARY, Intent.LIST_BENEFICIARIES)
+    ):
+        if parsed_intent is Intent.ADD_BENEFICIARY and not _is_list_beneficiaries(text):
+            return Intent.ADD_BENEFICIARY
+        return Intent.LIST_BENEFICIARIES
+    if action is not None:
+        return action
+    if (
+        parsed_intent is Intent.BALANCE_INQUIRY
+        and confidence >= settings.semantic_route_threshold
+    ):
+        return Intent.BALANCE_INQUIRY
+    return Intent.FALLBACK
+
+
+# An account-shaped message: digits/separators behind at most a country code
+# ("SA03 8000 …"). Its letters say nothing about the customer's language.
+_ACCOUNT_SHAPED = re.compile(r"^[A-Za-z]{0,2}[\d\s\u00a0-]+$")
+
+
+def _carries_language_signal(text: str) -> bool:
+    """False for messages detection can't judge: bare numbers, IBANs, "2"."""
+
+    stripped = text.strip(" .,،؟?")
+    if not re.search(r"[^\W\d_]", stripped, re.UNICODE):
+        return False
+    return not _ACCOUNT_SHAPED.match(stripped)
+
+
+def _mask_account(account: str) -> str:
+    """Show only the last four characters of an account/IBAN."""
+
+    tail = account[-4:] if len(account) >= 4 else account
+    return f"SA••{tail}"
+
+
 def _tokens(text: str) -> set[str]:
     return {t.strip(".,!؟،").lower() for t in text.split()}
 
 
 def _matches(text: str, vocabulary: set[str]) -> bool:
     return bool(_tokens(text) & vocabulary)
+
+
+# Request verbs / fillers (normalized) that leak into a bare recipient answer
+# such as "ابغي احمد" ("I want Ahmed") or "send to Ahmed". Stripped before the
+# remainder is canonicalized to a name.
+_RECIPIENT_FILLERS = {
+    # Arabic colloquial + MSA verbs and prepositions
+    "ابغي",
+    "ابي",
+    "اريد",
+    "عايز",
+    "عاوز",
+    "احب",
+    "حول",
+    "احول",
+    "ارسل",
+    "ابعت",
+    "ادفع",
+    "الى",
+    "ل",
+    "مبلغ",
+    "بمبلغ",
+    # English
+    "i",
+    "want",
+    "to",
+    "send",
+    "transfer",
+    "pay",
+    "wire",
+    "remit",
+    "please",
+    "the",
+    "a",
+    "an",
+    "money",
+    "cash",
+    "some",
+    "for",
+}
+
+
+def _clean_recipient_answer(text: str) -> str | None:
+    """Turn a free-text recipient reply into a name.
+
+    Drops leading/embedded request verbs and prepositions (so "ابغي احمد" →
+    "احمد", "send to Ahmed" → "Ahmed"), then canonicalizes the remaining tokens
+    against the name gazetteer. Returns ``None`` when nothing name-like is left.
+    """
+
+    stripped = text.strip(" .,،؟?")
+    if not stripped:
+        return None
+    kept = [tok for tok in stripped.split() if normalize(tok) not in _RECIPIENT_FILLERS]
+    candidate = " ".join(kept).strip() or stripped
+    return canonicalize_recipient(candidate) or None
+
+
+def _recipient_from_answer(text: str, lang: Language) -> str | None:
+    """Best-effort recipient from a slot answer: surface pattern, else cleanup."""
+
+    return entities.extract_recipient(text, lang) or _clean_recipient_answer(text)
+
+
+def _display_name(name: str, name_ar: str | None, lang: Language) -> str:
+    """Prefer the Arabic beneficiary name in Arabic conversations (else English)."""
+
+    if lang is Language.AR and name_ar:
+        return name_ar
+    return name
 
 
 def _forget_target(text: str) -> str | None:
@@ -181,7 +652,7 @@ class ConversationEngine:
         state.turns += 1
         if user_id:
             state.user_id = user_id
-        lang = language or detect_language(text)
+        lang = self._effective_language(text, language, loaded)
         state.language = lang
 
         # A fresh utterance after a finished dialogue starts a new transfer.
@@ -209,6 +680,13 @@ class ConversationEngine:
                 state.reset()
                 state.status = ConversationStatus.CANCELLED
                 result = self._finish(state, templates.cancelled(lang))
+        elif self._is_mid_transaction(state) and _is_balance_inquiry(text):
+            # Allowed "aside": answer a balance question in the middle of a
+            # transfer/bill, then re-emit the current prompt so the flow
+            # resumes untouched (status and slots are preserved).
+            with tracer.block("orchestrator") as span:
+                span.annotate("balance_aside")
+                result = self._answer_balance_aside(state, text, lang)
         elif state.status is ConversationStatus.CONFIRMING:
             result = self._handle_confirmation(state, text, lang, tracer)
         elif state.status is ConversationStatus.DISAMBIGUATING:
@@ -224,6 +702,25 @@ class ConversationEngine:
 
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _effective_language(
+        text: str, override: Language | None, prior: ConversationState | None
+    ) -> Language:
+        """Pick the reply language, keeping the conversation's language sticky.
+
+        An explicit override wins. Otherwise detect from the text, but when the
+        message carries no language signal — a bare "2", an account number, or
+        an IBAN whose only letters are its country code — detection is
+        meaningless, so inherit the ongoing conversation's language instead of
+        defaulting to English.
+        """
+
+        if override is not None:
+            return override
+        if prior is not None and not _carries_language_signal(text):
+            return prior.language
+        return detect_language(text)
+
     def _handle_confirmation(
         self,
         state: ConversationState,
@@ -233,10 +730,14 @@ class ConversationEngine:
     ) -> ConversationResult:
         with tracer.block("orchestrator"):
             if _matches(text, _NEGATIVE):
+                if state.pending_add_account:
+                    return self._abandon_add_beneficiary(state, lang)
                 state.reset()
                 state.status = ConversationStatus.CANCELLED
                 return self._finish(state, templates.cancelled(lang))
             if _matches(text, _AFFIRM):
+                if state.pending_add_account:
+                    return self._commit_add_beneficiary(state, lang, tracer)
                 return self._complete(state, lang, tracer)
             # Unrecognised reply: re-ask for confirmation.
             return self._finish(state, self._confirm_text(state, lang))
@@ -304,9 +805,11 @@ class ConversationEngine:
                 self._apply_memory_defaults(state, text)
             missing = state.slots.first_missing_required(required)
             if missing is None:
-                state.pending_slot = None
-                state.status = ConversationStatus.CONFIRMING
-                return self._finish(state, self._confirm_text(state, lang))
+                if choice is Intent.TRANSFER_MONEY:
+                    pending = self._resolve_beneficiary(state, lang)
+                    if pending is not None:
+                        return pending
+                return self._enter_confirmation(state, lang)
             state.pending_slot = missing
             return self._finish(state, templates.slot_prompt(missing, lang, choice))
 
@@ -323,27 +826,9 @@ class ConversationEngine:
         lang: Language,
         parsed: NLUResponse,
     ) -> Intent | None:
-        """Pick the flow for a new dialogue, or ``None`` when it's unclear.
+        """Pick the flow for a new dialogue, or ``None`` when it's unclear."""
 
-        Bill signals (biller keyword / "bill" / "فاتورة") win; otherwise a transfer
-        signal (transfer intent, a matched shortcut, or a recipient) selects the
-        transfer flow. When neither is present we ask the customer to choose.
-        """
-
-        bills = entities.extract_bill_entities(text, lang)
-        if (
-            parsed.intent is Intent.PAY_BILL
-            or bills.biller is not None
-            or entities.has_bill_word(text)
-        ):
-            return Intent.PAY_BILL
-        if parsed.intent is Intent.TRANSFER_MONEY:
-            return Intent.TRANSFER_MONEY
-        if state.intent is Intent.TRANSFER_MONEY:  # set by a matched shortcut
-            return Intent.TRANSFER_MONEY
-        if entities.extract_recipient(text, lang):
-            return Intent.TRANSFER_MONEY
-        return None
+        return decide_action(text, lang, parsed.intent, state.intent)
 
     def _collect(
         self,
@@ -352,6 +837,45 @@ class ConversationEngine:
         lang: Language,
         tracer: BlockTracer,
     ) -> ConversationResult:
+        # Mid "add beneficiary" flow: this turn answers the name or the account.
+        if state.intent is Intent.ADD_BENEFICIARY or state.pending_add_name:
+            with tracer.block("orchestrator"):
+                return self._continue_add_beneficiary(state, text, lang)
+
+        # "Add a beneficiary" as a request of its own (deterministic cue first,
+        # so the classifier can't read it as a listing request).
+        if (
+            state.intent is None
+            and state.pending_slot is None
+            and _is_add_beneficiary(text)
+        ):
+            with tracer.block("orchestrator") as span:
+                span.annotate("add_beneficiary")
+                return self._start_add_beneficiary(state, text, lang)
+
+        # Balance inquiry (its own intent) when starting fresh — answered by the
+        # external Banking Core API, not the slot-filling flow.
+        if (
+            state.intent is None
+            and state.pending_slot is None
+            and _is_balance_inquiry(text)
+        ):
+            with tracer.block("orchestrator") as span:
+                span.annotate("balance_inquiry")
+                return self._handle_balance_inquiry(state, text, lang)
+
+        # "Show my beneficiaries" (read-only) when starting fresh — deterministic
+        # cue check beats the semantic classifier, which otherwise reads the word
+        # "beneficiary" as a transfer and wrongly asks for an amount.
+        if (
+            state.intent is None
+            and state.pending_slot is None
+            and _is_list_beneficiaries(text)
+        ):
+            with tracer.block("orchestrator") as span:
+                span.annotate("list_beneficiaries")
+                return self._handle_list_beneficiaries(state, lang)
+
         parsed = pipeline.parse(text, lang)
         # Fold the NLU pipeline's own per-block trace into this turn's trace.
         tracer.extend(parsed.block_trace)
@@ -370,6 +894,38 @@ class ConversationEngine:
             # Smart chooser: determine transfer vs bill, or ask the customer.
             if state.intent not in (Intent.TRANSFER_MONEY, Intent.PAY_BILL):
                 action = self._decide_action(state, text, lang, parsed)
+                # Semantic fallback for a "list my beneficiaries" phrasing the
+                # deterministic cue check above didn't catch (read-only). Only
+                # when nothing points at a concrete bill/transfer, so the
+                # classifier can't hijack e.g. "ادفع فاتورة ...".
+                if (
+                    state.intent is None
+                    and action is None
+                    # The classifier alone is not enough: "ادفع المخالفة" sits
+                    # close to the beneficiary phrasings in embedding space, so
+                    # the message must actually name a beneficiary/payee.
+                    and _names_a_beneficiary(text)
+                    and parsed.intent
+                    in (Intent.ADD_BENEFICIARY, Intent.LIST_BENEFICIARIES)
+                ):
+                    if parsed.intent is Intent.ADD_BENEFICIARY and not (
+                        _is_list_beneficiaries(text)
+                    ):
+                        # "ابغى اشوف المستفيدين" reads as an add request to the
+                        # classifier; an explicit viewing cue always wins.
+                        return self._start_add_beneficiary(state, text, lang)
+                    return self._handle_list_beneficiaries(state, lang)
+                # Semantic fallback for a balance question the cue list above
+                # doesn't spell out ("what are my available funds"). Read-only,
+                # and only when nothing points at a bill/transfer and the
+                # classifier is confident — "close my account" sits next to the
+                # balance phrasings in embedding space at a lower score.
+                if (
+                    action is None
+                    and parsed.intent is Intent.BALANCE_INQUIRY
+                    and parsed.confidence >= settings.semantic_route_threshold
+                ):
+                    return self._handle_balance_inquiry(state, text, lang)
                 if action is None:
                     # Warm chit-chat reply for pure greetings/thanks; then wait
                     # in SELECTING so a follow-up choice/request is understood.
@@ -394,7 +950,18 @@ class ConversationEngine:
         slots = state.slots
 
         # Merge newly extracted slots (never overwrite an already-filled slot).
+        # The pipeline only extracts when its own classifier says "transfer", so
+        # when the chooser overruled it ("حولي الي سارة 500" reads as a listing
+        # request to the classifier) the slots have to be filled here instead.
         ent = parsed.entities
+        if parsed.intent is not Intent.TRANSFER_MONEY:
+            ent = TransferEntities(
+                amount=ent.amount or entities.extract_amount(text),
+                currency=ent.currency or entities.extract_currency(text),
+                recipient=ent.recipient or entities.extract_recipient(text, lang),
+                source_account=ent.source_account
+                or entities.extract_source_account(text, lang),
+            )
         if slots.amount is None and ent.amount is not None:
             slots.amount = ent.amount
         # Only adopt a currency the user *explicitly* stated this turn; the
@@ -403,8 +970,15 @@ class ConversationEngine:
         explicit_currency = entities.extract_currency(text)
         if not slots.currency and explicit_currency:
             slots.currency = explicit_currency
-        if not slots.recipient and ent.recipient:
-            slots.recipient = ent.recipient
+        if not slots.recipient:
+            if state.pending_slot == "recipient":
+                # We explicitly asked for the recipient, so the whole message is
+                # the answer: trust the deterministic bare-answer parse over the
+                # pipeline's free extraction (which can mangle colloquial input
+                # like "ابغي احمد" into a garbled name).
+                slots.recipient = _recipient_from_answer(text, lang) or ent.recipient
+            elif ent.recipient:
+                slots.recipient = ent.recipient
         if not slots.source_account and ent.source_account:
             slots.source_account = ent.source_account
 
@@ -427,9 +1001,13 @@ class ConversationEngine:
             state.status = ConversationStatus.COLLECTING
             return self._finish(state, templates.slot_prompt(missing, lang))
 
-        state.pending_slot = None
-        state.status = ConversationStatus.CONFIRMING
-        return self._finish(state, self._confirm_text(state, lang))
+        # Beneficiary check goes DIRECT to the database (not the API): 0 -> offer to
+        # add, 1 -> lock and continue, many (shared first name) -> disambiguate.
+        pending = self._resolve_beneficiary(state, lang)
+        if pending is not None:
+            return pending
+
+        return self._enter_confirmation(state, lang)
 
     def _collect_bill(
         self, state: ConversationState, text: str, lang: Language
@@ -485,20 +1063,25 @@ class ConversationEngine:
         if record is not None:
             self._set_biller(slots, record, lang)
             return None
-        # No catalogue match: keep the free-text biller (or the raw answer when
-        # we explicitly asked "which bill?").
-        biller, category, biller_code = entities.extract_biller(
-            text, lang, allow_semantic=True
-        )
+        # No catalogue match. Only billers in the SADAD catalogue can be paid, so
+        # rather than accepting free text we tell the customer the biller isn't
+        # on the list and ask again. Stay silent when they named nothing yet
+        # (e.g. they only answered the reference-number question).
+        # Quote the customer's own wording back: when they were answering "which
+        # bill?" the whole reply is the name, otherwise use the extracted span.
+        named: str | None
         if state.pending_slot == "biller":
-            slots.biller = biller or text.strip(" .,،؟?")
-            slots.biller_category = category
-            slots.biller_code = biller_code
-        elif biller:
-            slots.biller = biller
-            slots.biller_category = category
-            slots.biller_code = biller_code
-        return None
+            named = text.strip(" .,،؟?")
+        else:
+            named, _, _ = entities.extract_biller(text, lang, allow_semantic=True)
+        if not named:
+            return None
+        state.pending_slot = "biller"
+        state.status = ConversationStatus.COLLECTING
+        return self._finish(
+            state,
+            templates.biller_not_found(named, list(biller_categories()), lang),
+        )
 
     @staticmethod
     def _set_biller(
@@ -560,7 +1143,11 @@ class ConversationEngine:
         lang: Language,
         tracer: BlockTracer,
     ) -> ConversationResult:
-        """Resolve a reply to the "which biller?" question, then continue."""
+        """Resolve a reply to a "which one?" question (biller or beneficiary)."""
+
+        if state.disambiguation_kind == "beneficiary":
+            with tracer.block("orchestrator"):
+                return self._handle_beneficiary_choice(state, text, lang)
 
         with tracer.block("orchestrator"):
             choice = self._match_biller_option(state.biller_options, text)
@@ -628,9 +1215,7 @@ class ConversationEngine:
                 state, templates.slot_prompt(missing, lang, Intent.PAY_BILL)
             )
 
-        state.pending_slot = None
-        state.status = ConversationStatus.CONFIRMING
-        return self._finish(state, self._confirm_text(state, lang))
+        return self._enter_confirmation(state, lang)
 
     def _fill_pending_bill(
         self, state: ConversationState, text: str, lang: Language
@@ -674,7 +1259,7 @@ class ConversationEngine:
             if currency is not None:
                 slots.currency = currency
         elif slot == "recipient" and not slots.recipient:
-            candidate = entities.extract_recipient(text, lang) or text.strip(" .,،؟?")
+            candidate = _recipient_from_answer(text, lang)
             if candidate:
                 slots.recipient = candidate
 
@@ -843,8 +1428,451 @@ class ConversationEngine:
         )
         return self._finish(state, reply)
 
+    # ---- Beneficiary directory (direct DB), balance & pre-flight (API) ------- #
+
+    @staticmethod
+    def _owner(state: ConversationState) -> str:
+        """Owner scope for the Banking Core DB/API (demo user when unauthenticated)."""
+
+        return state.user_id or "demo"
+
+    def _resolve_beneficiary(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult | None:
+        """Look the recipient up DIRECTLY in the beneficiaries DB.
+
+        Returns a :class:`ConversationResult` when the turn must pause (to ask
+        "which one?" or to offer adding a new beneficiary), or ``None`` to
+        continue straight to confirmation.
+        """
+
+        if state.beneficiary_resolved:
+            return None
+        directory = get_beneficiary_directory()
+        if directory is None:
+            state.beneficiary_resolved = True
+            return None
+        name = (state.slots.recipient or "").strip()
+        hits = directory.search(name, self._owner(state))
+        if hits is None:
+            # Directory unavailable — keep the free-text recipient.
+            state.beneficiary_resolved = True
+            return None
+        if not hits:
+            # Nobody matched: offer to add them (write goes through the API).
+            state.pending_add_name = name
+            state.pending_add_account = None
+            state.add_resumes_transfer = True
+            state.pending_slot = "beneficiary_account"
+            state.status = ConversationStatus.COLLECTING
+            return self._finish(state, templates.beneficiary_not_found(name, lang))
+        if len(hits) == 1:
+            self._lock_beneficiary(
+                state,
+                _display_name(hits[0].name, hits[0].name_ar, lang),
+                hits[0].account,
+            )
+            return None
+        state.beneficiary_options = [
+            BeneficiaryOption(
+                id=h.id,
+                name=h.name,
+                account=h.account,
+                bank=h.bank,
+                currency=h.currency,
+                is_favorite=h.is_favorite,
+                name_ar=h.name_ar,
+            )
+            for h in hits
+        ]
+        state.disambiguation_kind = "beneficiary"
+        state.pending_slot = "recipient"
+        state.status = ConversationStatus.DISAMBIGUATING
+        return self._finish(
+            state, templates.choose_beneficiary(self._option_rows(hits, lang), lang)
+        )
+
+    @staticmethod
+    def _option_rows(
+        items: Sequence[BeneficiaryHit | BeneficiaryOption], lang: Language
+    ) -> list[tuple[str, str, str, str]]:
+        """Build the (name, bank, masked-account, currency) rows for the prompt."""
+
+        return [
+            (
+                _display_name(it.name, it.name_ar, lang),
+                it.bank or "",
+                _mask_account(it.account),
+                it.currency,
+            )
+            for it in items
+        ]
+
+    @staticmethod
+    def _lock_beneficiary(state: ConversationState, name: str, account: str) -> None:
+        slots = state.slots
+        slots.recipient = name
+        slots.account_number = account
+        state.beneficiary_resolved = True
+        state.beneficiary_options = []
+        state.disambiguation_kind = None
+        state.pending_slot = None
+
+    def _handle_beneficiary_choice(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        choice = self._match_beneficiary_option(state.beneficiary_options, text)
+        if choice is None:
+            rows = self._option_rows(state.beneficiary_options, lang)
+            return self._finish(state, templates.choose_beneficiary(rows, lang))
+        self._lock_beneficiary(
+            state, _display_name(choice.name, choice.name_ar, lang), choice.account
+        )
+        return self._enter_confirmation(state, lang)
+
+    @staticmethod
+    def _match_beneficiary_option(
+        options: list[BeneficiaryOption], text: str
+    ) -> BeneficiaryOption | None:
+        if not options:
+            return None
+        normalized = normalize(text)
+        digits = "".join(ch for ch in normalize_digits(normalized) if ch.isdigit())
+        # Last-4 digits of an account take priority over a list index.
+        if len(digits) >= 4:
+            for option in options:
+                acct_digits = "".join(ch for ch in option.account if ch.isdigit())
+                if acct_digits.endswith(digits[-4:]):
+                    return option
+        if digits:
+            index = int(digits)
+            if 1 <= index <= len(options):
+                return options[index - 1]
+        for option in options:
+            for candidate in (option.name, option.name_ar):
+                if not candidate:
+                    continue
+                name = normalize(candidate)
+                if name and (name in normalized or normalized in name):
+                    return option
+        return None
+
+    def _start_add_beneficiary(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        """Begin the standalone "add a beneficiary" flow (name, then account)."""
+
+        state.intent = Intent.ADD_BENEFICIARY
+        state.status = ConversationStatus.COLLECTING
+        state.add_resumes_transfer = False
+        name, account = self._parse_add_request(text)
+        state.pending_add_name = name
+        state.pending_add_account = account
+        return self._advance_add_beneficiary(state, lang)
+
+    def _continue_add_beneficiary(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        """Fill the name or the account slot from this turn, then move forward."""
+
+        if _matches(text, _NEGATIVE):
+            return self._abandon_add_beneficiary(state, lang)
+
+        if state.pending_slot == "beneficiary_name":
+            name, account = self._parse_add_request(text)
+            state.pending_add_name = name or text.strip(" .,،؟?") or None
+            if account:
+                state.pending_add_account = account
+            return self._advance_add_beneficiary(state, lang)
+
+        # Otherwise this turn is the account/IBAN.
+        raw = text.strip(" .,،؟?")
+        if not raw:
+            return self._advance_add_beneficiary(state, lang)
+        account, reason = accounts.validate_account(raw)
+        if account is None:
+            name = state.pending_add_name or ""
+            return self._finish(
+                state,
+                templates.beneficiary_invalid_account(name, reason or "", lang),
+            )
+        state.pending_add_account = account
+        return self._advance_add_beneficiary(state, lang)
+
+    def _advance_add_beneficiary(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult:
+        """Ask for whichever piece is missing, else move to confirmation."""
+
+        if not state.pending_add_name:
+            state.pending_slot = "beneficiary_name"
+            return self._finish(state, templates.ask_beneficiary_name(lang))
+        if not state.pending_add_account:
+            state.pending_slot = "beneficiary_account"
+            return self._finish(
+                state,
+                templates.ask_beneficiary_account(state.pending_add_name, lang),
+            )
+
+        state.pending_slot = None
+        state.status = ConversationStatus.CONFIRMING
+        return self._finish(state, self._confirm_text(state, lang))
+
+    def _abandon_add_beneficiary(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult:
+        """The customer declined: drop back to the transfer, or cancel outright."""
+
+        resumes = state.add_resumes_transfer
+        state.pending_add_name = None
+        state.pending_add_account = None
+        state.add_resumes_transfer = False
+        if not resumes:
+            state.reset()
+            state.status = ConversationStatus.CANCELLED
+            return self._finish(state, templates.cancelled(lang))
+        state.intent = Intent.TRANSFER_MONEY
+        state.slots.recipient = None
+        state.pending_slot = "recipient"
+        state.status = ConversationStatus.COLLECTING
+        return self._finish(state, templates.slot_prompt("recipient", lang))
+
+    def _commit_add_beneficiary(
+        self, state: ConversationState, lang: Language, tracer: BlockTracer
+    ) -> ConversationResult:
+        """Confirmed: write through the Banking Core API, then close or transfer."""
+
+        name = state.pending_add_name or ""
+        account = state.pending_add_account or ""
+        resumes = state.add_resumes_transfer
+        created = banking_core_client.add_beneficiary(
+            owner_user=self._owner(state),
+            name=name,
+            account=account,
+            currency=state.slots.currency or DEFAULT_CURRENCY,
+        )
+        state.pending_add_name = None
+        state.pending_add_account = None
+        state.add_resumes_transfer = False
+        if not created or not created.get("ok"):
+            reason = created.get("message") if created else None
+            reply = templates.beneficiary_add_failed(name, lang, reason)
+            if not resumes:
+                state.reset()
+                state.status = ConversationStatus.COMPLETED
+                return self._finish(state, reply)
+            state.intent = Intent.TRANSFER_MONEY
+            state.status = ConversationStatus.COLLECTING
+            state.pending_slot = "recipient"
+            state.slots.recipient = None
+            return self._finish(state, reply)
+
+        state.slots.recipient = name
+        state.slots.account_number = account
+        state.beneficiary_resolved = True
+        if not resumes:
+            state.status = ConversationStatus.COMPLETED
+            state.pending_slot = None
+            return self._finish(
+                state,
+                templates.beneficiary_add_completed(name, _mask_account(account), lang),
+            )
+        # Mid-transfer: the single "yes" covered both, so send it straight through.
+        state.intent = Intent.TRANSFER_MONEY
+        result = self._complete(state, lang, tracer)
+        result.reply = f"{templates.beneficiary_added(name, lang)} {result.reply}"
+        return result
+
+    @staticmethod
+    def _parse_add_request(text: str) -> tuple[str | None, str | None]:
+        """Split "add Sara Ali SA03…" into ``(name, validated_account)``."""
+
+        name_parts: list[str] = []
+        account: str | None = None
+        for token in text.replace(",", " ").split():
+            cleaned = token.strip(" .,،؟?\"'“”«»")
+            if not cleaned:
+                continue
+            if account is None:
+                valid, _ = accounts.validate_account(cleaned)
+                if valid is not None:
+                    account = valid
+                    continue
+            if normalize(cleaned) in _ADD_REQUEST_STOPWORDS:
+                continue
+            name_parts.append(cleaned)
+        return (" ".join(name_parts) or None), account
+
+    @staticmethod
+    def _extract_account(text: str) -> str | None:
+        """Pull a *valid* account/IBAN token from a free-text reply."""
+
+        for token in text.replace(",", " ").split():
+            cleaned = token.strip(" .,،؟?")
+            account, _ = accounts.validate_account(cleaned)
+            if account is not None:
+                return account
+        return None
+
+    @staticmethod
+    def _is_mid_transaction(state: ConversationState) -> bool:
+        """True when a transfer/bill is in progress and awaiting the user."""
+
+        if state.status in (
+            ConversationStatus.CONFIRMING,
+            ConversationStatus.DISAMBIGUATING,
+        ):
+            return True
+        return state.status is ConversationStatus.COLLECTING and (
+            state.pending_slot is not None
+            or state.pending_add_name is not None
+            or state.intent in (Intent.TRANSFER_MONEY, Intent.PAY_BILL)
+        )
+
+    def _active_prompt(self, state: ConversationState, lang: Language) -> str | None:
+        """Re-emit the question the in-progress flow is currently waiting on."""
+
+        if state.status is ConversationStatus.CONFIRMING:
+            text = self._confirm_text(state, lang)
+            note = templates.warnings_note(state.preflight_warnings, lang)
+            return f"{text} {note}" if note else text
+        if state.status is ConversationStatus.DISAMBIGUATING:
+            if state.disambiguation_kind == "beneficiary":
+                options = [
+                    (o.name, o.bank or "", _mask_account(o.account), o.currency)
+                    for o in state.beneficiary_options
+                ]
+                return templates.choose_beneficiary(options, lang)
+            return templates.choose_biller(
+                [opt.name for opt in state.biller_options], lang
+            )
+        if state.pending_add_name:
+            return templates.beneficiary_not_found(state.pending_add_name, lang)
+        if state.pending_slot:
+            return templates.slot_prompt(state.pending_slot, lang, state.intent)
+        return None
+
+    def _answer_balance_aside(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        """Answer a balance question mid-flow without disturbing the transaction."""
+
+        account_type = _account_type(text)
+        info = banking_core_client.get_balance(
+            owner_user=self._owner(state), account_type=account_type
+        )
+        if info is None:
+            balance_line = templates.balance_unavailable(lang)
+        else:
+            balance_line = templates.balance_reply(
+                info.account_type, info.currency, self._fmt_amount(info.balance), lang
+            )
+        resume = self._active_prompt(state, lang)
+        if resume:
+            reply = f"{balance_line} {templates.resume_note(lang)} {resume}"
+        else:
+            reply = balance_line
+        return self._finish(state, reply)
+
+    def _handle_balance_inquiry(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        """Answer a balance inquiry using the external Banking Core API."""
+
+        account_type = _account_type(text)
+        info = banking_core_client.get_balance(
+            owner_user=self._owner(state), account_type=account_type
+        )
+        state.intent = Intent.BALANCE_INQUIRY
+        state.status = ConversationStatus.COMPLETED
+        if info is None:
+            return self._finish(state, templates.balance_unavailable(lang))
+        reply = templates.balance_reply(
+            info.account_type, info.currency, self._fmt_amount(info.balance), lang
+        )
+        return self._finish(state, reply)
+
+    def _handle_list_beneficiaries(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult:
+        """List the customer's saved beneficiaries (read-only; never transfers)."""
+
+        state.intent = Intent.LIST_BENEFICIARIES
+        state.status = ConversationStatus.COMPLETED
+        directory = get_beneficiary_directory()
+        if directory is None:
+            return self._finish(state, templates.beneficiaries_unavailable(lang))
+        hits = directory.list_all(self._owner(state))
+        if hits is None:
+            return self._finish(state, templates.beneficiaries_unavailable(lang))
+        if not hits:
+            return self._finish(state, templates.no_beneficiaries(lang))
+        rows = self._option_rows(hits, lang)
+        return self._finish(state, templates.list_beneficiaries(rows, lang))
+
+    def _enter_confirmation(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult:
+        """Run pre-flight (advisory), then move to CONFIRMING with the review text."""
+
+        state.pending_slot = None
+        state.status = ConversationStatus.CONFIRMING
+        self._run_preflight(state)
+        reply = self._confirm_text(state, lang)
+        note = templates.warnings_note(state.preflight_warnings, lang)
+        if note:
+            reply = f"{reply} {note}"
+        return self._finish(state, reply)
+
+    def _run_preflight(self, state: ConversationState) -> None:
+        """Call the Banking Core pre-flight API; store advisory warnings on state."""
+
+        state.preflight_warnings = []
+        slots = state.slots
+        if slots.amount is None or not slots.currency:
+            return
+        source_type = (
+            _ACCOUNT_TYPES.get(slots.source_account.lower())
+            if slots.source_account
+            else None
+        )
+        result = None
+        if state.intent is Intent.PAY_BILL:
+            result = banking_core_client.preflight_bill(
+                owner_user=self._owner(state),
+                amount=slots.amount,
+                currency=slots.currency,
+                biller_code=slots.biller_code,
+                reference_number=slots.reference_number or "",
+                source_account=slots.source_account,
+                source_account_type=source_type,
+            )
+        elif state.intent is Intent.TRANSFER_MONEY:
+            result = banking_core_client.preflight_transfer(
+                owner_user=self._owner(state),
+                amount=slots.amount,
+                currency=slots.currency,
+                recipient_account=slots.account_number,
+                source_account=slots.source_account,
+                source_account_type=source_type,
+            )
+        if result is not None:
+            state.preflight_warnings = list(result.warnings)
+
     def _confirm_text(self, state: ConversationState, lang: Language) -> str:
         slots = state.slots
+        if state.pending_add_account:
+            masked = _mask_account(state.pending_add_account)
+            name = state.pending_add_name or ""
+            if state.add_resumes_transfer:
+                return templates.confirm_add_then_transfer(
+                    name,
+                    masked,
+                    self._fmt_amount(slots.amount),
+                    slots.currency or "",
+                    lang,
+                )
+            return templates.confirm_add_beneficiary(name, masked, lang)
         if state.intent is Intent.PAY_BILL:
             return templates.bill_confirm_prompt(
                 self._fmt_amount(slots.amount),

@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # Cosine-similarity floor for accepting a semantic intent match.
     semantic_intent_threshold: float = 0.45
 
+    # Confidence floor for letting the semantic classifier alone pick a flow
+    # when no deterministic cue fired. Higher than
+    # ``semantic_intent_threshold``: a weak neighbour should abstain (ask) rather
+    # than route, e.g. "close my account" scores ~0.74 against the balance
+    # phrasings and must not be answered with a balance.
+    semantic_route_threshold: float = 0.80
+
     # Cosine-similarity floor for accepting a contact match.
     contact_match_threshold: float = 0.5
 
@@ -116,6 +123,26 @@ class Settings(BaseSettings):
 
     # Per-query timeout (seconds) for the database lookup.
     db_timeout: float = 10.0
+
+    # ---- Banking Core service (separate app: balance + pre-flight + add beneficiary)
+    # The transfer/bill/balance cases call this external HTTP service. Beneficiary
+    # *lookups* are read directly from the database (see beneficiary_lookup_* below);
+    # this service owns balance, pre-flight funds/FX checks, and adding beneficiaries.
+    banking_core_enabled: bool = False
+    banking_core_url: str = "http://localhost:8100"
+    banking_core_api_key: str | None = None
+    banking_core_timeout: float = 10.0
+
+    # ---- Beneficiary directory (direct DB read for transfer disambiguation) ----
+    # For a transfer, the recipient is resolved by querying the beneficiaries table
+    # directly (by name, EN/AR); several people sharing a first name triggers a
+    # "which one?" disambiguation. This is intentionally a DB read, not an API call.
+    beneficiary_lookup_enabled: bool = False
+    # SQLAlchemy URL for the beneficiaries table. Defaults to the Banking Core demo DB.
+    beneficiary_db_url: str = "sqlite:///./banking-core/banking_core.db"
+    # Table + columns for the name lookup (overridable for a real schema).
+    beneficiary_table: str = "beneficiaries"
+    beneficiary_owner_column: str = "owner_user"
 
     # ---- Admin config store (external resource connections + audit log) ----
     # SQLAlchemy URL for the local store that persists configured connections and
@@ -269,7 +296,17 @@ SUPPORTED_CURRENCIES: dict[str, set[str]] = {
 # kept as the free-text biller the customer typed.
 BILLER_CATEGORIES: dict[str, set[str]] = {
     "electricity": {"electricity", "power", "كهرباء", "الكهرباء"},
-    "water": {"water", "مياه", "المياه", "مية"},
+    # "موية"/"مويه" are the colloquial Gulf spellings of "مياه".
+    "water": {
+        "water",
+        "مياه",
+        "المياه",
+        "مية",
+        "موية",
+        "الموية",
+        "مويه",
+        "المويه",
+    },
     "gas": {"gas", "غاز", "الغاز"},
     "internet": {"internet", "wifi", "نت", "النت", "انترنت", "إنترنت"},
     "mobile": {

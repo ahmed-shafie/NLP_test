@@ -22,7 +22,12 @@ from rapidfuzz import fuzz, process
 from rapidfuzz.distance import Levenshtein
 
 from app.config import settings
-from app.nlu.normalize import normalize, normalize_digits, normalize_tokens
+from app.nlu.normalize import (
+    normalize,
+    normalize_digits,
+    normalize_tokens,
+    strip_diacritics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +50,11 @@ _GENERIC_BILLER_GROUPS: dict[str, tuple[str, ...]] = {
     "مياه": ("015", "138"),
     "المياه": ("015", "138"),
     "مية": ("015", "138"),
+    # Colloquial Gulf spellings of "مياه".
+    "موية": ("015", "138"),
+    "الموية": ("015", "138"),
+    "مويه": ("015", "138"),
+    "المويه": ("015", "138"),
     "gas": ("148",),
     "غاز": ("148",),
     "الغاز": ("148",),
@@ -126,6 +136,13 @@ def _billers_by_category() -> dict[str, tuple[BillerRecord, ...]]:
     }
 
 
+@lru_cache(maxsize=1)
+def biller_categories() -> tuple[str, ...]:
+    """The distinct SADAD categories in the catalogue, alphabetically."""
+
+    return tuple(sorted({r.category for r in load_billers() if r.category}))
+
+
 def _as_biller_code(token: str) -> str | None:
     """Return the SADAD code a short numeric token denotes, else ``None``.
 
@@ -152,6 +169,18 @@ def resolve_biller_by_code(token: str) -> BillerRecord | None:
     return _biller_by_code().get(code) if code else None
 
 
+# Extra spellings customers use for a specific biller, keyed by SADAD code.
+# Mostly Latin brand names written out letter-by-letter in Arabic ("اس تي سي"),
+# which no amount of normalization derives from the catalogue name.
+_BILLER_ALIASES: dict[str, tuple[str, ...]] = {
+    "001": ("اس تي سي", "اس تي سى", "الاتصالات السعودية", "stc"),
+    "005": ("موبايلي", "mobily"),
+    "044": ("زين", "زين السعودية", "zain"),
+    "151": ("فيرجن", "فيرجن موبايل"),
+    "207": ("stc pay", "اس تي سي باي"),
+}
+
+
 @lru_cache(maxsize=1)
 def _biller_name_index() -> list[tuple[tuple[str, ...], BillerRecord]]:
     """Normalized name-token tuples paired with their biller, longest first.
@@ -162,7 +191,8 @@ def _biller_name_index() -> list[tuple[tuple[str, ...], BillerRecord]]:
 
     index: list[tuple[tuple[str, ...], BillerRecord]] = []
     for rec in load_billers():
-        for name in (rec.name_en, rec.name_ar):
+        names = (rec.name_en, rec.name_ar, *_BILLER_ALIASES.get(rec.biller_code, ()))
+        for name in names:
             tokens = tuple(normalize_tokens(name))
             if tokens:
                 index.append((tokens, rec))
@@ -193,17 +223,42 @@ def resolve_biller_gazetteer(text: str) -> BillerRecord | None:
     return candidates[0] if candidates else None
 
 
+# Arabic proclitics that fuse onto the next word, longest first: "لاس تي سي" =
+# "ل" + "اس تي سي", "للمياه" = "لـ" + "المياه", "وزين" = "و" + "زين".
+_AR_PROCLITICS = ("لل", "بال", "وال", "فال", "كال", "ل", "ب", "ف", "و", "ك")
+
+
+def _unprefixed_tokens(tokens: list[str]) -> list[str]:
+    """Drop a fused Arabic proclitic from each token (keeping 2-letter words)."""
+
+    out = []
+    for token in tokens:
+        for prefix in _AR_PROCLITICS:
+            if token.startswith(prefix) and len(token) - len(prefix) >= 2:
+                token = token[len(prefix) :]
+                break
+        out.append(token)
+    return out
+
+
 def _gazetteer_candidates(text: str) -> list[BillerRecord]:
     """Exact name match (one record) or a generic-term group (one or several)."""
 
     tokens = normalize_tokens(text)
     if not tokens:
         return []
-    for name_tokens, rec in _biller_name_index():
+    index = _biller_name_index()
+    for name_tokens, rec in index:
         if _contains_subsequence(tokens, name_tokens):
             return [rec]
+    # Retry once with fused Arabic proclitics removed.
+    stripped = _unprefixed_tokens(tokens)
+    if stripped != tokens:
+        for name_tokens, rec in index:
+            if _contains_subsequence(stripped, name_tokens):
+                return [rec]
     by_code = _biller_by_code()
-    token_set = set(tokens)
+    token_set = set(tokens) | set(stripped)
     for term, codes in _GENERIC_BILLER_GROUPS.items():
         if normalize(term) in token_set:
             recs = [by_code[c] for c in codes if c in by_code]
@@ -487,6 +542,23 @@ def is_known_name(text: str) -> bool:
     return any(lookup_name(tok) is not None for tok in normalize_tokens(text))
 
 
+def _preferred_spelling(raw: str, canonical: str) -> str:
+    """Choose between the customer's spelling and the gazetteer's canonical one.
+
+    The gazetteer restores hamza and fixes typos (احمد -> أحمد), which we want,
+    but some of its entries are the worse spelling of a pair: they carry
+    tashkeel (عادل -> عَادِل) or swap a final haa for taa marbuta
+    (عبدالله -> عبداللة). Those two we decline, since the name is echoed back
+    to the customer.
+    """
+
+    canonical = strip_diacritics(canonical)
+    ends_haa = {raw[-1:], canonical[-1:]} <= {"ه", "ة"}
+    if ends_haa and raw[:-1] == canonical[:-1]:
+        return raw
+    return canonical
+
+
 def canonicalize_recipient(candidate: str) -> str:
     """Correct each token of a recipient against the gazetteer where possible.
 
@@ -499,5 +571,5 @@ def canonicalize_recipient(candidate: str) -> str:
     out: list[str] = []
     for raw in candidate.split():
         canonical = lookup_name(raw)
-        out.append(canonical if canonical is not None else raw)
+        out.append(_preferred_spelling(raw, canonical) if canonical else raw)
     return " ".join(out) if out else candidate

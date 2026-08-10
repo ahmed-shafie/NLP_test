@@ -46,6 +46,41 @@
 
   <main class="content">
     <section class="card">
+      <h2>Banking Core — per-case configuration</h2>
+      <div class="hint" style="margin-bottom:10px">
+        Transfer, Pay bill, Balance &amp; Add beneficiary use the external
+        <b>API</b>. Beneficiary <b>lookup</b> reads the database directly (no API).
+      </div>
+      <div class="grid2">
+        <div>
+          <label><input type="checkbox" id="bcApiEnabled" /> Enable Banking Core API
+            (transfer · pay bill · balance · add beneficiary)</label>
+          <label for="bcApiUrl">API base URL</label>
+          <input type="text" id="bcApiUrl" class="mono" placeholder="http://localhost:8100" />
+          <label for="bcApiKey">API key <span class="hint">(write-only; blank = keep)</span></label>
+          <input type="password" id="bcApiKey" class="mono" placeholder="••••••" />
+          <label for="bcApiTimeout">Timeout (seconds)</label>
+          <input type="text" id="bcApiTimeout" class="mono" value="10" />
+        </div>
+        <div>
+          <label><input type="checkbox" id="bcLookupEnabled" /> Enable direct-DB
+            beneficiary lookup (disambiguation)</label>
+          <label for="bcLookupUrl">Beneficiary DB URL (SQLAlchemy)</label>
+          <input type="text" id="bcLookupUrl" class="mono" placeholder="sqlite:///./banking-core/banking_core.db" />
+          <label for="bcLookupTable">Beneficiaries table</label>
+          <input type="text" id="bcLookupTable" class="mono" value="beneficiaries" />
+          <label for="bcLookupOwner">Owner column</label>
+          <input type="text" id="bcLookupOwner" class="mono" value="owner_user" />
+        </div>
+      </div>
+      <div class="row">
+        <button id="bcSaveBtn">Save Banking Core config</button>
+        <button class="ghost" id="bcHealthBtn">Test API health</button>
+      </div>
+      <div class="msg" id="bcMsg"></div>
+    </section>
+
+    <section class="card">
       <h2 id="formTitle">Add a connection</h2>
       <div class="grid2">
         <div>
@@ -248,10 +283,62 @@
       catch (e) { showMsg(false, "Delete failed: " + e.message); }
     }
 
+    function bcMsg(ok, text) {
+      const el = $("bcMsg");
+      el.className = "msg " + (ok ? "ok" : "bad");
+      el.textContent = text;
+    }
+    async function loadBankingCore() {
+      try {
+        const c = await api("/admin/api/banking-core/config");
+        $("bcApiEnabled").checked = !!c.api_enabled;
+        $("bcApiUrl").value = c.api_url || "";
+        $("bcApiTimeout").value = c.api_timeout;
+        $("bcApiKey").placeholder = c.api_key_set ? "•••••• (set)" : "not set";
+        $("bcLookupEnabled").checked = !!c.lookup_enabled;
+        $("bcLookupUrl").value = c.lookup_db_url || "";
+        $("bcLookupTable").value = c.lookup_table || "beneficiaries";
+        $("bcLookupOwner").value = c.lookup_owner_column || "owner_user";
+      } catch (e) { bcMsg(false, "Failed to load: " + e.message); }
+    }
+    async function saveBankingCore() {
+      const payload = {
+        api_enabled: $("bcApiEnabled").checked,
+        api_url: $("bcApiUrl").value.trim(),
+        api_timeout: parseFloat($("bcApiTimeout").value) || 10,
+        lookup_enabled: $("bcLookupEnabled").checked,
+        lookup_db_url: $("bcLookupUrl").value.trim(),
+        lookup_table: $("bcLookupTable").value.trim(),
+        lookup_owner_column: $("bcLookupOwner").value.trim(),
+      };
+      const key = $("bcApiKey").value;
+      if (key) payload.api_key = key;
+      try {
+        await api("/admin/api/banking-core/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        $("bcApiKey").value = "";
+        bcMsg(true, "✓ Banking Core config saved.");
+        loadBankingCore();
+      } catch (e) { bcMsg(false, "Save failed: " + e.message); }
+    }
+    async function testBankingCore() {
+      bcMsg(true, "Pinging Banking Core /health…");
+      try {
+        const r = await api("/admin/api/banking-core/health", { method: "POST" });
+        bcMsg(r.ok, (r.ok ? "✓ " : "✗ ") + r.message);
+      } catch (e) { bcMsg(false, "Health check failed: " + e.message); }
+    }
+
     $("saveBtn").onclick = save;
     $("testFormBtn").onclick = testForm;
     $("clearBtn").onclick = clearForm;
+    $("bcSaveBtn").onclick = saveBankingCore;
+    $("bcHealthBtn").onclick = testBankingCore;
     loadProviders().then(loadConnections);
+    loadBankingCore();
   </script>
 </body>
 </html>

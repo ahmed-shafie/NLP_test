@@ -49,6 +49,13 @@ class ConversationResponse(BaseModel):
             "highlighting); empty when the message is clean."
         ),
     )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Advisory pre-flight notes (low funds / FX conversion) shown at "
+            "confirmation. These never block the transaction."
+        ),
+    )
     block_trace: list[BlockTrace] = Field(
         default_factory=list,
         description="Per-block execution trace (timing + status) for this turn.",

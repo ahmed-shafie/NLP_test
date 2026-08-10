@@ -38,6 +38,18 @@ class BillerOption(BaseModel):
     category: str | None = None
 
 
+class BeneficiaryOption(BaseModel):
+    """A candidate beneficiary offered when a first name matches several people."""
+
+    id: str
+    name: str
+    account: str
+    bank: str | None = None
+    currency: str = "SAR"
+    is_favorite: bool = False
+    name_ar: str | None = None
+
+
 class ConversationSlots(BaseModel):
     """Slots gathered across turns (covers both transfers and bill payments)."""
 
@@ -73,6 +85,19 @@ class ConversationState(BaseModel):
     slots: ConversationSlots = Field(default_factory=ConversationSlots)
     pending_slot: str | None = None
     biller_options: list[BillerOption] = Field(default_factory=list)
+    # Beneficiary disambiguation (transfer): candidates + which flow is disambiguating.
+    beneficiary_options: list[BeneficiaryOption] = Field(default_factory=list)
+    disambiguation_kind: str | None = None  # "biller" | "beneficiary"
+    # Whether the transfer recipient has been resolved to a directory beneficiary.
+    beneficiary_resolved: bool = False
+    # In-progress "add beneficiary" flow: the name we are collecting an account
+    # for, the validated account awaiting confirmation, and whether adding was
+    # triggered mid-transfer (so the transfer resumes once they're saved).
+    pending_add_name: str | None = None
+    pending_add_account: str | None = None
+    add_resumes_transfer: bool = False
+    # Advisory pre-flight notes (low funds / FX) shown at confirmation; never block.
+    preflight_warnings: list[str] = Field(default_factory=list)
     turns: int = 0
     # Count of flagged (abusive) turns in this session; drives the repeat-offense
     # cutoff. Kept across ``reset`` so it spans the whole session.
@@ -89,3 +114,10 @@ class ConversationState(BaseModel):
         self.slots = ConversationSlots()
         self.pending_slot = None
         self.biller_options = []
+        self.beneficiary_options = []
+        self.disambiguation_kind = None
+        self.beneficiary_resolved = False
+        self.pending_add_name = None
+        self.pending_add_account = None
+        self.add_resumes_transfer = False
+        self.preflight_warnings = []

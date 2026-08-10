@@ -39,11 +39,25 @@ _AMOUNT_RE = re.compile(
 _EN_RECIPIENT_RE = re.compile(
     r"\bto\s+(?:my\s+)?(?:friend\s+|account\s+|number\s+)?([A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*){0,2})",
 )
-# "إلى أحمد" / "الى احمد" / "لأحمد" (ل only when preceded by whitespace/start)
+# "إلى أحمد" / "الى احمد" / "لأحمد" (ل only when preceded by whitespace/start).
+# "الي" is the common colloquial spelling of "إلى". The name also ends at a
+# trailing amount, so "حوّل الى سارة 500" reads the recipient as "سارة".
 _AR_RECIPIENT_RE = re.compile(
-    r"(?:(?:إلى|الى)\s+|(?:(?<=\s)|^)ل)([^\d،,.]{2,40}?)(?:\s+(?:مبلغ|بمبلغ)|$|[،,.])"
+    r"(?:(?:إلى|الى|الي)\s+|(?:(?<=\s)|^)ل)"
+    r"([^\d،,.]{2,40}?)(?:\s+(?:مبلغ|بمبلغ)|\s*[\d٠-٩]|$|[،,.])"
 )
 
+# "from my savings", "from current account", "from account ending 9988", ...
+_EN_SOURCE_TYPE_RE = re.compile(
+    r"\bfrom\s+(?:my\s+|the\s+)?"
+    r"(savings|saving|current|checking|credit|salary)(?:\s+account)?\b",
+    re.IGNORECASE,
+)
+_EN_SOURCE_ACCT_RE = re.compile(
+    r"\bfrom\s+(?:my\s+|the\s+)?account\s+(?:ending\s+(?:in\s+)?|number\s+|no\.?\s*)?"
+    r"(\w{2,})",
+    re.IGNORECASE,
+)
 _EN_SOURCE_RE = re.compile(
     r"\bfrom\s+(?:my\s+)?([\w'’-]+(?:\s+[\w'’-]+){0,2}?)\s*account\b", re.IGNORECASE
 )
@@ -114,11 +128,14 @@ def extract_recipient(text: str, language: Language) -> str | None:
 def extract_source_account(text: str, language: Language) -> str | None:
     """Return the source account hint (e.g. "savings"), if mentioned."""
 
-    pattern = _AR_SOURCE_RE if language is Language.AR else _EN_SOURCE_RE
-    match = pattern.search(text)
-    if not match:
-        return None
-    return match.group(1).strip(" ,،.") or None
+    if language is Language.AR:
+        match = _AR_SOURCE_RE.search(text)
+        return match.group(1).strip(" ,،.") or None if match else None
+    for pattern in (_EN_SOURCE_TYPE_RE, _EN_SOURCE_ACCT_RE, _EN_SOURCE_RE):
+        match = pattern.search(text)
+        if match:
+            return match.group(1).strip(" ,،.") or None
+    return None
 
 
 # ---- Bill-payment slot extraction --------------------------------------- #
@@ -134,14 +151,47 @@ _AMOUNT_CUE_RE = re.compile(
     r"(?:\bamount\b|بمبلغ|مبلغ)\s*[:#]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE
 )
 _DIGITS_RUN_RE = re.compile(r"\d{2,}")
-_BILL_WORD_RE = re.compile(r"\bbills?\b|فاتورة|فواتير", re.IGNORECASE)
+_BILL_WORD_RE = re.compile(r"\bbills?\b|\binvoices?\b|فاتورة|فواتير", re.IGNORECASE)
 # Free-text biller before the word "bill" (e.g. "City Power Co bill").
 _EN_BILLER_RE = re.compile(
     r"([A-Za-z][\w&'’.-]*(?:\s+[A-Za-z][\w&'’.-]*){0,3})\s+bills?\b", re.IGNORECASE
 )
 # Free-text biller after "فاتورة" (e.g. "فاتورة شركة الكهرباء").
 _AR_BILLER_RE = re.compile(r"فاتورة\s+([^\d،,.]{2,30})")
-_BILLER_STOPWORDS = {"my", "the", "a", "an", "your", "our", "this", "pay"}
+# Words that are never part of a biller name. Besides articles/possessives this
+# covers the request preamble ("I want to pay a bill", "I need to settle a bill")
+# so the verb phrase is not mistaken for the biller.
+_BILLER_STOPWORDS = {
+    "my",
+    "the",
+    "a",
+    "an",
+    "your",
+    "our",
+    "this",
+    "pay",
+    "paying",
+    "settle",
+    "settling",
+    "i",
+    "we",
+    "you",
+    "me",
+    "us",
+    "want",
+    "wants",
+    "wanna",
+    "need",
+    "needs",
+    "would",
+    "like",
+    "to",
+    "please",
+    "let",
+    "can",
+    "could",
+    "help",
+}
 
 
 def _strip_biller_stopwords(value: str) -> str:
