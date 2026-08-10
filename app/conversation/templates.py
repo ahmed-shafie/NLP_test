@@ -100,10 +100,15 @@ _SMALL_TALK: dict[str, dict[Language, str]] = {
 }
 
 # Keyword cues used to pick the right warm reply (matched on normalized tokens).
-# Order matters: the first kind whose cues appear wins, and "are"/"you" are
-# how-are-you cues, so "who are you" / "can you help me" have to be checked
-# against the capability cues first or they'd be answered with "I'm good!".
+# Order matters: the first kind whose cues appear wins, so the kinds run from the
+# least ambiguous cues to the most. "thanks for your help" shares "help" with the
+# capability cues, and "who are you" shares "are"/"you" with the how-are-you
+# cues, so thanks precedes capability and capability precedes how-are-you.
 _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
+    (
+        "thanks",
+        frozenset({"thanks", "thank", "thx", "شكرا", "مشكور", "تسلم", "يعطيك"}),
+    ),
     (
         # "who are you" / "what can you do" / "وش تقدر تسوي": asks what the
         # assistant is for. Safe next to real requests because a message only
@@ -145,10 +150,6 @@ _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
                 "اخبارك",
             }
         ),
-    ),
-    (
-        "thanks",
-        frozenset({"thanks", "thank", "thx", "شكرا", "مشكور", "تسلم", "يعطيك"}),
     ),
     (
         "bye",

@@ -77,8 +77,25 @@ def test_capability_questions_list_what_the_assistant_does(
     assert phrase in templates.small_talk(text, detect_language(text))
 
 
-def test_how_are_you_still_gets_its_own_reply() -> None:
-    assert templates._small_talk_kind("how are you doing") == "how_are_you"
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        # These share cue tokens with each other ("help" is also a capability
+        # cue, "are"/"you" are also how-are-you cues), so each one pins the
+        # cue-order that picks its reply.
+        ("thanks for your help", "thanks"),
+        ("شكرا على المساعدة", "thanks"),
+        ("how are you doing", "how_are_you"),
+        ("good night", "bye"),
+        ("hi there", "greeting"),
+    ],
+)
+def test_each_chit_chat_kind_keeps_its_own_reply(text: str, kind: str) -> None:
+    assert templates._small_talk_kind(text) == kind
+
+
+def test_thanks_and_how_are_you_replies_are_distinct() -> None:
+    assert "Anytime" in templates.small_talk("thanks for your help", Language.EN)
     assert "thanks for asking" in templates.small_talk("how are you doing", Language.EN)
 
 
