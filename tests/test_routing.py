@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import pytest
 
+from app.conversation import templates
 from app.conversation.engine import route_fresh_turn
 from app.nlu.lang import detect_language
-from app.schemas import Intent
+from app.schemas import Intent, Language
 
 
 def _route(text: str) -> Intent:
@@ -54,6 +55,31 @@ def test_balance_questions_reach_the_balance_flow(text: str) -> None:
 )
 def test_chit_chat_gets_a_chit_chat_reply(text: str) -> None:
     assert _route(text) is Intent.SMALL_TALK
+
+
+@pytest.mark.parametrize(
+    ("text", "phrase"),
+    [
+        # "are"/"you" are how-are-you cues, so these must not be answered with
+        # "I'm good, thanks for asking!" — they ask what the assistant does.
+        ("who are you", "I can send money"),
+        ("what can you do", "I can send money"),
+        ("can you help me", "I can send money"),
+        ("من أنت", "أقدر أحوّل فلوس"),
+        ("وش تقدر تسوي", "أقدر أحوّل فلوس"),
+    ],
+)
+def test_capability_questions_list_what_the_assistant_does(
+    text: str, phrase: str
+) -> None:
+    kind = templates._small_talk_kind(text)
+    assert kind == "capability"
+    assert phrase in templates.small_talk(text, detect_language(text))
+
+
+def test_how_are_you_still_gets_its_own_reply() -> None:
+    assert templates._small_talk_kind("how are you doing") == "how_are_you"
+    assert "thanks for asking" in templates.small_talk("how are you doing", Language.EN)
 
 
 @pytest.mark.parametrize(

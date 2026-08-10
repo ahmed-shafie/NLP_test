@@ -100,32 +100,10 @@ _SMALL_TALK: dict[str, dict[Language, str]] = {
 }
 
 # Keyword cues used to pick the right warm reply (matched on normalized tokens).
+# Order matters: the first kind whose cues appear wins, and "are"/"you" are
+# how-are-you cues, so "who are you" / "can you help me" have to be checked
+# against the capability cues first or they'd be answered with "I'm good!".
 _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
-    (
-        "how_are_you",
-        frozenset(
-            {
-                "how",
-                "are",
-                "you",
-                "doing",
-                "going",
-                "كيف",
-                "حالك",
-                "عامل",
-                "ايه",
-                "اخبارك",
-            }
-        ),
-    ),
-    (
-        "thanks",
-        frozenset({"thanks", "thank", "thx", "شكرا", "مشكور", "تسلم", "يعطيك"}),
-    ),
-    (
-        "bye",
-        frozenset({"bye", "goodbye", "night", "later", "وداعا", "باي", "اشوفك"}),
-    ),
     (
         # "who are you" / "what can you do" / "وش تقدر تسوي": asks what the
         # assistant is for. Safe next to real requests because a message only
@@ -150,6 +128,31 @@ _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
                 "الاشياء",
             }
         ),
+    ),
+    (
+        "how_are_you",
+        frozenset(
+            {
+                "how",
+                "are",
+                "you",
+                "doing",
+                "going",
+                "كيف",
+                "حالك",
+                "عامل",
+                "ايه",
+                "اخبارك",
+            }
+        ),
+    ),
+    (
+        "thanks",
+        frozenset({"thanks", "thank", "thx", "شكرا", "مشكور", "تسلم", "يعطيك"}),
+    ),
+    (
+        "bye",
+        frozenset({"bye", "goodbye", "night", "later", "وداعا", "باي", "اشوفك"}),
     ),
     (
         "greeting",
