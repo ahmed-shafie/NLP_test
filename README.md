@@ -352,6 +352,25 @@ missing slot (amount, currency, recipient) in English or Arabic.
 Sessions persist in Redis when `NLU_SESSION_BACKEND=redis` (auto-falls back to an
 in-process store if Redis is unreachable).
 
+## Reply phrasing: two tiers
+
+Every reply is classified in `app/conversation/phrasing.py`, and the tier decides how
+much freedom the wording has:
+
+| Tier | Covers | Wording |
+| --- | --- | --- |
+| `CRITICAL` | confirmations, amounts, IBANs/masked accounts, write outcomes, balances, rendered lists | one fixed template, asserted verbatim by tests, **never** sent to a model |
+| `CONVERSATIONAL` | greetings, thanks, capability answers, "which slot is missing" questions, rejection explanations, out-of-scope redirects | several hand-written phrasings, rotated without immediate repeats; optionally re-worded by the local model |
+
+`phrasing.rewrite()` raises for a critical key, so a money reply cannot reach the model
+even by mistake — `tests/test_phrasing.py` proves it, including with a hostile fake model
+installed. A rewrite is only used if `phrasing.guard()` accepts it: every number and
+every code/masked account in the candidate must already appear in the template, the reply
+must stay in the customer's script, and it must stay short. Anything else silently falls
+back to the template, as does a timeout (`NLU_REPLY_REWRITE_TIMEOUT`, default 0.8 s) or a
+missing Ollama. Rewriting is off by default (`NLU_REPLY_REWRITE_ENABLED=false`);
+variation alone (`NLU_REPLY_VARIATION_ENABLED`) needs no model and costs no latency.
+
 ## Memory Brain (per-user habits + shortcuts)
 
 When a `user_id` is supplied, the assistant remembers each user across conversations so

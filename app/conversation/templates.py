@@ -1,101 +1,238 @@
-"""Bilingual (English/Arabic) response templates for the conversation engine."""
+"""Bilingual (English/Arabic) response templates for the conversation engine.
+
+Replies come in two tiers (see :mod:`app.conversation.phrasing`). Money-critical
+replies — confirmations, amounts, accounts, write outcomes, rendered lists — have
+exactly one wording here and are asserted verbatim by tests. Conversational
+replies carry no money fact, so each one has several equivalent phrasings and is
+rendered through :func:`phrasing.varied`, which rotates between them and may hand
+them to the local LLM for re-wording when that is switched on.
+"""
 
 from __future__ import annotations
 
 import random
 
 from app.config import settings
+from app.conversation import phrasing
 from app.nlu.normalize import normalize, normalize_tokens
 from app.schemas import Intent, Language
 
 _RNG = random.Random()
 
-# Follow-up prompts for each missing slot, keyed by language.
-_SLOT_PROMPTS: dict[str, dict[Language, str]] = {
+# Follow-up prompts for each missing slot, keyed by language. Asked on almost
+# every conversation, so this is where repetition is most noticeable.
+_SLOT_PROMPTS: dict[str, dict[Language, tuple[str, ...]]] = {
     "amount": {
-        Language.EN: "Sure — how much would you like to send?",
-        Language.AR: "تمام — كم المبلغ اللي تحب تحوّله؟",
+        Language.EN: (
+            "Sure — how much would you like to send?",
+            "Happy to — what amount are we sending?",
+            "Of course. How much should I send?",
+        ),
+        Language.AR: (
+            "تمام — كم المبلغ اللي تحب تحوّله؟",
+            "أبشر — كم تبي تحوّل؟",
+            "طيب، وش المبلغ؟",
+        ),
     },
     "currency": {
-        Language.EN: "Got it — which currency are we using?",
-        Language.AR: "تمام — بأي عملة نسوّيها؟",
+        Language.EN: (
+            "Got it — which currency are we using?",
+            "Noted. Which currency should that be in?",
+            "Sure — what currency are we sending?",
+        ),
+        Language.AR: (
+            "تمام — بأي عملة نسوّيها؟",
+            "طيب، وش العملة؟",
+            "أبشر — نحوّلها بأي عملة؟",
+        ),
     },
     "recipient": {
-        Language.EN: "Sure — who would you like to send it to?",
-        Language.AR: "أكيد — لمن تحب تحوّل؟",
+        Language.EN: (
+            "Sure — who would you like to send it to?",
+            "Of course. Who's it going to?",
+            "Happy to — who should I send it to?",
+        ),
+        Language.AR: (
+            "أكيد — لمن تحب تحوّل؟",
+            "تمام — لمن نحوّلها؟",
+            "أبشر — وش اسم اللي تحوّل له؟",
+        ),
     },
     "biller": {
-        Language.EN: "Of course — which bill are we paying?",
-        Language.AR: "أبشر — أي فاتورة نسدّدها؟",
+        Language.EN: (
+            "Of course — which bill are we paying?",
+            "Sure — which biller is it?",
+            "Happy to — whose bill are we paying?",
+        ),
+        Language.AR: (
+            "أبشر — أي فاتورة نسدّدها؟",
+            "تمام — فاتورة أي جهة؟",
+            "طيب، وش الفاتورة اللي نسدّدها؟",
+        ),
     },
     "reference_number": {
-        Language.EN: "Great — what's the bill or reference number?",
-        Language.AR: "تمام — وش رقم الفاتورة أو المرجع؟",
+        Language.EN: (
+            "Great — what's the bill or reference number?",
+            "Perfect. What's the reference number on the bill?",
+            "Sure — send me the bill number, please.",
+        ),
+        Language.AR: (
+            "تمام — وش رقم الفاتورة أو المرجع؟",
+            "حلو — عطني رقم المرجع لو سمحت.",
+            "طيب، رقم الفاتورة كم؟",
+        ),
     },
 }
 
 # Intent-specific overrides (e.g. "pay" instead of "transfer" for the amount).
-_SLOT_PROMPTS_BY_INTENT: dict[Intent, dict[str, dict[Language, str]]] = {
+_SLOT_PROMPTS_BY_INTENT: dict[Intent, dict[str, dict[Language, tuple[str, ...]]]] = {
     Intent.PAY_BILL: {
         "amount": {
-            Language.EN: "Sure — how much would you like to pay?",
-            Language.AR: "تمام — كم المبلغ اللي تحب تدفعه؟",
+            Language.EN: (
+                "Sure — how much would you like to pay?",
+                "Of course. How much are we paying?",
+                "Happy to — what amount should I pay?",
+            ),
+            Language.AR: (
+                "تمام — كم المبلغ اللي تحب تدفعه؟",
+                "أبشر — كم تبي تدفع؟",
+                "طيب، وش المبلغ المطلوب؟",
+            ),
         },
     },
 }
 
-_CHOOSE_ACTION: dict[Language, str] = {
-    Language.EN: "Happy to help! Would you like to (1) send money or (2) pay a bill?",
-    Language.AR: "حياك الله! تحب (١) تحويل فلوس أو (٢) دفع فاتورة؟",
+_CHOOSE_ACTION: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "Happy to help! Would you like to (1) send money or (2) pay a bill?",
+        "Sure, I can help with that — (1) a transfer or (2) a bill payment?",
+        "I'm on it. Are we (1) sending money or (2) paying a bill?",
+    ),
+    Language.AR: (
+        "حياك الله! تحب (١) تحويل فلوس أو (٢) دفع فاتورة؟",
+        "أبشر — نسوّي (١) تحويل ولا (٢) دفع فاتورة؟",
+        "تمام، أنا معك. (١) تحويل فلوس ولا (٢) فاتورة؟",
+    ),
 }
 
-_GREETING: dict[Language, str] = {
-    Language.EN: "Of course — let's get your transfer sorted.",
-    Language.AR: "أبشر، خلنا نجهّز التحويل.",
+_GREETING: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "Of course — let's get your transfer sorted.",
+        "Sure thing — let's set up that transfer.",
+        "Happy to help — let's get this transfer done.",
+    ),
+    Language.AR: (
+        "أبشر، خلنا نجهّز التحويل.",
+        "حياك الله، نجهّز التحويل الآن.",
+        "تمام، خلنا نكمّل التحويل.",
+    ),
 }
 
-_FALLBACK: dict[Language, str] = {
-    Language.EN: "Hmm, I didn't quite catch that 🤔 — I can send money or pay a "
-    'bill. For example, try "send 500 SAR to Ahmed" or "pay my STC bill".',
-    Language.AR: "لم أفهم تماماً 🤔 — أستطيع تحويل الأموال أو دفع الفواتير. "
-    'جرّب مثلاً: "حوّل ٥٠٠ ريال إلى أحمد" أو "ادفع فاتورة STC".',
+_FALLBACK: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "Hmm, I didn't quite catch that 🤔 — I can send money or pay a "
+        'bill. For example, try "send 500 SAR to Ahmed" or "pay my STC bill".',
+        "Sorry, that one's outside what I do 🤔 — I handle transfers and bills. "
+        'Try "send 500 SAR to Ahmed" or "pay my STC bill".',
+        "I'm not sure I follow 🤔 — transfers and bill payments are my thing. "
+        'For example: "send 500 SAR to Ahmed" or "pay my STC bill".',
+    ),
+    Language.AR: (
+        "لم أفهم تماماً 🤔 — أستطيع تحويل الأموال أو دفع الفواتير. "
+        'جرّب مثلاً: "حوّل ٥٠٠ ريال إلى أحمد" أو "ادفع فاتورة STC".',
+        "ما ضبطت عليك 🤔 — أنا أساعدك في التحويلات ودفع الفواتير. "
+        'جرّب: "حوّل ٥٠٠ ريال إلى أحمد" أو "ادفع فاتورة STC".',
+        "هذي بره اللي أقدر عليه 🤔 — تخصصي التحويلات والفواتير. "
+        'مثلاً: "حوّل ٥٠٠ ريال إلى أحمد" أو "ادفع فاتورة STC".',
+    ),
 }
 
 # Warm chit-chat replies, keyed by a small-talk kind. Each one stays helpful by
 # gently steering the customer back to what the assistant can do.
-_SMALL_TALK: dict[str, dict[Language, str]] = {
+_SMALL_TALK: dict[str, dict[Language, tuple[str, ...]]] = {
     "greeting": {
-        Language.EN: "Hey! 👋 Good to see you. I can send money or pay a bill "
-        "for you — what's up?",
-        Language.AR: "هلا والله! 👋 سعيد إني أشوفك. أقدر أحوّل لك فلوس أو أدفع "
-        "فاتورة — وش تحتاج؟",
+        Language.EN: (
+            "Hey! 👋 Good to see you. I can send money or pay a bill "
+            "for you — what's up?",
+            "Hi there! 👋 I can move money or settle a bill — what do you need?",
+            "Hello! 👋 Transfers and bill payments are my thing — how can I help?",
+        ),
+        Language.AR: (
+            "هلا والله! 👋 سعيد إني أشوفك. أقدر أحوّل لك فلوس أو أدفع "
+            "فاتورة — وش تحتاج؟",
+            "حياك الله! 👋 أقدر أحوّل فلوس أو أسدّد فاتورة — وش تبي؟",
+            "أهلين! 👋 تحويل ولا فاتورة؟ أنا جاهز.",
+        ),
     },
     "thanks": {
-        Language.EN: "Anytime! 😊 Need anything else — a transfer or a bill?",
-        Language.AR: "على الرحب! 😊 تحتاج شي ثاني — تحويل أو فاتورة؟",
+        Language.EN: (
+            "Anytime! 😊 Need anything else — a transfer or a bill?",
+            "Anytime, glad to help 😊 Anything else — a transfer or a bill?",
+            "Anytime you like 😊 Want to do a transfer or pay a bill?",
+        ),
+        Language.AR: (
+            "على الرحب! 😊 تحتاج شي ثاني — تحويل أو فاتورة؟",
+            "لا شكر على واجب 😊 تبي شي ثاني — تحويل ولا فاتورة؟",
+            "حاضر دايمًا 😊 عندك شي ثاني — تحويل أو فاتورة؟",
+        ),
     },
     "how_are_you": {
-        Language.EN: "I'm good, thanks for asking! 😄 So, wanna send some money "
-        "or pay a bill?",
-        Language.AR: "تمام والحمد لله، تسلم على السؤال! 😄 تبي تحوّل فلوس أو تدفع "
-        "فاتورة؟",
+        Language.EN: (
+            "I'm good, thanks for asking! 😄 So, wanna send some money "
+            "or pay a bill?",
+            "Doing great, thanks for asking! 😄 Shall we send money or pay a bill?",
+            "All good here, thanks for asking 😄 Fancy a transfer or a bill payment?",
+        ),
+        Language.AR: (
+            "تمام والحمد لله، تسلم على السؤال! 😄 تبي تحوّل فلوس أو تدفع " "فاتورة؟",
+            "بخير والحمد لله، تسلم على السؤال 😄 نسوّي تحويل ولا فاتورة؟",
+            "كله تمام، الله يسلمك 😄 تحب تحويل أو دفع فاتورة؟",
+        ),
     },
     "bye": {
-        Language.EN: "Catch you later! 👋 I'm around whenever you wanna send "
-        "money or pay a bill.",
-        Language.AR: "نشوفك على خير! 👋 أنا موجود وقت ما تبي تحويل أو فاتورة.",
+        Language.EN: (
+            "Catch you later! 👋 I'm around whenever you wanna send "
+            "money or pay a bill.",
+            "See you! 👋 I'm here whenever you need a transfer or a bill paid.",
+            "Take care! 👋 Come back anytime for a transfer or a bill.",
+        ),
+        Language.AR: (
+            "نشوفك على خير! 👋 أنا موجود وقت ما تبي تحويل أو فاتورة.",
+            "في أمان الله! 👋 تلقاني وقت ما تحتاج تحويل أو فاتورة.",
+            "مع السلامة! 👋 أنا حاضر أي وقت لتحويل أو فاتورة.",
+        ),
     },
     "capability": {
-        Language.EN: "I'm your banking assistant 🙌 I can send money, pay bills, "
-        "check your balance and manage your beneficiaries — which one?",
-        Language.AR: "أنا مساعدك البنكي 🙌 أقدر أحوّل فلوس، أدفع فواتير، "
-        "أجيب رصيدك، وأدير مستفيدينك — وش تحب؟",
+        Language.EN: (
+            "I'm your banking assistant 🙌 I can send money, pay bills, "
+            "check your balance and manage your beneficiaries — which one?",
+            "I'm your banking assistant 🙌 transfers, bill payments, your balance "
+            "and your beneficiaries — what would you like?",
+            "Banking assistant here 🙌 I move money, settle bills, read your "
+            "balance and look after your beneficiaries — where do we start?",
+        ),
+        Language.AR: (
+            "أنا مساعدك البنكي 🙌 أقدر أحوّل فلوس، أدفع فواتير، "
+            "أجيب رصيدك، وأدير مستفيدينك — وش تحب؟",
+            "أنا مساعدك البنكي 🙌 تحويلات، فواتير، رصيدك، ومستفيدينك — وش تبي؟",
+            "مساعدك البنكي حاضر 🙌 أحوّل، أسدّد فواتير، أجيب الرصيد، وأرتّب "
+            "المستفيدين — نبدأ بوش؟",
+        ),
     },
     "default": {
-        Language.EN: "Love a good chat! 😊 I'm best with money transfers and "
-        "bills though — wanna give one a go?",
-        Language.AR: "يسعدني السوالف! 😊 بس أنا أشطر في التحويلات ودفع الفواتير "
-        "— نجرّب وحدة؟",
+        Language.EN: (
+            "Love a good chat! 😊 I'm best with money transfers and "
+            "bills though — wanna give one a go?",
+            "I enjoy the chat 😊 but transfers and bills are what I do best — "
+            "shall we try one?",
+            "Happy to chat 😊 though I shine at transfers and bill payments — "
+            "want to start one?",
+        ),
+        Language.AR: (
+            "يسعدني السوالف! 😊 بس أنا أشطر في التحويلات ودفع الفواتير " "— نجرّب وحدة؟",
+            "السوالف حلوة 😊 بس شغلتي التحويلات والفواتير — نجرّب؟",
+            "أنا معك في السوالف 😊 لكن قوّتي في التحويل ودفع الفواتير — نبدأ؟",
+        ),
     },
 }
 
@@ -181,9 +318,17 @@ _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
     ),
 )
 
-_CANCELLED: dict[Language, str] = {
-    Language.EN: "No problem, I've cancelled that for you.",
-    Language.AR: "ولا يهمّك، ألغيت العملية.",
+_CANCELLED: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "No problem, I've cancelled that for you.",
+        "Done — I've cancelled it.",
+        "Sure, cancelled. Nothing has been sent.",
+    ),
+    Language.AR: (
+        "ولا يهمّك، ألغيت العملية.",
+        "تمام، ألغيتها.",
+        "أبشر، ألغيت العملية وما انرسل شي.",
+    ),
 }
 
 
@@ -191,12 +336,17 @@ def slot_prompt(slot: str, language: Language, intent: Intent | None = None) -> 
     if intent is not None:
         override = _SLOT_PROMPTS_BY_INTENT.get(intent, {}).get(slot)
         if override is not None:
-            return override[language]
-    return _SLOT_PROMPTS.get(slot, {}).get(language, f"Please provide the {slot}.")
+            return phrasing.varied(
+                f"slot_prompt:{intent.value}:{slot}", override, language
+            )
+    variants = _SLOT_PROMPTS.get(slot)
+    if variants is None:
+        return f"Please provide the {slot}."
+    return phrasing.varied(f"slot_prompt:{slot}", variants, language)
 
 
 def choose_action(language: Language) -> str:
-    return _CHOOSE_ACTION[language]
+    return phrasing.varied("choose_action", _CHOOSE_ACTION, language)
 
 
 def choose_biller(names: list[str], language: Language) -> str:
@@ -280,17 +430,31 @@ def choose_beneficiary(
     )
 
 
+_BENEFICIARY_NOT_FOUND: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        'Hmm, I don\'t have anyone saved as "{name}" yet 🤔 — want me to add '
+        'them? Just send their account/IBAN, or say "no" to skip.',
+        'I can\'t find "{name}" in your beneficiaries 🤔 — shall I add them? '
+        'Send their account/IBAN, or reply "no" to skip.',
+        '"{name}" isn\'t saved with me yet 🤔 — happy to add them: send the '
+        'account/IBAN, or say "no" to leave it.',
+    ),
+    Language.AR: (
+        'ما لقيت أحد محفوظ باسم "{name}" 🤔 — تحب أضيفه؟ '
+        'أرسل لي رقم الحساب/الآيبان، أو اكتب "لا" إذا تبي تتركها.',
+        'ما لقيت "{name}" في مستفيدينك 🤔 — أضيفه؟ عطني رقم الحساب/'
+        'الآيبان، أو اكتب "لا" للتجاوز.',
+        '"{name}" ما هو محفوظ لدي للحين 🤔 — تبي أضيفه؟ أرسل رقم الحساب '
+        'أو الآيبان، أو اكتب "لا".',
+    ),
+}
+
+
 def beneficiary_not_found(name: str, language: Language) -> str:
     """No beneficiary matched; offer to add one via the external API."""
 
-    if language is Language.AR:
-        return (
-            f'ما لقيت أحد محفوظ باسم "{name}" 🤔 — تحب أضيفه؟ '
-            'أرسل لي رقم الحساب/الآيبان، أو اكتب "لا" إذا تبي تتركها.'
-        )
-    return (
-        f'Hmm, I don\'t have anyone saved as "{name}" yet 🤔 — want me to add '
-        'them? Just send their account/IBAN, or say "no" to skip.'
+    return phrasing.varied(
+        "beneficiary_not_found", _BENEFICIARY_NOT_FOUND, language, name=name
     )
 
 
@@ -320,18 +484,43 @@ def beneficiary_add_failed(
     )
 
 
+_ASK_BENEFICIARY_NAME: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "Sure — what's the name of the beneficiary you'd like to add?",
+        "Of course. Who are we adding?",
+        "Happy to — what name should I save them under?",
+    ),
+    Language.AR: (
+        "تمام — وش اسم المستفيد اللي تبي تضيفه؟",
+        "أبشر — مين اللي نضيفه؟",
+        "طيب، عطني اسم المستفيد.",
+    ),
+}
+
+_ASK_BENEFICIARY_ACCOUNT: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        'And what\'s the IBAN or account number for "{name}"?',
+        'Great — what IBAN or account number should I save for "{name}"?',
+        "Now the account: what's \"{name}\"'s IBAN or account number?",
+    ),
+    Language.AR: (
+        'وش رقم الآيبان أو الحساب الخاص بـ "{name}"؟',
+        'تمام — عطني آيبان "{name}" أو رقم حسابه.',
+        'والحساب؟ وش آيبان "{name}" أو رقم حسابه؟',
+    ),
+}
+
+
 def ask_beneficiary_name(language: Language) -> str:
     """Opening question of the standalone add-beneficiary flow."""
 
-    if language is Language.AR:
-        return "تمام — وش اسم المستفيد اللي تبي تضيفه؟"
-    return "Sure — what's the name of the beneficiary you'd like to add?"
+    return phrasing.varied("ask_beneficiary_name", _ASK_BENEFICIARY_NAME, language)
 
 
 def ask_beneficiary_account(name: str, language: Language) -> str:
-    if language is Language.AR:
-        return f'وش رقم الآيبان أو الحساب الخاص بـ "{name}"؟'
-    return f'And what\'s the IBAN or account number for "{name}"?'
+    return phrasing.varied(
+        "ask_beneficiary_account", _ASK_BENEFICIARY_ACCOUNT, language, name=name
+    )
 
 
 # Why an account was rejected -> how to fix it, per language.
@@ -360,18 +549,36 @@ _ACCOUNT_ERRORS: dict[str, dict[Language, str]] = {
 }
 
 
+_INVALID_ACCOUNT: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "Sorry, {detail}. Please send a valid IBAN (e.g. SA0380000000608010167519) "
+        'or an account number to add "{name}", or reply "no" to cancel.',
+        "Hmm, {detail}. Send a valid IBAN (e.g. SA0380000000608010167519) or an "
+        'account number for "{name}", or reply "no" to cancel.',
+        "That didn't work — {detail}. Try a valid IBAN (e.g. "
+        'SA0380000000608010167519) or an account number for "{name}", or say "no".',
+    ),
+    Language.AR: (
+        "{detail}. أرسل آيبان صحيح (مثل SA0380000000608010167519) أو رقم "
+        'حساب لإضافة "{name}"، أو اكتب "لا" للإلغاء.',
+        "عذرًا، {detail}. عطني آيبان صحيح (مثل SA0380000000608010167519) أو رقم "
+        'حساب لـ "{name}"، أو اكتب "لا" للإلغاء.',
+        "ما مشى — {detail}. جرّب آيبان صحيح (مثل SA0380000000608010167519) أو رقم "
+        'حساب لـ "{name}"، أو اكتب "لا".',
+    ),
+}
+
+
 def beneficiary_invalid_account(name: str, reason: str, language: Language) -> str:
     """Explain precisely why the account was rejected and re-ask."""
 
     detail = _ACCOUNT_ERRORS.get(reason, _ACCOUNT_ERRORS["not_an_account"])[language]
-    if language is Language.AR:
-        return (
-            f"{detail}. أرسل آيبان صحيح (مثل SA0380000000608010167519) أو رقم "
-            f'حساب لإضافة "{name}"، أو اكتب "لا" للإلغاء.'
-        )
-    return (
-        f"Sorry, {detail}. Please send a valid IBAN (e.g. SA0380000000608010167519) "
-        f'or an account number to add "{name}", or reply "no" to cancel.'
+    return phrasing.varied(
+        "beneficiary_invalid_account",
+        _INVALID_ACCOUNT,
+        language,
+        detail=detail,
+        name=name,
     )
 
 
@@ -406,18 +613,32 @@ def beneficiary_add_completed(name: str, masked: str, language: Language) -> str
     )
 
 
+_ADD_INVALID_ACCOUNT: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "That doesn't look like a valid account number or IBAN. Send a full "
+        'IBAN (e.g. SA followed by digits) or an account number to add "{name}", '
+        'or reply "no" to cancel.',
+        "I couldn't read that as a valid account number or IBAN. Send a full IBAN "
+        '(SA followed by digits) or an account number for "{name}", or reply "no".',
+        "That isn't a valid account number or IBAN yet. A full IBAN (SA followed by "
+        'digits) or an account number works for "{name}" — or reply "no" to cancel.',
+    ),
+    Language.AR: (
+        "هذا لا يبدو رقم حساب أو آيبان صالحًا. أرسل آيبان كاملًا (مثل SA "
+        'متبوعة بأرقام) أو رقم حساب لإضافة "{name}"، أو اكتب "لا" للإلغاء.',
+        "ما قدرت أقراه كرقم حساب أو آيبان صالح. أرسل آيبان كامل (SA وبعدها "
+        'أرقام) أو رقم حساب لـ "{name}"، أو اكتب "لا".',
+        "لسه ما وصلني رقم حساب أو آيبان صالح. آيبان كامل (SA وبعدها أرقام) "
+        'أو رقم حساب يكفي لـ "{name}"، أو اكتب "لا" للإلغاء.',
+    ),
+}
+
+
 def beneficiary_add_invalid_account(name: str, language: Language) -> str:
     """The reply wasn't a plausible account number / IBAN."""
 
-    if language is Language.AR:
-        return (
-            "هذا لا يبدو رقم حساب أو آيبان صالحًا. أرسل آيبان كاملًا (مثل SA "
-            f'متبوعة بأرقام) أو رقم حساب لإضافة "{name}"، أو اكتب "لا" للإلغاء.'
-        )
-    return (
-        "That doesn't look like a valid account number or IBAN. Send a full "
-        f'IBAN (e.g. SA followed by digits) or an account number to add "{name}", '
-        'or reply "no" to cancel.'
+    return phrasing.varied(
+        "beneficiary_add_invalid_account", _ADD_INVALID_ACCOUNT, language, name=name
     )
 
 
@@ -446,26 +667,51 @@ def list_beneficiaries(
     )
 
 
+_NO_BENEFICIARIES: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "You don't have any saved beneficiaries yet 🙂 — want to add one? "
+        "Just tell me the name and their account/IBAN.",
+        "You don't have any saved beneficiaries so far 🙂 — shall we add one? "
+        "Give me a name and an account/IBAN.",
+        "Nothing saved yet — you don't have any saved beneficiaries 🙂 Want to add "
+        "the first one? Send me a name and an account/IBAN.",
+    ),
+    Language.AR: (
+        "ما عندك مستفيدين محفوظين للحين 🙂 — تحب تضيف واحد؟ "
+        "قل لي الاسم ورقم الحساب/الآيبان.",
+        "قائمة المستفيدين فارغة للحين 🙂 — نضيف واحد؟ عطني الاسم ورقم "
+        "الحساب أو الآيبان.",
+        "ما عندك مستفيدين محفوظين بعد 🙂 تبي نضيف أول واحد؟ أرسل الاسم " "والآيبان.",
+    ),
+}
+
+_BENEFICIARIES_UNAVAILABLE: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "I couldn't fetch your beneficiaries right now. Please try again later.",
+        "I couldn't fetch your beneficiaries at the moment — please try again "
+        "shortly.",
+        "Your beneficiary list isn't reachable right now. Please try again in a bit.",
+    ),
+    Language.AR: (
+        "تعذّر جلب قائمة المستفيدين الآن. حاول مرة أخرى لاحقًا.",
+        "ما قدرت أجيب قائمة المستفيدين حاليًا — جرّب بعد شوية.",
+        "قائمة المستفيدين ما هي متاحة اللحظة. حاول مرة ثانية بعد قليل.",
+    ),
+}
+
+
 def no_beneficiaries(language: Language) -> str:
     """The customer has no saved beneficiaries yet."""
 
-    if language is Language.AR:
-        return (
-            "ما عندك مستفيدين محفوظين للحين 🙂 — تحب تضيف واحد؟ "
-            "قل لي الاسم ورقم الحساب/الآيبان."
-        )
-    return (
-        "You don't have any saved beneficiaries yet 🙂 — want to add one? "
-        "Just tell me the name and their account/IBAN."
-    )
+    return phrasing.varied("no_beneficiaries", _NO_BENEFICIARIES, language)
 
 
 def beneficiaries_unavailable(language: Language) -> str:
     """The beneficiary directory could not be reached."""
 
-    if language is Language.AR:
-        return "تعذّر جلب قائمة المستفيدين الآن. حاول مرة أخرى لاحقًا."
-    return "I couldn't fetch your beneficiaries right now. Please try again later."
+    return phrasing.varied(
+        "beneficiaries_unavailable", _BENEFICIARIES_UNAVAILABLE, language
+    )
 
 
 _ACCOUNT_TYPE_AR: dict[str, str] = {
@@ -485,18 +731,41 @@ def balance_reply(
     return f"You've got {balance} {currency} in your {account_type} account. 💰"
 
 
+_BALANCE_UNAVAILABLE: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "I couldn't fetch your balance right now. Please try again later.",
+        "I couldn't reach your balance at the moment — please try again shortly.",
+        "Your balance isn't available right now. Please try again in a bit.",
+    ),
+    Language.AR: (
+        "تعذّر جلب الرصيد الآن. حاول مرة أخرى لاحقًا.",
+        "ما قدرت أجيب الرصيد حاليًا — جرّب بعد شوية.",
+        "الرصيد ما هو متاح اللحظة. حاول مرة ثانية بعد قليل.",
+    ),
+}
+
+_RESUME_NOTE: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "Okay, back to where we were —",
+        "Right, back to your transfer —",
+        "Now, where we left off —",
+    ),
+    Language.AR: (
+        "طيّب، نرجع للتحويل —",
+        "تمام، نكمّل من وين وقّفنا —",
+        "أبشر، نرجع للطلب —",
+    ),
+}
+
+
 def balance_unavailable(language: Language) -> str:
-    if language is Language.AR:
-        return "تعذّر جلب الرصيد الآن. حاول مرة أخرى لاحقًا."
-    return "I couldn't fetch your balance right now. Please try again later."
+    return phrasing.varied("balance_unavailable", _BALANCE_UNAVAILABLE, language)
 
 
 def resume_note(language: Language) -> str:
     """Short connector shown before re-emitting an in-progress prompt."""
 
-    if language is Language.AR:
-        return "طيّب، نرجع للتحويل —"
-    return "Okay, back to where we were —"
+    return phrasing.varied("resume_note", _RESUME_NOTE, language)
 
 
 def warnings_note(warnings: list[str], language: Language) -> str:
@@ -523,15 +792,15 @@ def warnings_note(warnings: list[str], language: Language) -> str:
 
 
 def greeting(language: Language) -> str:
-    return _GREETING[language]
+    return phrasing.varied("greeting", _GREETING, language)
 
 
 def fallback(language: Language) -> str:
-    return _FALLBACK[language]
+    return phrasing.varied("fallback", _FALLBACK, language)
 
 
 def cancelled(language: Language) -> str:
-    return _CANCELLED[language]
+    return phrasing.varied("cancelled", _CANCELLED, language)
 
 
 # Calm, professional replies to abusive ("ribald") input. Multiple variants per
@@ -584,7 +853,7 @@ _REPEAT_OFFENSE: dict[Language, str] = {
 def _pick_variant(count: int, last_index: int | None) -> int:
     """Pick a variant index, avoiding ``last_index`` so it isn't repeated."""
 
-    if count <= 1:
+    if count <= 1 or not settings.reply_variation_enabled:
         return 0
     seed = settings.reply_variation_seed
     rng = random.Random(seed) if seed is not None else _RNG
@@ -612,7 +881,7 @@ def inappropriate(
         fallback_word = "that" if language is Language.EN else "ذلك"
         words = ", ".join(f'"{w}"' for w in flagged) or fallback_word
         reply = reply.replace("{words}", words)
-    return reply, index
+    return phrasing.rewrite("inappropriate", reply, language), index
 
 
 def repeat_offense(language: Language) -> str:
@@ -705,7 +974,7 @@ def small_talk(text: str, language: Language) -> str:
     """Return a warm chit-chat reply, picking the kind from ``text`` cues."""
 
     kind = _small_talk_kind(text) or "default"
-    return _SMALL_TALK[kind][language]
+    return phrasing.varied(f"small_talk:{kind}", _SMALL_TALK[kind], language)
 
 
 def confirm_prompt(

@@ -114,6 +114,7 @@ def test_genuine_abuse_still_flagged_above_threshold(engine: ConversationEngine)
 
 def test_replies_vary_between_turns(engine: ConversationEngine, monkeypatch):
     monkeypatch.setattr(settings, "moderation_max_strikes", 10)
+    monkeypatch.setattr(settings, "reply_variation_enabled", True)
     first = engine.handle("you are stupid", "m3").reply
     second = engine.handle("you are stupid", "m3").reply
     assert first != second  # no immediate repeat
