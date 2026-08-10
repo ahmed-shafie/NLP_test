@@ -71,8 +71,12 @@ only `test` rows for evaluation — no leakage.
 | S1 current regex + gazetteer | **1.000** | 0.500 | **71 / 400 = 17.8 %** | 0.010 | 1.2 ms |
 | S2 camelbert-mix-ner (off the shelf) | 0.432 | 0.700 | 8 / 400 = 2.0 % | 0.605 | 7.9 ms |
 | S3 camelbert-msa-ner (off the shelf) | 0.649 | 0.850 | 15 / 400 = 3.8 % | 0.650 | 8.1 ms |
-| S4 fine-tuned | 0.919 | 0.950 | 8 / 400 = 2.0 % | 0.755 | 8.3 ms |
-| **S5 fine-tuned + directory tie-break** | **1.000** | **1.000** | **8 / 400 = 2.0 %** | **0.765** | 8.4 ms |
+| S4 fine-tuned | 0.946 | 1.000 | 8 / 400 = 2.0 % | 0.750 | 8.5 ms |
+| **S5 fine-tuned + directory tie-break** | **1.000** | **1.000** | **8 / 400 = 2.0 %** | **0.760** | 8.5 ms |
+
+`massive-per` understates every system: MASSIVE annotates the attached preposition as part of
+the name (gold `لمريم`), which is exactly what we strip. Scoring `مريم` against gold `لمريم` as
+correct, S5 reaches **176 / 200 = 0.880**.
 
 `gold(37) = 1.000` for the current system is **not** a compliment: those 37 rows were written
 against these regexes. The columns that carry information are `hard` and the two MASSIVE ones.
@@ -84,7 +88,10 @@ The first fine-tune used only our generated banking sentences plus 30 hand-writt
 | version | gold | hard | invented on massive-neg |
 |---|---|---|---|
 | trained on our data only | 0.919 | 0.950 | **181 / 400 = 45.3 %** |
-| + 3 700 real MASSIVE `train` rows as negatives | 0.919 | 0.950 | **8 / 400 = 2.0 %** |
+| + 3 700 real MASSIVE `train` rows as negatives | 0.946 | 1.000 | **8 / 400 = 2.0 %** |
+
+(the accuracy of the first row was measured before the `لل` decoding fix, which is worth a
+couple of points there and nothing at all on the invention rate)
 
 Same architecture, same banking accuracy, **22× fewer invented beneficiaries.** A model
 trained only on sentences we imagined learns "any unfamiliar token after a preposition is a
@@ -96,12 +103,13 @@ name" — literally the gazetteer's bug, relearned. The fix was data, not modell
 `person`** (singers are tagged `artist_name`):
 
 ```
-ملحم بركات                              → pred 'ملحم بركات'   (a person; gold says None)
-خل ارتاح لمحمد عبده جاهزة عشان تشغلها   → pred 'محمد عبده'    (a person; artist_name)
-ذكرني بموعدي الثلاثاء مع منى            → pred 'منى'          (a person; gold has no slot)
-أرسل email إلى أمير المنطقة             → pred 'المنطقة'      ← a genuine error
+خل ارتاح لمحمد عبده جاهزة عشان تشغلها   → pred 'محمد عبده'  (a person; tagged artist_name)
+ذكرني بموعدي الثلاثاء مع منى            → pred 'منى'        (a person; gold has no slot)
+ملحم بركات                              → pred 'م بركات'    (a person, span cut short)
+أرسل email لجدتي يقول بنزورك يوم السبت   → pred 'دتي'        ← a genuine error
 ```
-So the true invention rate is **below 2 %**, and one of the eight is a real mistake.
+So the true invention rate is **below 2 %**. Two of the eight are real mistakes, and both are a
+span that starts mid-word — which the beneficiary lookup would reject anyway.
 
 The current system's failures on the same slice are not names at all — they are the regex
 swallowing whole clauses:

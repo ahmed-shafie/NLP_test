@@ -151,12 +151,15 @@ def _merge_adjacent(spans: list[dict[str, int]], text: str) -> list[tuple[int, s
 
 
 def _strip_proclitic(span: str) -> str:
-    """Drop the attached preposition ("لمحمد" -> "محمد", "لليلى" -> "ليلى")."""
+    """Drop the attached preposition ("لمحمد" -> "محمد", "لليلى" -> "ليلى").
+
+    One lam only: "لل" is either ل + a name starting with lam or ل + the definite
+    article, and both readings keep the second lam. Cutting two characters here
+    turned "لليلى" into "يلى".
+    """
 
     head, _, rest = span.partition(" ")
-    if head.startswith("لل") and len(head) > 4:
-        head = head[2:]
-    elif head.startswith("ل") and len(head) > 3:
+    if head.startswith("ل") and len(head) > 3:
         head = head[1:]
     return f"{head} {rest}".strip() if rest else head
 
@@ -164,16 +167,20 @@ def _strip_proclitic(span: str) -> str:
 def _proclitic_candidates(span: str) -> list[str]:
     """Readings of a span whose first word may carry an attached "ل".
 
-    "لمحمد" -> محمد, and "لليلى" is ambiguous: ل+ليلى (a name starting with ل)
-    or لل+يلى. Both readings are offered; the beneficiary list decides.
+    "لمحمد" -> محمد. "لليلى" is ambiguous: ل + ليلى (a name starting with lam) or
+    ل + الـ with the article absorbed, i.e. للحربي -> الحربي. Both readings are
+    offered and the beneficiary list decides.
     """
 
     head, _, rest = span.partition(" ")
+
+    def phrase(word: str) -> str:
+        return f"{word} {rest}".strip() if rest else word
+
     out = []
-    for cut in (1, 2):
-        if head.startswith("ل" * cut) and len(head) - cut >= 3:
-            candidate = head[cut:]
-            out.append(f"{candidate} {rest}".strip() if rest else candidate)
+    if head.startswith("ل") and len(head) > 3:
+        out.append(phrase(head[1:]))
+        out.append(phrase(f"ال{head[1:]}"))
     out.append(span)
     return out
 

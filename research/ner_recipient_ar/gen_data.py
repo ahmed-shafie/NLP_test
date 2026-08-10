@@ -126,7 +126,9 @@ def arabic_given_names(limit: int = 1200) -> list[str]:
             # speech: single/double-letter "names" and function words.
             if len(ar) >= 4 and " " not in ar:
                 names.append(ar)
-    random.shuffle(names)
+    # Seeded here, not in build(): the train/holdout pool split must be identical
+    # on every run or the reported numbers cannot be reproduced.
+    random.Random(101).shuffle(names)
     return names[:limit]
 
 
@@ -165,15 +167,28 @@ def full_name(pool: list[str]) -> str:
     return name
 
 
-def with_prep(name: str) -> tuple[str, int]:
-    """Return the rendered "preposition + name" and the offset of the name."""
+def with_prep(body: str) -> tuple[str, int, str]:
+    """Render "preposition + body"; return it with the body's offset and surface.
+
+    The surface form can be shorter than the body: the attached preposition
+    absorbs a following definite article, so ل + الحربي is written "للحربي" and
+    the name shares its lam with the preposition (surface "لحربي"). Emitting
+    "لالحربي" instead would train the model on Arabic nobody types.
+    """
 
     prep = random.choice(PREPS)
-    if prep in {"ل", "لـ"}:
-        # Attached preposition: "لمحمد". Arabic writes "لل" before a name
-        # starting with alef-lam.
-        return f"{prep}{name}", len(prep)
-    return f"{prep}{name}", len(prep)
+    if prep in {"ل", "لـ"} and body.startswith("ال"):
+        surface = f"ل{body[2:]}"
+        return f"ل{surface}", 1, surface
+    return f"{prep}{body}", len(prep), body
+
+
+def _name_surface(name: str, relation: str, body: str) -> str:
+    """The name as it appears in the text: it loses its alef only when it is the
+    word the preposition attached to (no relation word in between)."""
+
+    merged = len(body) < len(relation) + len(name)
+    return name[1:] if merged and not relation else name
 
 
 def render_positive(pool: list[str]) -> tuple[str, int, int]:
@@ -186,16 +201,20 @@ def render_positive(pool: list[str]) -> tuple[str, int, int]:
     tail = random.choice(TAILS)
     relation = random.choice(RELATIONS) if random.random() < 0.2 else ""
 
+    surface = name
+
     if shape < 0.55:  # verb, amount, then the name
         head = f"{pre}{verb} {amt}{cur} "
-        prep_name, offset = with_prep(f"{relation}{name}")
-        text = f"{head}{prep_name}{tail}"
-        start = len(head) + offset + len(relation)
+        prep_body, offset, body = with_prep(f"{relation}{name}")
+        text = f"{head}{prep_body}{tail}"
+        surface = _name_surface(name, relation, body)
+        start = len(head) + offset + len(body) - len(surface)
     elif shape < 0.75:  # verb, name, then the amount
         head = f"{pre}{verb} "
-        prep_name, offset = with_prep(f"{relation}{name}")
-        text = f"{head}{prep_name} {amt}{cur}{tail}"
-        start = len(head) + offset + len(relation)
+        prep_body, offset, body = with_prep(f"{relation}{name}")
+        text = f"{head}{prep_body} {amt}{cur}{tail}"
+        surface = _name_surface(name, relation, body)
+        start = len(head) + offset + len(body) - len(surface)
     elif shape < 0.88:  # name first, no preposition at all
         verb_phrase = random.choice(
             [
@@ -210,12 +229,13 @@ def render_positive(pool: list[str]) -> tuple[str, int, int]:
         start = 0
     else:  # no amount at all - the engine will ask for it
         head = f"{pre}{verb} "
-        prep_name, offset = with_prep(name)
-        text = f"{head}{prep_name}"
+        prep_body, offset, body = with_prep(name)
+        text = f"{head}{prep_body}"
+        surface = body
         start = len(head) + offset
 
-    assert text[start : start + len(name)] == name, (text, start, name)
-    return text, start, start + len(name)
+    assert text[start : start + len(surface)] == surface, (text, start, surface)
+    return text, start, start + len(surface)
 
 
 def build(rows: int, pool: list[str], seed: int) -> list[dict[str, object]]:

@@ -72,7 +72,7 @@ slices: [('gold(37)', 37), ('hard(20)', 20), ('massive-neg(400)', 400), ('massiv
      x اكتب email جديد لسعود  gold='لسعود' pred='عود'
      x وين بيكون حفل عيد ميلاد فاطمة  gold='فاطمة' pred=None
      ... 71 more
-  mean latency: 7.9 ms/utterance
+  mean latency: 8.3 ms/utterance
 
 ### HF CAMeL-Lab/bert-base-arabic-camelbert-msa-ner
   gold(37): 24/37 = 0.649
@@ -87,7 +87,7 @@ slices: [('gold(37)', 37), ('hard(20)', 20), ('massive-neg(400)', 400), ('massiv
      ... 5 more
   hard(20): 17/20 = 0.850   (false positives on 8 negatives: 0)
      x ودّي 300 لسارة  gold='سارة' pred=None
-     x لو سمحت حول لليلى عمر 400 ريال  gold='ليلى عمر' pred='يلى'
+     x لو سمحت حول لليلى عمر 400 ريال  gold='ليلى عمر' pred='ليلى'
      x ارسل 75 ريال لمنى  gold='منى' pred=None
   massive-neg(400): 385/400 = 0.963   (false positives on 400 negatives: 15)
      x أرسل أخبار كاظم  gold=None pred='كاظم'
@@ -111,23 +111,21 @@ slices: [('gold(37)', 37), ('hard(20)', 20), ('massive-neg(400)', 400), ('massiv
      ... 62 more
   mean latency: 8.1 ms/utterance
 
-### HF /home/ubuntu/ner-poc/model-per
-  gold(37): 34/37 = 0.919
+### HF /home/ubuntu/repos/NLP-test/research/ner_recipient_ar/model-per
+  gold(37): 35/37 = 0.946
      x حول 700 إلى ليلى  gold='ليلى' pred='يلى'
      x أرسل 75 ريال إلى ليلى عمر  gold='ليلى عمر' pred='يلى عمر'
-     x تكفى حول 80 لليلى  gold='ليلى' pred='يلى'
-  hard(20): 19/20 = 0.950   (false positives on 8 negatives: 0)
-     x لو سمحت حول لليلى عمر 400 ريال  gold='ليلى عمر' pred='يلى عمر'
+  hard(20): 20/20 = 1.000   (false positives on 8 negatives: 0)
   massive-neg(400): 392/400 = 0.980   (false positives on 400 negatives: 8)
      x أرسل أخبار كاظم  gold=None pred='كاظم'
-     x ملحم بركات  gold=None pred='ملحم بركات'
+     x ملحم بركات  gold=None pred='م بركات'
+     x أرسل email لجدتي يقول بنزورك يوم السبت نشوفك على خير  gold=None pred='دتي'
      x زينه عماد  gold=None pred='عماد'
      x أبغاه يقدر يحسب الجواب من نتائج البحث مثل ما يسوي أحمد المصري  gold=None pred='أحمد المصري'
      x خل ارتاح لمحمد عبده جاهزة عشان تشغلها بعد هذي  gold=None pred='محمد عبده'
      x ذكرني بموعدي الثلاثاء مع منى  gold=None pred='منى'
-     x أرسل email إلى أمير المنطقة  gold=None pred='المنطقة'
-     x محمد عبده  gold=None pred='محمد'
-  massive-per(200): 151/200 = 0.755
+     x محمد عبده  gold=None pred='محمد عبده'
+  massive-per(200): 150/200 = 0.750
      x هل تعرف رقم الهاتف الخاص بمها محمد  gold='الخاص بمها محمد' pred='بمها محمد'
      x شوف الإيميل اذا وصلني أي شي من ليلى  gold='ليلى' pred='يلى'
      x أرسل email لمريم  gold='لمريم' pred='مريم'
@@ -136,22 +134,22 @@ slices: [('gold(37)', 37), ('hard(20)', 20), ('massive-neg(400)', 400), ('massiv
      x سوي قائمة لجدول حفلات داليا مبارك  gold='داليا مبارك' pred=None
      x اكتب email جديد لسعود  gold='لسعود' pred='سعود'
      x أرسل email لخالد واسأله في أي وقت بيكون في البيت الليلة  gold='لخالد' pred='خالد'
-     ... 41 more
-  mean latency: 8.3 ms/utterance
+     ... 42 more
+  mean latency: 8.5 ms/utterance
 
 ### HF fine-tuned + beneficiary-directory tie-break
   gold(37): 37/37 = 1.000
   hard(20): 20/20 = 1.000   (false positives on 8 negatives: 0)
   massive-neg(400): 392/400 = 0.980   (false positives on 400 negatives: 8)
      x أرسل أخبار كاظم  gold=None pred='كاظم'
-     x ملحم بركات  gold=None pred='ملحم بركات'
+     x ملحم بركات  gold=None pred='م بركات'
+     x أرسل email لجدتي يقول بنزورك يوم السبت نشوفك على خير  gold=None pred='دتي'
      x زينه عماد  gold=None pred='عماد'
      x أبغاه يقدر يحسب الجواب من نتائج البحث مثل ما يسوي أحمد المصري  gold=None pred='أحمد المصري'
      x خل ارتاح لمحمد عبده جاهزة عشان تشغلها بعد هذي  gold=None pred='محمد عبده'
      x ذكرني بموعدي الثلاثاء مع منى  gold=None pred='منى'
-     x أرسل email إلى أمير المنطقة  gold=None pred='المنطقة'
-     x محمد عبده  gold=None pred='محمد'
-  massive-per(200): 153/200 = 0.765
+     x محمد عبده  gold=None pred='محمد عبده'
+  massive-per(200): 152/200 = 0.760
      x هل تعرف رقم الهاتف الخاص بمها محمد  gold='الخاص بمها محمد' pred='بمها محمد'
      x أرسل email لمريم  gold='لمريم' pred='مريم'
      x latest bill simmons podcast  gold='bill simmons' pred=None
@@ -160,5 +158,5 @@ slices: [('gold(37)', 37), ('hard(20)', 20), ('massive-neg(400)', 400), ('massiv
      x اكتب email جديد لسعود  gold='لسعود' pred='سعود'
      x أرسل email لخالد واسأله في أي وقت بيكون في البيت الليلة  gold='لخالد' pred='خالد'
      x ممكن ترسل دعوة من التقويم لسامي و جمانة للفطور الساعة احدعش الظهر يوم الثلوث  gold='لسامي و جمانة' pred='سامي'
-     ... 39 more
-  mean latency: 8.4 ms/utterance
+     ... 40 more
+  mean latency: 8.5 ms/utterance
