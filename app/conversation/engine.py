@@ -117,8 +117,36 @@ _CHOICE_FILLERS = {
 
 
 # Cues that a message is a balance inquiry ("what's my balance", "كم رصيدي").
-_BALANCE_CUES = {"balance", "رصيد", "رصيدي", "الرصيد"}
-_BALANCE_PHRASES = ("how much do i have", "كم عندي", "كم لدي")
+# Normalized, so Arabic letter forms (رصيدى) and trailing punctuation ("balance?")
+# still match.
+_BALANCE_CUES = {
+    normalize(w)
+    for w in (
+        "balance",
+        "ballance",
+        "رصيد",
+        "رصيدي",
+        "الرصيد",
+        "فلوسي",
+    )
+}
+_BALANCE_PHRASES = tuple(
+    normalize(p)
+    for p in (
+        "how much do i have",
+        "how much money",
+        "how much is left",
+        "what is left in my account",
+        "available funds",
+        "do i have enough",
+        "كم عندي",
+        "كم لدي",
+        "كم باقي",
+        "كم الفلوس",
+        "موجود في حسابي",
+        "موجود بحسابي",
+    )
+)
 
 # Map account-type words (EN/AR) to a canonical type used by the Banking Core API.
 _ACCOUNT_TYPES: dict[str, str] = {
@@ -149,11 +177,10 @@ def _account_type(text: str) -> str | None:
 
 
 def _is_balance_inquiry(text: str) -> bool:
-    tokens = _tokens(text)
-    if tokens & _BALANCE_CUES:
+    normalized = normalize(text)
+    if set(normalized.split()) & _BALANCE_CUES:
         return True
-    lowered = text.lower()
-    return any(phrase in lowered for phrase in _BALANCE_PHRASES)
+    return any(phrase in normalized for phrase in _BALANCE_PHRASES)
 
 
 # Cues that a message asks to *list* saved beneficiaries ("show my beneficiaries",
@@ -184,6 +211,10 @@ _LIST_BENE_NOUNS = {
         "المستفدين",
         "مستفدين",
         "المستفدون",
+        # "أضف مستفيداً" — the tanween's alef survives diacritic stripping
+        "مستفيدا",
+        "المستفيدا",
+        "contacts",
     )
 }
 _LIST_BENE_MARKERS = {
@@ -330,6 +361,132 @@ def _is_list_beneficiaries(text: str) -> bool:
         # The noun on its own ("beneficiaries", "المستفدين") only ever asks to see them.
         return True
     return bool(tokens & _LIST_BENE_MARKERS)
+
+
+# Verbs that make a loose bill/recipient cue actionable (normalized tokens).
+_PAY_VERBS = {
+    normalize(w)
+    for w in (
+        "pay",
+        "paying",
+        "paid",
+        "settle",
+        "ادفع",
+        "أدفع",
+        "دفع",
+        "ادفعها",
+        "سدد",
+        "اسدد",
+        "تسديد",
+        "أسدد",
+    )
+}
+_TRANSFER_VERBS = {
+    normalize(w)
+    for w in (
+        "send",
+        "sending",
+        "transfer",
+        "transfers",
+        "wire",
+        "remit",
+        "move",
+        "حول",
+        "حولي",
+        "أحول",
+        "احول",
+        "تحويل",
+        "ارسل",
+        "أرسل",
+        "ابعت",
+        "ابعث",
+    )
+}
+
+
+def _has_verb(text: str, verbs: set[str]) -> bool:
+    return bool({normalize(t) for t in _tokens(text)} & verbs)
+
+
+def decide_action(
+    text: str,
+    lang: Language,
+    parsed_intent: Intent,
+    shortcut_intent: Intent | None = None,
+) -> Intent | None:
+    """Pick the flow for a new dialogue, or ``None`` when it's unclear.
+
+    Bill signals (biller keyword / "bill" / "فاتورة") win; otherwise a transfer
+    signal (transfer intent, a matched shortcut, or a recipient) selects the
+    transfer flow. When neither is present we ask the customer to choose.
+
+    A *resolved biller alone* is not enough, and neither is a *recipient alone*:
+    both extractors are deliberately generous ("mobile" resolves to STC, the
+    20k-name gazetteer matches most Arabic words), so an unrelated question
+    ("change my mobile number", "قل لي نكتة") would otherwise open a payment
+    flow. Those loose cues now need a pay/transfer verb or an amount alongside
+    them; without one we return ``None`` and ask.
+    """
+
+    bills = entities.extract_bill_entities(text, lang)
+    if (
+        parsed_intent is Intent.PAY_BILL
+        or entities.has_bill_word(text)
+        or (bills.biller is not None and _has_verb(text, _PAY_VERBS))
+    ):
+        return Intent.PAY_BILL
+    if parsed_intent is Intent.TRANSFER_MONEY:
+        return Intent.TRANSFER_MONEY
+    if shortcut_intent is Intent.TRANSFER_MONEY:  # set by a matched shortcut
+        return Intent.TRANSFER_MONEY
+    if entities.extract_recipient(text, lang) and (
+        entities.extract_amount(text) is not None or _has_verb(text, _TRANSFER_VERBS)
+    ):
+        return Intent.TRANSFER_MONEY
+    return None
+
+
+def route_fresh_turn(
+    text: str, lang: Language, parsed_intent: Intent, confidence: float = 1.0
+) -> Intent:
+    """The intent a first turn is routed to, in the order :meth:`_collect` uses.
+
+    Shared with the eval harness (:mod:`app.eval.harness`) so the scored intent
+    is the one the customer actually gets: the deterministic cues below overrule
+    the classifier, so scoring the classifier alone measures a decision the
+    engine never makes. ``FALLBACK`` stands for the abstain path — the
+    "transfer or bill?" prompt we fall back to rather than guess a flow.
+    """
+
+    if moderation.detect(text).flagged:
+        return Intent.INAPPROPRIATE
+    if _is_add_beneficiary(text):
+        return Intent.ADD_BENEFICIARY
+    if _is_balance_inquiry(text):
+        return Intent.BALANCE_INQUIRY
+    if _is_list_beneficiaries(text):
+        return Intent.LIST_BENEFICIARIES
+    if settings.moderation_enabled and parsed_intent is Intent.INAPPROPRIATE:
+        return Intent.INAPPROPRIATE
+    if templates.is_small_talk(text):
+        return Intent.SMALL_TALK
+    action = decide_action(text, lang, parsed_intent)
+    if (
+        action is None
+        and _names_a_beneficiary(text)
+        and parsed_intent in (Intent.ADD_BENEFICIARY, Intent.LIST_BENEFICIARIES)
+    ):
+        if parsed_intent is Intent.ADD_BENEFICIARY and not _is_list_beneficiaries(text):
+            return Intent.ADD_BENEFICIARY
+        return Intent.LIST_BENEFICIARIES
+    if action is not None:
+        return action
+    if (
+        parsed_intent is Intent.BALANCE_INQUIRY
+        and confidence >= settings.semantic_route_threshold
+    ):
+        return Intent.BALANCE_INQUIRY
+    return Intent.FALLBACK
 
 
 # An account-shaped message: digits/separators behind at most a country code
@@ -669,27 +826,9 @@ class ConversationEngine:
         lang: Language,
         parsed: NLUResponse,
     ) -> Intent | None:
-        """Pick the flow for a new dialogue, or ``None`` when it's unclear.
+        """Pick the flow for a new dialogue, or ``None`` when it's unclear."""
 
-        Bill signals (biller keyword / "bill" / "فاتورة") win; otherwise a transfer
-        signal (transfer intent, a matched shortcut, or a recipient) selects the
-        transfer flow. When neither is present we ask the customer to choose.
-        """
-
-        bills = entities.extract_bill_entities(text, lang)
-        if (
-            parsed.intent is Intent.PAY_BILL
-            or bills.biller is not None
-            or entities.has_bill_word(text)
-        ):
-            return Intent.PAY_BILL
-        if parsed.intent is Intent.TRANSFER_MONEY:
-            return Intent.TRANSFER_MONEY
-        if state.intent is Intent.TRANSFER_MONEY:  # set by a matched shortcut
-            return Intent.TRANSFER_MONEY
-        if entities.extract_recipient(text, lang):
-            return Intent.TRANSFER_MONEY
-        return None
+        return decide_action(text, lang, parsed.intent, state.intent)
 
     def _collect(
         self,
@@ -776,6 +915,17 @@ class ConversationEngine:
                         # classifier; an explicit viewing cue always wins.
                         return self._start_add_beneficiary(state, text, lang)
                     return self._handle_list_beneficiaries(state, lang)
+                # Semantic fallback for a balance question the cue list above
+                # doesn't spell out ("what are my available funds"). Read-only,
+                # and only when nothing points at a bill/transfer and the
+                # classifier is confident — "close my account" sits next to the
+                # balance phrasings in embedding space at a lower score.
+                if (
+                    action is None
+                    and parsed.intent is Intent.BALANCE_INQUIRY
+                    and parsed.confidence >= settings.semantic_route_threshold
+                ):
+                    return self._handle_balance_inquiry(state, text, lang)
                 if action is None:
                     # Warm chit-chat reply for pure greetings/thanks; then wait
                     # in SELECTING so a follow-up choice/request is understood.

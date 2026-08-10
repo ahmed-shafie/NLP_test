@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # Cosine-similarity floor for accepting a semantic intent match.
     semantic_intent_threshold: float = 0.45
 
+    # Confidence floor for letting the semantic classifier alone pick a flow
+    # when no deterministic cue fired. Higher than
+    # ``semantic_intent_threshold``: a weak neighbour should abstain (ask) rather
+    # than route, e.g. "close my account" scores ~0.74 against the balance
+    # phrasings and must not be answered with a balance.
+    semantic_route_threshold: float = 0.80
+
     # Cosine-similarity floor for accepting a contact match.
     contact_match_threshold: float = 0.5
 

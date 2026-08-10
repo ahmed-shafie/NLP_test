@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 
 from app.config import settings
+from app.nlu.normalize import normalize, normalize_tokens
 from app.schemas import Intent, Language
 
 _RNG = random.Random()
@@ -84,6 +85,12 @@ _SMALL_TALK: dict[str, dict[Language, str]] = {
         "money or pay a bill.",
         Language.AR: "نشوفك على خير! 👋 أنا موجود وقت ما تبي تحويل أو فاتورة.",
     },
+    "capability": {
+        Language.EN: "I'm your banking assistant 🙌 I can send money, pay bills, "
+        "check your balance and manage your beneficiaries — which one?",
+        Language.AR: "أنا مساعدك البنكي 🙌 أقدر أحوّل فلوس، أدفع فواتير، "
+        "أجيب رصيدك، وأدير مستفيدينك — وش تحب؟",
+    },
     "default": {
         Language.EN: "Love a good chat! 😊 I'm best with money transfers and "
         "bills though — wanna give one a go?",
@@ -97,7 +104,18 @@ _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
     (
         "how_are_you",
         frozenset(
-            {"how", "are", "you", "doing", "كيف", "حالك", "عامل", "ايه", "اخبارك"}
+            {
+                "how",
+                "are",
+                "you",
+                "doing",
+                "going",
+                "كيف",
+                "حالك",
+                "عامل",
+                "ايه",
+                "اخبارك",
+            }
         ),
     ),
     (
@@ -106,13 +124,43 @@ _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
     ),
     (
         "bye",
-        frozenset({"bye", "goodbye", "وداعا", "باي"}),
+        frozenset({"bye", "goodbye", "night", "later", "وداعا", "باي", "اشوفك"}),
+    ),
+    (
+        # "who are you" / "what can you do" / "وش تقدر تسوي": asks what the
+        # assistant is for. Safe next to real requests because a message only
+        # counts as chit-chat when *every* token is a cue or a filler.
+        "capability",
+        frozenset(
+            {
+                "who",
+                "what",
+                "can",
+                "do",
+                "help",
+                "talking",
+                "مين",
+                "انت",
+                "من",
+                "تقدر",
+                "تسوي",
+                "تسويها",
+                "تساعدني",
+                "تعاوني",
+                "الاشياء",
+            }
+        ),
     ),
     (
         "greeting",
         frozenset(
             {
                 "hi",
+                "hallo",
+                "afternoon",
+                "اهلين",
+                "هلا",
+                "سلام",
                 "hello",
                 "hey",
                 "yo",
@@ -568,17 +616,66 @@ def repeat_offense(language: Language) -> str:
 
 
 # Filler words allowed in an otherwise pure chit-chat message ("hello there").
+# Normalized so Arabic letter-form folding (ة → ه, ى → ي) matches the tokens.
 _SMALL_TALK_FILLERS: frozenset[str] = frozenset(
-    {"there", "friend", "buddy", "sir", "dear", "please", "the", "a", "good"}
+    normalize(w)
+    for w in {
+        "there",
+        "for",
+        "your",
+        "وش",
+        "خير",
+        "العافية",
+        "ورحمة",
+        "friend",
+        "buddy",
+        "sir",
+        "dear",
+        "please",
+        "the",
+        "a",
+        "good",
+        "lot",
+        "much",
+        "many",
+        "so",
+        "very",
+        "nice",
+        "me",
+        "my",
+        "i",
+        "am",
+        "is",
+        "it",
+        "to",
+        "out",
+        "could",
+        "would",
+        "see",
+        "later",
+        "night",
+        "لك",
+        "على",
+        "المساعدة",
+        "وسهلا",
+        "الله",
+        "عليكم",
+        "الحال",
+        "الخير",
+        "اللي",
+        "فيه",
+        "بك",
+    }
+)
+_SMALL_TALK_CUES_NORM: tuple[tuple[str, frozenset[str]], ...] = tuple(
+    (kind, frozenset(normalize(cue) for cue in cues)) for kind, cues in _SMALL_TALK_CUES
 )
 _ALL_SMALL_TALK_CUES: frozenset[str] = frozenset(
-    tok for _, cues in _SMALL_TALK_CUES for tok in cues
+    tok for _, cues in _SMALL_TALK_CUES_NORM for tok in cues
 )
 
 
 def _small_talk_kind(text: str) -> str | None:
-    from app.nlu.normalize import normalize_tokens
-
     tokens = set(normalize_tokens(text))
     if not tokens:
         return None
@@ -588,7 +685,7 @@ def _small_talk_kind(text: str) -> str | None:
         return None
     if tokens - _ALL_SMALL_TALK_CUES - _SMALL_TALK_FILLERS:
         return None
-    for kind, cues in _SMALL_TALK_CUES:
+    for kind, cues in _SMALL_TALK_CUES_NORM:
         if tokens & cues:
             return kind
     return None

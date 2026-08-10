@@ -151,7 +151,7 @@ _AMOUNT_CUE_RE = re.compile(
     r"(?:\bamount\b|بمبلغ|مبلغ)\s*[:#]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE
 )
 _DIGITS_RUN_RE = re.compile(r"\d{2,}")
-_BILL_WORD_RE = re.compile(r"\bbills?\b|فاتورة|فواتير", re.IGNORECASE)
+_BILL_WORD_RE = re.compile(r"\bbills?\b|\binvoices?\b|فاتورة|فواتير", re.IGNORECASE)
 # Free-text biller before the word "bill" (e.g. "City Power Co bill").
 _EN_BILLER_RE = re.compile(
     r"([A-Za-z][\w&'’.-]*(?:\s+[A-Za-z][\w&'’.-]*){0,3})\s+bills?\b", re.IGNORECASE
