@@ -1,0 +1,9 @@
+# Local artefacts: the MASSIVE download, generated data and model weights (415 MB).
+data/
+model-per/
+runs/
+train.jsonl
+holdout.jsonl
+reviews.jsonl
+review_sents.json
+arbanking/
