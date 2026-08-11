@@ -108,6 +108,27 @@ def extract_currency(text: str) -> str | None:
     return None
 
 
+def count_currencies(text: str) -> int:
+    """Number of distinct ISO-4217 currencies referenced in ``text``.
+
+    Two of them mean the message converts between them ("حوّل ٥٠٠ ريال لدولار")
+    rather than moving money to somebody.
+    """
+
+    lowered = normalize_digits(text).lower()
+    tokens = set(re.findall(r"[^\W\d_]+", lowered, re.UNICODE))
+    # "لدولار" is "to dollars": Arabic proclitics glue onto the currency name.
+    tokens |= {re.sub(r"^(?:ال|ول|بال|لل|ل|ب|و)", "", t) for t in tokens}
+    found = {code for symbol, code in CURRENCY_SYMBOLS.items() if symbol in text}
+    for code, aliases in SUPPORTED_CURRENCIES.items():
+        for alias in aliases:
+            alias_l = alias.lower()
+            if (alias_l in lowered) if " " in alias_l else (alias_l in tokens):
+                found.add(code)
+                break
+    return len(found)
+
+
 def extract_recipient(text: str, language: Language) -> str | None:
     """Return the beneficiary name via language-specific surface patterns.
 

@@ -184,6 +184,28 @@ multilingual, Arabic and English map into a shared vector space, so a transfer
 phrased in either language lands near the same examples and `Ahmed`/`أحمد` resolve
 to the same contact. Set `NLU_USE_SEMANTIC_INTENT=false` to force the keyword path.
 
+### Curated example corpus
+
+Alongside the built-in examples the index loads `app/nlu/data/example_corpus.jsonl`
+— 31,781 bilingual, multi-dialect utterances (MSA, Palestinian, Gulf, Moroccan,
+Tunisian, Egyptian, Levantine, English). Most of them are banking *customer-service*
+questions carrying the `fallback` intent, which is what teaches the assistant to
+answer "لماذا خُصمت رسوم؟" as a question instead of opening a transfer: measured on
+7,667 held-out complaints in dialects absent from the index, wrongly opening a money
+flow drops from **11.4% to 1.8%**, with gold intent accuracy at **1.000**. Set
+`NLU_EXAMPLE_CORPUS_ENABLED=false` to index the built-ins only; a missing corpus file
+degrades to the same thing. Rebuild it with:
+
+```bash
+python -m scripts.build_example_corpus --csv path/to/banking_nlu_vector_db_v08_final.csv
+```
+
+> **Licence — PoC use only.** 39,083 of the source rows come from
+> [ArBanking77](https://sina.birzeit.edu/arbanking77/) (SinaLab, Birzeit University).
+> The dataset card states no licence, so this corpus ships for research and
+> demonstration only. Confirm terms with SinaLab before any commercial use.
+> `research/vector_db_v08/README.md` documents the cleaning and the measurements.
+
 ## API Endpoints
 
 ### `POST /nlu/parse`

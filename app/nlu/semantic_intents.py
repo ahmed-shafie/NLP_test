@@ -1,8 +1,9 @@
 """Semantic intent classification backed by FAISS + multilingual embeddings.
 
-At startup the labeled examples in :mod:`app.nlu.examples` are embedded and
-indexed. An utterance is classified by retrieving its nearest example vectors
-and aggregating their similarity scores per intent. If embeddings are
+At startup the labeled examples in :mod:`app.nlu.examples` and the curated
+multi-dialect corpus in :mod:`app.nlu.corpus` are embedded and indexed. An
+utterance is classified by retrieving its nearest example vectors and
+aggregating their similarity scores per intent. If embeddings are
 unavailable, :func:`get_semantic_classifier` returns ``None`` and the caller
 falls back to the keyword classifier.
 """
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 
 from app.config import settings
 from app.embeddings import get_embedder
+from app.nlu.corpus import load_corpus_examples
 from app.nlu.examples import INTENT_EXAMPLES
 from app.schemas import Intent
 from app.vectorstore import FaissVectorStore
@@ -46,16 +48,19 @@ class SemanticIntentClassifier:
             embedder.dimension
         )
 
-        examples = list(INTENT_EXAMPLES) + list(extra_examples or [])
+        corpus = load_corpus_examples()
+        examples = list(INTENT_EXAMPLES) + list(corpus) + list(extra_examples or [])
         self.base_count = len(INTENT_EXAMPLES)
+        self.corpus_count = len(corpus)
         self.extra_count = len(extra_examples or [])
         texts = [text for text, _ in examples]
         vectors = embedder.encode(texts)
         self._store.add(vectors, examples)
         logger.info(
-            "Indexed %d intent examples (%d base + %d learned).",
+            "Indexed %d intent examples (%d base + %d corpus + %d learned).",
             len(examples),
             self.base_count,
+            self.corpus_count,
             self.extra_count,
         )
 
@@ -99,15 +104,21 @@ class SemanticIntentClassifier:
         # Confidence blends neighbour agreement (share) with the top similarity.
         confidence = round(min(0.5 * share + 0.5 * top.score, 0.99), 4)
 
-        # Abuse needs a higher bar than ordinary intents: a false positive (a
-        # legitimate word like "المخالفة" treated as abuse) is worse than a miss,
-        # and the deterministic blocklist is the real authority for flagging. When
-        # the semantic winner is INAPPROPRIATE but below that bar, defer to the
-        # next-best non-abuse intent instead of over-blocking.
-        if (
-            best_intent is Intent.INAPPROPRIATE
-            and confidence < settings.moderation_semantic_threshold
-        ):
+        # Abuse is judged by how close the turn sits to a known abusive phrase,
+        # not by how many neighbours agree: the index holds tens of thousands of
+        # out-of-scope rows, so a genuine insult retrieves four abusive
+        # neighbours and one complaint, and its share alone would let it through.
+        abuse = max(
+            (n.score for n in neighbours if n.intent is Intent.INAPPROPRIATE),
+            default=0.0,
+        )
+        if abuse >= settings.moderation_semantic_threshold:
+            return Intent.INAPPROPRIATE, round(min(abuse, 0.99), 4)
+
+        # A legitimate word that merely sits near the abuse cluster ("المخالفة" =
+        # a fine) must not be blocked, so a below-bar abuse win defers to the
+        # next-best intent. The deterministic blocklist is the real authority.
+        if best_intent is Intent.INAPPROPRIATE:
             others = {i: w for i, w in weights.items() if i is not Intent.INAPPROPRIATE}
             if not others:
                 return Intent.FALLBACK, confidence
