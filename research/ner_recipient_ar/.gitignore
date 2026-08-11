@@ -4,3 +4,5 @@ model-per/
 runs/
 train.jsonl
 holdout.jsonl
+reviews.jsonl
+review_sents.json

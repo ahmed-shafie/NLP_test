@@ -121,6 +121,33 @@ swallowing whole clauses:
 and on our own hard slice it produced `recipient='حساب'` for **`حول 500 إلى حسابي`** — an
 own-account transfer read as a transfer to a person called "حساب".
 
+## 5b. Second blind check: real Saudi banking language
+
+MASSIVE is voice-assistant phrasing. `scrape_reviews.py` pulls Saudi banking-app reviews from
+**Apple's public customer-reviews feed** (11 apps: alrajhi, anb, alinma, riyad, albilad, snb,
+sab, aljazira, stcbank, urpay, alinmapay) — real customers, in dialect, **writing about
+transfers, beneficiaries, balances and bills**. That is the closest public text to our actual
+users. 2 249 reviews → 1 078 Arabic → 289 banking-relevant → **418 sentences**.
+
+None of them is a command to an assistant, so there is no recipient to find: every one of the
+418 must yield `None`.
+
+| System | invents a beneficiary on 418 real banking sentences |
+|---|---|
+| current regex + gazetteer | **173 / 418 = 41.4 %** |
+| fine-tuned NER + directory | **10 / 418 = 2.4 %** |
+
+```
+تطبيق سيئ مو جاي يحول معلق له يومين            → regex 'ه يمين'
+مستحيل تطلع المستفيدين الي عندك و معلوماتهم     → regex 'عندك و معلوماتهم مع انه أول يمديك'
+لو الغى المصرف رسوم التحويل لبنوك محلية        → regex 'بنوك محله أيكون أفضل بنك'
+```
+The ten NER hits are fragments (`ف`, `شر`, `برق`) that the beneficiary lookup rejects. The
+gazetteer's are whole clauses that look like a name to the resolver.
+
+The feed is Apple's own published endpoint (no page scraping, no login); the script keeps only
+rating and review text and drops the nickname, and the harvested text is git-ignored.
+
 ## 6. Cost
 
 * model on disk **415 MB** (fp32); ~450 MB RSS when loaded
