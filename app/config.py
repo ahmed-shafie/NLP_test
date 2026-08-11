@@ -51,6 +51,36 @@ class Settings(BaseSettings):
     # phrasings and must not be answered with a balance.
     semantic_route_threshold: float = 0.80
 
+    # ---- Contextual answers for refused customer-service questions ----
+    # Answer a refused question in its own topic ("your card payment was
+    # reversed") instead of the generic "transfer or bill?" menu.
+    topic_replies_enabled: bool = True
+
+    # Neighbours retrieved for the topic vote. Deliberately its own setting: a
+    # wider window is much stronger evidence about the *subject* (8 of 10 rows
+    # agreeing is far harder to fake than 4 of 5), while ``semantic_top_k`` is
+    # calibrated for intent accuracy and must not move with it.
+    topic_reply_top_k: int = 10
+
+    # Similarity the nearest indexed question must reach before its topic is
+    # used. Answering the *wrong* topic is worse than the generic menu, so this
+    # sits far above ``semantic_intent_threshold``.
+    topic_reply_threshold: float = 0.94
+
+    # Share of the retrieved neighbours that must agree on the topic.
+    topic_reply_agreement: float = 0.8
+
+    # Bar when *every* retrieved row names the same topic. Lower on purpose: the
+    # corpus is overwhelmingly Arabic, so an English question lands around 0.81
+    # against its own topic, and unanimity is the stronger evidence anyway.
+    #
+    # These four values are the calibrated point of
+    # ``research/vector_db_v08/topic_gate_sweep.py``: 14.9% of held-out
+    # customer-service questions answered in context, 1.4% of those answers
+    # about the wrong subject. Loosening any of them trades that error rate up
+    # steeply (k=5 / 0.90 doubles coverage and triples the error).
+    topic_reply_unanimous_threshold: float = 0.74
+
     # Cosine-similarity floor for accepting a contact match.
     contact_match_threshold: float = 0.5
 

@@ -206,6 +206,26 @@ python -m scripts.build_example_corpus --csv path/to/banking_nlu_vector_db_v08_f
 > demonstration only. Confirm terms with SinaLab before any commercial use.
 > `research/vector_db_v08/README.md` documents the cleaning and the measurements.
 
+### Answering a refused question in its own context
+
+Every corpus row carries the *subject* it was collected under ("charged twice",
+"card payment reversed", "lost or stolen card"), so a question the assistant cannot
+execute is answered about that subject instead of with the generic
+"transfer or bill?" menu. The answers live in `app/conversation/topic_replies.py` —
+hand-written per subject, bilingual, and free of any invented fee, duration, limit
+or policy; a test rejects a reply that mentions one. They never touch money: a
+topical answer is only reachable once no action was recognised, and it states what
+the assistant can actually do (show recent operations, hand over to support).
+
+The risk is answering about the *wrong* subject, so the gate is strict — 8 of the 10
+retrieved rows must name the same subject, at high similarity.
+`research/vector_db_v08/topic_gate_sweep.py` calibrates it against the gold topics
+of the held-out slice: the shipped point answers **14.9%** of the questions in
+context with **1.4%** of those answers about the wrong subject. Answering at
+*family* level when the subjects disagree was measured and dropped — it reaches
+~37% coverage but ~15% wrong answers, because "where is the card I ordered" and
+"my card was stolen" share a family and not a question.
+
 ## API Endpoints
 
 ### `POST /nlu/parse`
