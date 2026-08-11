@@ -121,21 +121,33 @@ swallowing whole clauses:
 and on our own hard slice it produced `recipient='حساب'` for **`حول 500 إلى حسابي`** — an
 own-account transfer read as a transfer to a person called "حساب".
 
-## 5b. Second blind check: real Saudi banking language
+## 5b. Second blind check: real banking-app review language
 
-MASSIVE is voice-assistant phrasing. `scrape_reviews.py` pulls Saudi banking-app reviews from
-**Apple's public customer-reviews feed** (11 apps: alrajhi, anb, alinma, riyad, albilad, snb,
-sab, aljazira, stcbank, urpay, alinmapay) — real customers, in dialect, **writing about
-transfers, beneficiaries, balances and bills**. That is the closest public text to our actual
-users. 2 249 reviews → 1 078 Arabic → 289 banking-relevant → **418 sentences**.
+MASSIVE is voice-assistant phrasing. `scrape_reviews.py` pulls banking-app reviews from
+**Apple's public customer-reviews feed**, discovering Finance apps per storefront (Saudi and
+Egypt so far; the script walks 13 Arabic storefronts) — real customers, in dialect, **writing
+about transfers, beneficiaries, balances and bills**. That is the closest public text to our
+actual users. 2 249 reviews → 1 078 Arabic → 289 banking-relevant → **411 sentences**.
 
 None of them is a command to an assistant, so there is no recipient to find: every one of the
-418 must yield `None`.
+411 must yield `None`.
 
-| System | invents a beneficiary on 418 real banking sentences |
+| System | invents a beneficiary on 411 real banking sentences |
 |---|---|
-| current regex + gazetteer | **173 / 418 = 41.4 %** |
-| fine-tuned NER + directory | **10 / 418 = 2.4 %** |
+| current regex + gazetteer | **131 / 411 = 31.9 %** |
+| fine-tuned NER + directory | **12 / 411 = 2.9 %** |
+
+Split by storefront (Egypt added on a second pass; Apple rate-limits the feed hard, so the
+harvest is incremental and the script resumes):
+
+| storefront | regex + gazetteer | NER + directory |
+|---|---|---|
+| Saudi (347) | 32.9 % | 2.9 % |
+| Egypt (64) | 26.6 % | 3.1 % |
+
+Dialect did not move either system beyond its confidence interval — but 64 Egyptian sentences
+is ±11 %, so this is a hint, not a result. Note also that a large share of Egyptian reviews are
+written in English or franco-Arabic (`b3ml 7wela`), which neither system addresses at all.
 
 ```
 تطبيق سيئ مو جاي يحول معلق له يومين            → regex 'ه يمين'
@@ -147,6 +159,42 @@ gazetteer's are whole clauses that look like a name to the resolver.
 
 The feed is Apple's own published endpoint (no page scraping, no login); the script keeps only
 rating and review text and drops the nickname, and the harvested text is git-ignored.
+
+## 5c. ArBanking77: the assistant's out-of-scope behaviour, measured
+
+`eval_arbanking77.py` runs the **whole pipeline** (not just the extractor) over
+[ArBanking77](https://huggingface.co/datasets/SinaLab/ArBanking77) (SinaLab / Birzeit
+University, ArabicNLP 2023) — BANKING77 arabized into MSA **and Palestinian dialect**.
+
+Its 77 intents are bank *customer-service* topics ("card swallowed", "why verify identity",
+"exchange rate"). We support five actions and **none of them is in that list**, so the correct
+answer for all 370 rows is: answer or fall back, but do not start a money flow.
+
+| | MSA (179) | Palestinian (191) |
+|---|---|---|
+| correctly fell back | **58.1 %** | **30.9 %** |
+| wrongly answered as balance inquiry | 22.9 % | 22.0 % |
+| **started a money flow** | **16 / 179 = 8.9 %** | **31 / 191 = 16.2 %** |
+| invented a recipient | 1 / 179 | 4 / 191 |
+
+```
+هل تقبل الشيكات؟                          → add_beneficiary
+ما هو الدفع المعلق؟                        → pay_bill
+شو هي أحسن طريقة لصرف العملات؟             → transfer_money, recipient='صرف العملات؟'
+```
+
+Two things this says that the NER work does not:
+
+1. **Intent routing is the weaker half.** The extractor was the thing we measured; the
+   classifier is what opens a money flow on "do you accept cheques?".
+2. **Dialect halves the fallback rate** (58 % → 31 %) on the *same* 77 intents in the *same*
+   translation pipeline — the cleanest dialect-gap number we have.
+
+Caveats: only the ~1 450-row public **sample** is on the Hub (the full ~31 k set is by request
+from SinaLab), the corpus is translated from English so it is not natively-typed Arabic, and
+the dataset card carries **no licence** — the model repo is MIT, but the data licence must be
+confirmed with SinaLab before any non-research use. Run it with
+`NLU_LLM_ENABLED=false` (the LLM exception handler otherwise dominates the runtime).
 
 ## 6. Cost
 
