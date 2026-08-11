@@ -139,6 +139,8 @@ _BALANCE_PHRASES = tuple(
         "what is left in my account",
         "available funds",
         "do i have enough",
+        "enough money in my",
+        "enough in my",
         "كم عندي",
         "كم لدي",
         "كم باقي",
@@ -403,9 +405,79 @@ _TRANSFER_VERBS = {
     )
 }
 
+# Transfer verbs that can only mean moving money. "send"/"ابعت" also send things
+# that are not money ("send me my account statement"), so on their own they are
+# not enough to open a transfer with no recipient and no amount.
+_MONEY_ONLY_TRANSFER_VERBS = {
+    normalize(w)
+    for w in (
+        "transfer",
+        "transfers",
+        "wire",
+        "remit",
+        "حول",
+        "حولي",
+        "أحول",
+        "احول",
+        "تحويل",
+    )
+}
+
 
 def _has_verb(text: str, verbs: set[str]) -> bool:
     return bool({normalize(t) for t in _tokens(text)} & verbs)
+
+
+# Words that turn an action verb into a question about the service rather than a
+# request to perform it: "how do I transfer money?" is customer-service, "I want
+# to transfer money" is a transfer we should start collecting slots for.
+_QUESTION_WORDS = {
+    normalize(w)
+    for w in (
+        "how",
+        "why",
+        "when",
+        "where",
+        "كيف",
+        "كيفاش",
+        "ليش",
+        "لماذا",
+        "متى",
+        "وين",
+        "هل",
+        "شو",
+        "ايش",
+        "أيش",
+    )
+}
+
+
+def _asks_to_act(text: str, verbs: set[str]) -> bool:
+    """True when ``text`` asks us to perform the action, not to explain it.
+
+    An action verb with no target is still a request the flow can serve by
+    asking for the missing slots ("I want to transfer money" -> "how much, and
+    to whom?"). Questions about the action are not: refusing "the transfer never
+    arrived" is the point of the out-of-scope examples in the index.
+    """
+
+    if not _has_verb(text, verbs):
+        return False
+    if "?" in text or "؟" in text:
+        return False
+    return not ({normalize(t) for t in _tokens(text)} & _QUESTION_WORDS)
+
+
+# "convert 500 SAR to dollars" is an FX question, not a transfer, even though it
+# reads as "حوّل ٥٠٠ ريال لدولار": a second currency where the beneficiary should be
+# is the giveaway.
+_FX_CUES = {normalize(w) for w in ("convert", "conversion", "exchange", "يساوي", "صرف")}
+
+
+def _is_currency_conversion(text: str) -> bool:
+    return entities.count_currencies(text) > 1 or bool(
+        {normalize(t) for t in _tokens(text)} & _FX_CUES
+    )
 
 
 def decide_action(
@@ -428,6 +500,8 @@ def decide_action(
     them; without one we return ``None`` and ask.
     """
 
+    if _is_currency_conversion(text):
+        return None
     bills = entities.extract_bill_entities(text, lang)
     if (
         parsed_intent is Intent.PAY_BILL
@@ -440,9 +514,18 @@ def decide_action(
     if shortcut_intent is Intent.TRANSFER_MONEY:  # set by a matched shortcut
         return Intent.TRANSFER_MONEY
     if entities.extract_recipient(text, lang) and (
-        entities.extract_amount(text) is not None or _has_verb(text, _TRANSFER_VERBS)
+        entities.extract_amount(text) is not None or _asks_to_act(text, _TRANSFER_VERBS)
     ):
         return Intent.TRANSFER_MONEY
+    if _asks_to_act(text, _MONEY_ONLY_TRANSFER_VERBS):
+        return Intent.TRANSFER_MONEY
+    if entities.extract_amount(text) is not None and _asks_to_act(
+        text, _TRANSFER_VERBS
+    ):
+        # "send 500 USD" — an amount makes even a generic verb a money request.
+        return Intent.TRANSFER_MONEY
+    if _asks_to_act(text, _PAY_VERBS):
+        return Intent.PAY_BILL
     return None
 
 
