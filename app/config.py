@@ -109,6 +109,13 @@ class Settings(BaseSettings):
     # rapidfuzz ratio floor (0-100) for accepting a fuzzy name match.
     name_match_score: float = 88.0
 
+    # Points the best fuzzy name match must lead the runner-up by. On a 28k-name
+    # gazetteer a near-miss is usually several *different* names ("noura" is one
+    # edit from nouran, nora, nour and nura), and correcting to the wrong one
+    # silently changes who the transfer names, so an unclear winner is declined
+    # and the customer's own spelling is kept.
+    name_match_margin: float = 5.0
+
     # ---- LiteLLM exception handler (local LLM via Ollama by default) ----
     # Route the LLM fallback through LiteLLM. Disable to skip the LLM entirely.
     llm_enabled: bool = True
