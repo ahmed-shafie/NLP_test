@@ -672,6 +672,19 @@ def _display_name(name: str, name_ar: str | None, lang: Language) -> str:
     return name
 
 
+def _is_same_name(typed: str, remembered: str | None) -> bool:
+    """True when ``typed`` is part of ``remembered`` rather than another person.
+
+    "mona" fits the remembered "Mona Fathy"; "Ahmed Khaled" does not fit
+    "Ahmed Hassan", so a learned alias may not turn one into the other.
+    """
+
+    if not remembered:
+        return False
+    words = set(normalize(typed).split())
+    return bool(words) and words <= set(normalize(remembered).split())
+
+
 def _forget_target(text: str) -> str | None:
     """If the message is 'forget <name>', return <name>; otherwise ``None``."""
 
@@ -966,7 +979,7 @@ class ConversationEngine:
 
         with tracer.block("orchestrator"):
             # Memory Brain: a saved shortcut ("pay rent") pre-fills the template.
-            self._apply_shortcut(state, text)
+            self._apply_shortcut(state, text, lang, parsed)
 
             # Semantic safety net: the classifier may flag abuse the blocklist
             # missed (novel insults). Redirect without echoing any text.
@@ -1360,7 +1373,13 @@ class ConversationEngine:
             return None
         return get_memory_brain()
 
-    def _apply_shortcut(self, state: ConversationState, text: str) -> None:
+    def _apply_shortcut(
+        self,
+        state: ConversationState,
+        text: str,
+        lang: Language,
+        parsed: NLUResponse,
+    ) -> None:
         brain = self._memory(state)
         if brain is None:
             return
@@ -1371,17 +1390,53 @@ class ConversationEngine:
         if shortcut is None:
             return
         state.intent = Intent.TRANSFER_MONEY
-        self._fill_from_shortcut(state, shortcut)
+        recipient = self._shortcut_recipient(state, text, lang, parsed, shortcut)
+        self._fill_from_shortcut(state, shortcut, recipient)
+
+    def _shortcut_recipient(
+        self,
+        state: ConversationState,
+        text: str,
+        lang: Language,
+        parsed: NLUResponse,
+        shortcut: Shortcut,
+    ) -> str | None:
+        """The name a shortcut is allowed to fill in, if any.
+
+        Memory is a convenience, not an identity claim. It may complete a name the
+        customer typed ("mona" -> the remembered "Mona") but never replace it with
+        a different person, and when the typed name (or the alias key itself) fits
+        several registered beneficiaries the alias yields only that name, so the
+        directory asks which one instead of reusing whoever was paid last.
+        """
+
+        typed = parsed.entities.recipient or entities.extract_recipient(text, lang)
+        if typed and not _is_same_name(typed, shortcut.recipient):
+            return None
+        if self._names_several_beneficiaries(state, typed or shortcut.name):
+            return typed or shortcut.name
+        return shortcut.recipient
+
+    def _names_several_beneficiaries(self, state: ConversationState, name: str) -> bool:
+        """True when ``name`` fits more than one of the customer's beneficiaries."""
+
+        directory = get_beneficiary_directory()
+        if directory is None:
+            return False
+        hits = directory.search(name, self._owner(state))
+        return hits is not None and len(hits) > 1
 
     @staticmethod
-    def _fill_from_shortcut(state: ConversationState, shortcut: Shortcut) -> None:
+    def _fill_from_shortcut(
+        state: ConversationState, shortcut: Shortcut, recipient: str | None
+    ) -> None:
         slots = state.slots
         if slots.amount is None and shortcut.amount is not None:
             slots.amount = shortcut.amount
         if not slots.currency and shortcut.currency:
             slots.currency = shortcut.currency
-        if not slots.recipient and shortcut.recipient:
-            slots.recipient = shortcut.recipient
+        if not slots.recipient and recipient:
+            slots.recipient = recipient
         if not slots.source_account and shortcut.source_account:
             slots.source_account = shortcut.source_account
         if not slots.note and shortcut.note:
