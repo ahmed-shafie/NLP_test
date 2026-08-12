@@ -528,12 +528,41 @@ def lookup_name(token: str) -> str | None:
     if key in known:
         return known[key]
     if len(key) >= 3:
-        match = process.extractOne(
-            key, _name_keys(), scorer=fuzz.ratio, score_cutoff=settings.name_match_score
-        )
-        if match is not None:
-            return known[match[0]]
+        return _unambiguous_name_match(key, known)
     return None
+
+
+def _unambiguous_name_match(key: str, known: dict[str, str]) -> str | None:
+    """The one name ``key`` is a typo of, or ``None`` when that is unclear.
+
+    A typo correction may fix a spelling but must never change *who* is meant,
+    and a near-miss on a name list of this size is usually several different
+    names at once: "noura" is one edit from nouran, nora, nour and nura. So the
+    winner has to stand clear of the runner-up by ``name_match_margin``;
+    otherwise the customer's own spelling is kept and the name stays whatever
+    they typed.
+    """
+
+    matches = process.extract(
+        key,
+        _name_keys(),
+        scorer=fuzz.ratio,
+        score_cutoff=settings.name_match_score,
+        limit=3,
+    )
+    if not matches:
+        return None
+    winner = known[str(matches[0][0])]
+    rivals = [
+        score
+        for candidate, score, _ in matches[1:]
+        # Two keys that canonicalise to the same name (احمد / أحمد) do not
+        # disagree about who is meant.
+        if known[str(candidate)] != winner
+    ]
+    if rivals and matches[0][1] - rivals[0] < settings.name_match_margin:
+        return None
+    return winner
 
 
 def is_known_name(text: str) -> bool:

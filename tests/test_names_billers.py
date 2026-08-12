@@ -160,8 +160,11 @@ def test_transliterations_unknown_token_is_empty():
 
 def test_lookup_name_exact_and_typo():
     assert lookup_name("Ahmed") == "Ahmed"
-    # A typo fuzzy-matches to a recognised given name.
-    assert lookup_name("Ahmd") is not None
+    # A typo fuzzy-matches to a recognised given name, as long as only one name
+    # is close to it ("Ahmd" is equally close to Ahmad and Ahmed, and correcting
+    # it either way would name a different person - see
+    # tests/test_recipient_identity.py).
+    assert lookup_name("Mohamd") == "Mohamed"
 
 
 def test_lookup_name_preserves_script():
