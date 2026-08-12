@@ -26,15 +26,17 @@ logger = logging.getLogger(__name__)
 
 
 def _name_matches(needle: str, name: object, name_ar: object) -> bool:
-    """True when the normalized needle is contained in either name column.
+    """True when the needle appears in either name column as whole word(s).
 
     Both sides are run through :func:`normalize`, so Arabic letter-form variants
     (e.g. alef with/without hamza), diacritics, and casing all collapse before
-    the substring comparison.
+    the comparison. Matching stops at word boundaries so a fragment can never
+    stand in for a person: "no" must not reach "Mohammed Nour".
     """
 
+    pattern = re.compile(rf"(?<!\w){re.escape(needle)}(?!\w)")
     for value in (name, name_ar):
-        if value and needle in normalize(str(value)):
+        if value and pattern.search(normalize(str(value))):
             return True
     return False
 
@@ -96,11 +98,12 @@ class BeneficiaryDirectory:
             self._engine = create_engine(url, pool_pre_ping=True, pool_recycle=1800)
 
     def search(self, name: str, owner_user: str | None) -> list[BeneficiaryHit] | None:
-        """Return beneficiaries whose name starts with / contains ``name``.
+        """Return beneficiaries whose name contains ``name`` as whole word(s).
 
         Matching is case-insensitive and works on the first token, so "Ahmed"
         matches "Ahmed Hassan", "Ahmed Khaled", ... (both EN ``name`` and AR
-        ``name_ar`` columns are searched).
+        ``name_ar`` columns are searched), while a fragment of a name ("no")
+        matches nobody.
 
         Returns ``None`` when the directory could not be queried (DB/table
         unavailable) so the caller can fall back to the free-text recipient,

@@ -39,6 +39,25 @@ _USUAL_RECIPIENT = {
     )
 }
 
+# Phrases that ask to do the previous transfer over again ("repeat my last
+# transfer", "same as last time"). These reuse the whole last transfer, not just
+# the recipient.
+_REPEAT_TRANSFER = {
+    normalize(word)
+    for word in (
+        "repeat",
+        "again",
+        "last",
+        "previous",
+        "كرر",
+        "اعد",
+        "أعد",
+        "آخر",
+        "السابق",
+        "تاني",
+    )
+}
+
 _MAX_COMMON_AMOUNTS = 5
 
 
@@ -180,6 +199,27 @@ class MemoryBrain:
 
     def wants_usual_recipient(self, text: str) -> bool:
         return bool(set(normalize(text).split()) & _USUAL_RECIPIENT)
+
+    def wants_last_transfer(self, text: str) -> bool:
+        """True for "repeat my last transfer" / "send it again"."""
+
+        return bool(set(normalize(text).split()) & _REPEAT_TRANSFER)
+
+    def last_transfer(self, user_id: str) -> tuple[str, Decimal, str] | None:
+        """The customer's most recent completed transfer, if one is remembered.
+
+        ``common_amounts`` is kept newest-first, so its head is the amount of the
+        transfer that also set ``last_recipient`` / ``last_currency``.
+        """
+
+        habits = self._store.get(user_id).habits
+        if not habits.last_recipient or not habits.common_amounts:
+            return None
+        return (
+            habits.last_recipient,
+            habits.common_amounts[0],
+            habits.last_currency or habits.preferred_currency or "",
+        )
 
     def default_currency(self, user_id: str) -> str | None:
         return self._store.get(user_id).habits.preferred_currency

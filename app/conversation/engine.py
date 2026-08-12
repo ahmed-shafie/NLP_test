@@ -639,6 +639,30 @@ _RECIPIENT_FILLERS = {
     "cash",
     "some",
     "for",
+    "my",
+    "one",
+    "person",
+    "guy",
+    # Words that point back at memory rather than at a person ("my usual",
+    # "the same one"): the remembered recipient answers these, not the gazetteer.
+    "usual",
+    "favorite",
+    "favourite",
+    "regular",
+    "default",
+    "same",
+    "last",
+    "previous",
+    "again",
+    "repeat",
+    "المعتاد",
+    "المفضل",
+    "نفس",
+    "اخر",
+    "السابق",
+    "كرر",
+    "تاني",
+    "الشخص",
 }
 
 
@@ -647,21 +671,76 @@ def _clean_recipient_answer(text: str) -> str | None:
 
     Drops leading/embedded request verbs and prepositions (so "ابغي احمد" →
     "احمد", "send to Ahmed" → "Ahmed"), then canonicalizes the remaining tokens
-    against the name gazetteer. Returns ``None`` when nothing name-like is left.
+    against the name gazetteer. Returns ``None`` when nothing name-like is left —
+    an answer made only of fillers ("my usual") names nobody.
     """
 
     stripped = text.strip(" .,،؟?")
     if not stripped:
         return None
     kept = [tok for tok in stripped.split() if normalize(tok) not in _RECIPIENT_FILLERS]
-    candidate = " ".join(kept).strip() or stripped
+    candidate = " ".join(kept).strip()
+    if not candidate:
+        return None
     return canonicalize_recipient(candidate) or None
+
+
+# Answers to "who should I send it to?" that are a reply, not a person: yes/no,
+# "I don't know", "later". Without this an answer like "no" is treated as a name
+# and can even match a beneficiary ("no" inside "Mohammed Nour").
+_NOT_A_NAME = {
+    normalize(word)
+    for word in (
+        "no",
+        "nope",
+        "yes",
+        "yeah",
+        "yep",
+        "ok",
+        "okay",
+        "idk",
+        "dunno",
+        "maybe",
+        "later",
+        "who",
+        "none",
+        "nothing",
+        "لا",
+        "نعم",
+        "ايوه",
+        "تمام",
+        "ماادري",
+        "مادري",
+        "مين",
+        "بعدين",
+        "ولا",
+    )
+}
+
+
+def _is_name_like(candidate: str) -> bool:
+    """False for answers a person's name can never be: numbers, IBANs, yes/no.
+
+    The recipient prompt takes the whole message as the answer, so this is the
+    only thing standing between "100" (or "no") and a slot that names a payee.
+    """
+
+    stripped = candidate.strip(" .,،؟?")
+    if not stripped or _ACCOUNT_SHAPED.match(stripped):
+        return False
+    if not re.search(r"[^\W\d_]", stripped, re.UNICODE):
+        return False
+    words = normalize(stripped).split()
+    return bool(words) and not set(words) & _NOT_A_NAME
 
 
 def _recipient_from_answer(text: str, lang: Language) -> str | None:
     """Best-effort recipient from a slot answer: surface pattern, else cleanup."""
 
-    return entities.extract_recipient(text, lang) or _clean_recipient_answer(text)
+    if not _is_name_like(text):
+        return None
+    candidate = entities.extract_recipient(text, lang) or _clean_recipient_answer(text)
+    return candidate if candidate and _is_name_like(candidate) else None
 
 
 def _display_name(name: str, name_ar: str | None, lang: Language) -> str:
@@ -1079,7 +1158,8 @@ class ConversationEngine:
                 # the answer: trust the deterministic bare-answer parse over the
                 # pipeline's free extraction (which can mangle colloquial input
                 # like "ابغي احمد" into a garbled name).
-                slots.recipient = _recipient_from_answer(text, lang) or ent.recipient
+                fallback = ent.recipient if _is_name_like(ent.recipient or "") else None
+                slots.recipient = _recipient_from_answer(text, lang) or fallback
             elif ent.recipient:
                 slots.recipient = ent.recipient
         if not slots.source_account and ent.source_account:
@@ -1448,7 +1528,20 @@ class ConversationEngine:
             return
         uid = state.user_id
         slots = state.slots
-        if not slots.recipient and brain.wants_usual_recipient(text):
+        # "repeat my last transfer" asks for the whole previous transfer, so it
+        # brings the amount and currency along; "my usual" only names a person.
+        if not slots.recipient and brain.wants_last_transfer(text):
+            last = brain.last_transfer(uid)
+            if last is not None:
+                recipient, amount, currency = last
+                slots.recipient = recipient
+                if slots.amount is None:
+                    slots.amount = amount
+                if not slots.currency and currency:
+                    slots.currency = currency
+        if not slots.recipient and (
+            brain.wants_usual_recipient(text) or brain.wants_last_transfer(text)
+        ):
             favorite = brain.favorite_recipient(uid)
             if favorite:
                 slots.recipient = favorite
