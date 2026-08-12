@@ -34,6 +34,7 @@ from app.memory.service import get_memory_brain
 from app.nlu import accounts, entities, pipeline
 from app.nlu.lang import detect_language
 from app.nlu.normalize import normalize, normalize_digits
+from app.nlu.semantic_intents import get_semantic_classifier
 from app.schemas import (
     BillPaymentRequest,
     Intent,
@@ -1016,6 +1017,12 @@ class ConversationEngine:
                         state.status = ConversationStatus.SELECTING
                         return self._finish(state, templates.small_talk(text, lang))
                     state.status = ConversationStatus.SELECTING
+                    # Refusing to open a flow is correct here, but "transfer or
+                    # bill?" answers nothing: the corpus knows which
+                    # customer-service question this is, so answer about it.
+                    answer = self._topic_answer(text, lang, tracer)
+                    if answer is not None:
+                        return self._finish(state, answer)
                     return self._finish(state, templates.choose_action(lang))
                 state.intent = action
 
@@ -1874,6 +1881,30 @@ class ConversationEngine:
             info.account_type, info.currency, self._fmt_amount(info.balance), lang
         )
         return self._finish(state, reply)
+
+    def _topic_answer(
+        self, text: str, lang: Language, tracer: BlockTracer
+    ) -> str | None:
+        """Return a reviewed answer about the question's topic, if it has one.
+
+        Read-only and side-effect free: a topical answer never fills a slot or
+        opens a flow, so the worst case of a mis-retrieved topic is an answer
+        about the wrong subject — never a wrong money movement.
+        """
+
+        if not settings.topic_replies_enabled:
+            return None
+        classifier = get_semantic_classifier()
+        if classifier is None:
+            return None
+        with tracer.block("topic_answer") as span:
+            evidence = classifier.topic_evidence(text)
+            answer = templates.topic_answer(evidence, lang)
+            if answer is None:
+                span.skip(f"no confident topic @ {evidence.top_score}")
+                return None
+            span.annotate(f"{answer.subject} @ {answer.score}")
+            return answer.reply
 
     def _handle_list_beneficiaries(
         self, state: ConversationState, lang: Language

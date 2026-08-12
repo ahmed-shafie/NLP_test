@@ -37,8 +37,8 @@ def test_loads_rows(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(corpus, "CORPUS_PATH", path)
     assert corpus.load_corpus_examples() == (
-        ("حوّل 100 لسارة", Intent.TRANSFER_MONEY),
-        ("ليش انخصمت رسوم؟", Intent.FALLBACK),
+        corpus.CorpusExample("حوّل 100 لسارة", Intent.TRANSFER_MONEY),
+        corpus.CorpusExample("ليش انخصمت رسوم؟", Intent.FALLBACK, "الرسوم"),
     )
 
 

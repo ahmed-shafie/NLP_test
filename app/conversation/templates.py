@@ -13,8 +13,9 @@ from __future__ import annotations
 import random
 
 from app.config import settings
-from app.conversation import phrasing
+from app.conversation import phrasing, topic_replies
 from app.nlu.normalize import normalize, normalize_tokens
+from app.nlu.semantic_intents import TopicEvidence
 from app.schemas import Intent, Language
 
 _RNG = random.Random()
@@ -1058,3 +1059,20 @@ def alias_not_found(name: str, language: Language) -> str:
     if language is Language.AR:
         return f"لا يوجد اختصار باسم '{name}'."
     return f"You don't have a shortcut named '{name}'."
+
+
+def topic_answer(
+    evidence: TopicEvidence, language: Language
+) -> topic_replies.TopicAnswer | None:
+    """Answer a refused customer-service question in its own topic.
+
+    ``None`` when the retrieval is not decisive enough or the topic has no
+    reviewed answer, so the caller keeps the generic prompt. Deliberately
+    money-critical even though it carries no figure: each answer states what
+    this assistant can and cannot do, and a re-worded "I can't reverse a charge"
+    would be a false promise.
+    """
+
+    return topic_replies.decide(
+        evidence.top_score, evidence.votes, evidence.retrieved, language
+    )

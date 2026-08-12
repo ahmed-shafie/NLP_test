@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -23,9 +24,23 @@ logger = logging.getLogger(__name__)
 CORPUS_PATH = Path(__file__).parent / "data" / "example_corpus.jsonl"
 
 
+@dataclass(frozen=True)
+class CorpusExample:
+    """An indexed utterance, its intent, and its customer-service topic.
+
+    ``topic`` is empty for executable intents. For refused rows it names the
+    question the customer asked ("تم التحصيل مرتين"), which is what lets the
+    engine answer in the topic's context instead of offering a generic menu.
+    """
+
+    text: str
+    intent: Intent
+    topic: str = ""
+
+
 @lru_cache(maxsize=1)
-def load_corpus_examples() -> tuple[tuple[str, Intent], ...]:
-    """Return ``(utterance, intent)`` pairs from the corpus file.
+def load_corpus_examples() -> tuple[CorpusExample, ...]:
+    """Return the corpus rows to index.
 
     A missing or malformed file degrades to an empty corpus: the built-in
     examples alone still classify, and refusing to start would take the whole
@@ -40,13 +55,19 @@ def load_corpus_examples() -> tuple[tuple[str, Intent], ...]:
         logger.warning("Example corpus unavailable (%s); using built-ins only.", exc)
         return ()
 
-    rows: list[tuple[str, Intent]] = []
+    rows: list[CorpusExample] = []
     for line in lines:
         if not line.strip():
             continue
         try:
             row = json.loads(line)
-            rows.append((str(row["text"]), Intent(row["intent"])))
+            rows.append(
+                CorpusExample(
+                    text=str(row["text"]),
+                    intent=Intent(row["intent"]),
+                    topic=str(row.get("topic") or ""),
+                )
+            )
         except (ValueError, KeyError) as exc:
             logger.warning("Skipping malformed corpus row (%s).", exc)
     return tuple(rows)

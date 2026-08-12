@@ -73,6 +73,9 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         "alias_not_found",
         # A policy message that ends the conversation: must stay firm and exact.
         "repeat_offense",
+        # States what the assistant can and cannot do about a customer-service
+        # topic; a re-worded capability claim would be a false promise.
+        "topic_answer",
     }
 )
 

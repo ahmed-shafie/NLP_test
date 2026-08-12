@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from app.config import settings
 from app.embeddings import get_embedder
-from app.nlu.corpus import load_corpus_examples
+from app.nlu.corpus import CorpusExample, load_corpus_examples
 from app.nlu.examples import INTENT_EXAMPLES
 from app.schemas import Intent
 from app.vectorstore import FaissVectorStore
@@ -32,6 +32,21 @@ class SimilarExample:
     text: str
     intent: Intent
     score: float
+    topic: str = ""
+
+
+@dataclass(frozen=True)
+class TopicEvidence:
+    """What the retrieved neighbours say about the question's subject.
+
+    ``votes`` counts the neighbours per topic (rows with no topic - executable
+    requests - are not counted, so the counts can sum to less than
+    ``retrieved``).
+    """
+
+    top_score: float
+    votes: dict[str, int]
+    retrieved: int
 
 
 class SemanticIntentClassifier:
@@ -44,16 +59,20 @@ class SemanticIntentClassifier:
                 "Embedder unavailable; cannot build semantic classifier."
             )
         self._embedder = embedder
-        self._store: FaissVectorStore[tuple[str, Intent]] = FaissVectorStore(
+        self._store: FaissVectorStore[CorpusExample] = FaissVectorStore(
             embedder.dimension
         )
 
         corpus = load_corpus_examples()
-        examples = list(INTENT_EXAMPLES) + list(corpus) + list(extra_examples or [])
+        examples = (
+            [CorpusExample(text, intent) for text, intent in INTENT_EXAMPLES]
+            + list(corpus)
+            + [CorpusExample(text, intent) for text, intent in extra_examples or []]
+        )
         self.base_count = len(INTENT_EXAMPLES)
         self.corpus_count = len(corpus)
         self.extra_count = len(extra_examples or [])
-        texts = [text for text, _ in examples]
+        texts = [example.text for example in examples]
         vectors = embedder.encode(texts)
         self._store.add(vectors, examples)
         logger.info(
@@ -74,9 +93,33 @@ class SemanticIntentClassifier:
         query = self._embedder.encode_one(text)
         hits = self._store.search(query, top_k)
         return [
-            SimilarExample(text=hit.payload[0], intent=hit.payload[1], score=hit.score)
+            SimilarExample(
+                text=hit.payload.text,
+                intent=hit.payload.intent,
+                score=hit.score,
+                topic=hit.payload.topic,
+            )
             for hit in hits
         ]
+
+    def topic_evidence(self, text: str) -> TopicEvidence:
+        """Report which customer-service topics the nearest indexed rows name.
+
+        Evidence only — no thresholds are applied here. Deciding whether the
+        retrieval is strong enough to answer belongs with the replies
+        (:mod:`app.conversation.topic_replies`), which also knows how topics
+        group into families.
+        """
+
+        neighbours = self.similar(text, k=settings.topic_reply_top_k)
+        votes: dict[str, int] = defaultdict(int)
+        for n in neighbours:
+            if n.topic:
+                votes[n.topic] += 1
+        top = neighbours[0].score if neighbours else 0.0
+        return TopicEvidence(
+            top_score=round(top, 4), votes=dict(votes), retrieved=len(neighbours)
+        )
 
     def classify(self, text: str) -> tuple[Intent, float]:
         """Classify ``text`` by aggregating nearest-neighbour similarity per intent.
