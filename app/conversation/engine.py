@@ -116,6 +116,20 @@ _CANCEL = {
     "توقف",
     "خروج",
 }
+# "The IBAN is right, use it": the way past a failed mod-97 check. Substrings of
+# the normalized turn, since these arrive as phrases rather than single tokens.
+_INSIST_PHRASES = (
+    "im sure",
+    "i m sure",
+    "i am sure",
+    "am sure",
+    "sure it s right",
+    "use it",
+    "انا متاكد",
+    "متاكد",
+    "اكيد",
+    "استخدمه",
+)
 # Leading words that mean "delete the named shortcut" (e.g. "forget laila").
 _FORGET = {"forget", "remove", "delete", "احذف", "امسح"}
 
@@ -656,6 +670,16 @@ _CONTROL_TOKENS = (
 
 def _matches(text: str, vocabulary: set[str]) -> bool:
     return bool(_tokens(text) & vocabulary)
+
+
+def _insists(text: str) -> bool:
+    """True when the customer stands by an IBAN we flagged as mistyped."""
+
+    normalized = normalize(text)
+    if any(phrase in normalized for phrase in _INSIST_PHRASES):
+        return True
+    # Nothing else is yes-able at that prompt, so a bare "yes" means "I'm sure".
+    return _matches(text, _AFFIRM)
 
 
 # Request verbs / fillers (normalized) that leak into a bare recipient answer
@@ -1886,6 +1910,7 @@ class ConversationEngine:
         """Fill the name or the account slot from this turn, then move forward."""
 
         if _matches(text, _NEGATIVE):
+            state.pending_unchecked_account = None
             return self._abandon_add_beneficiary(state, lang)
 
         if state.pending_slot == "beneficiary_name":
@@ -1900,13 +1925,30 @@ class ConversationEngine:
         if not raw:
             return self._advance_add_beneficiary(state, lang)
         account, reason = accounts.validate_account(raw)
+        insisted = state.pending_unchecked_account
+        state.pending_unchecked_account = None
+        if account is None and insisted is not None and _insists(raw):
+            # A checksum says a character is wrong, not that the account does not
+            # exist. The customer reading it off a statement overrules us.
+            state.pending_add_account = insisted
+            state.account_checksum_overridden = True
+            return self._advance_add_beneficiary(state, lang)
         if account is None:
             name = state.pending_add_name or ""
+            if reason == "iban_checksum":
+                state.pending_unchecked_account = accounts.normalize_account(raw)
+                return self._finish(
+                    state,
+                    templates.beneficiary_iban_typo(
+                        name, accounts.analyze_iban_typo(raw), lang
+                    ),
+                )
             return self._finish(
                 state,
                 templates.beneficiary_invalid_account(name, reason or "", lang),
             )
         state.pending_add_account = account
+        state.account_checksum_overridden = False
         return self._advance_add_beneficiary(state, lang)
 
     def _advance_add_beneficiary(
@@ -1955,6 +1997,12 @@ class ConversationEngine:
         name = state.pending_add_name or ""
         account = state.pending_add_account or ""
         resumes = state.add_resumes_transfer
+        if state.account_checksum_overridden:
+            logger.warning(
+                "beneficiary %r saved with an IBAN the customer confirmed "
+                "against a failed mod-97 check",
+                name,
+            )
         created = banking_core_client.add_beneficiary(
             owner_user=self._owner(state),
             name=name,
@@ -1964,6 +2012,7 @@ class ConversationEngine:
         state.pending_add_name = None
         state.pending_add_account = None
         state.add_resumes_transfer = False
+        state.account_checksum_overridden = False
         if not created or not created.get("ok"):
             reason = created.get("message") if created else None
             reply = templates.beneficiary_add_failed(name, lang, reason)
@@ -2055,6 +2104,14 @@ class ConversationEngine:
                 return templates.choose_beneficiary(options, lang)
             return templates.choose_biller(
                 [opt.name for opt in state.biller_options], lang
+            )
+        if state.pending_unchecked_account is not None:
+            # Re-ask the question actually on the table, so a following "yes"
+            # answers the checksum warning rather than an unrelated prompt.
+            return templates.beneficiary_iban_typo(
+                state.pending_add_name or "",
+                accounts.analyze_iban_typo(state.pending_unchecked_account),
+                lang,
             )
         if state.pending_add_name:
             return templates.beneficiary_not_found(state.pending_add_name, lang)
@@ -2247,14 +2304,19 @@ class ConversationEngine:
             masked = _mask_account(state.pending_add_account)
             name = state.pending_add_name or ""
             if state.add_resumes_transfer:
-                return templates.confirm_add_then_transfer(
+                text = templates.confirm_add_then_transfer(
                     name,
                     masked,
                     self._fmt_amount(slots.amount),
                     slots.currency or "",
                     lang,
                 )
-            return templates.confirm_add_beneficiary(name, masked, lang)
+            else:
+                text = templates.confirm_add_beneficiary(name, masked, lang)
+            note = templates.unchecked_account_note(
+                state.account_checksum_overridden, lang
+            )
+            return f"{text} {note}" if note else text
         if state.intent is Intent.PAY_BILL:
             return templates.bill_confirm_prompt(
                 self._fmt_amount(slots.amount),

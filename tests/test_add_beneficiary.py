@@ -12,11 +12,14 @@ import pytest
 import app.banking_core_client as bcc
 from app.conversation.engine import ConversationEngine
 from app.conversation.state import ConversationStatus
-from app.nlu.accounts import validate_account
+from app.nlu.accounts import analyze_iban_typo, validate_account
 from app.schemas import Intent
 
 VALID_IBAN = "SA0380000000608010167519"
 VALID_IBAN_SPACED = "SA03 8000 0000 6080 1016 7519"
+# Same IBAN with the last two characters transposed, and with one digit changed.
+SWAPPED_IBAN = "SA0380000000608010167591"
+MISTYPED_IBAN = "SA0380000000608010167516"
 
 
 @pytest.fixture()
@@ -205,6 +208,110 @@ def test_banking_core_failure_is_surfaced(engine, monkeypatch):
     result = engine.handle("yes", "add-7")
     assert "already exists" in result.reply
     assert "✅" not in result.reply  # never claim success on a rejected write
+
+
+# --------------------- a failed checksum is a typo, not a wall -------------- #
+
+
+def test_typo_hint_finds_a_transposition():
+    hint = analyze_iban_typo(SWAPPED_IBAN)
+    assert hint.swapped == (23, 24)
+    assert hint.is_located
+
+
+def test_typo_hint_stays_silent_when_the_spot_is_ambiguous():
+    """Several single-character edits repair it, so no position is claimed."""
+
+    hint = analyze_iban_typo(MISTYPED_IBAN)
+    assert hint.swapped is None
+    assert len(hint.positions) > 1
+    assert not hint.is_located
+
+
+def test_typo_hint_is_empty_for_a_valid_iban():
+    assert analyze_iban_typo(VALID_IBAN) == analyze_iban_typo("not an iban")
+
+
+def test_checksum_failure_offers_a_way_through(engine, writes):
+    engine.handle("add a beneficiary", "typo-1")
+    engine.handle("Khaled Otaibi", "typo-1")
+    rejected = engine.handle(MISTYPED_IBAN, "typo-1")
+
+    assert "checksum" in rejected.reply
+    assert "I'm sure" in rejected.reply
+    assert rejected.state.pending_add_account is None  # not accepted yet
+    assert rejected.state.pending_unchecked_account == MISTYPED_IBAN
+    assert not writes
+
+
+def test_the_customer_can_insist_and_the_account_is_used_verbatim(engine, writes):
+    engine.handle("add a beneficiary", "typo-2")
+    engine.handle("Khaled Otaibi", "typo-2")
+    engine.handle(MISTYPED_IBAN, "typo-2")
+
+    insisted = engine.handle("I'm sure", "typo-2")
+    assert insisted.state.status is ConversationStatus.CONFIRMING
+    assert insisted.state.pending_add_account == MISTYPED_IBAN
+    assert insisted.state.account_checksum_overridden
+    assert "SA••7516" in insisted.reply
+    assert "checksum" in insisted.reply  # the warning is restated before the write
+    assert not writes
+
+    engine.handle("yes", "typo-2")
+    assert writes[0]["account"] == MISTYPED_IBAN
+
+
+def test_a_corrected_iban_clears_the_override(engine, writes):
+    engine.handle("add a beneficiary", "typo-3")
+    engine.handle("Khaled Otaibi", "typo-3")
+    engine.handle(MISTYPED_IBAN, "typo-3")
+
+    fixed = engine.handle(VALID_IBAN, "typo-3")
+    assert fixed.state.pending_add_account == VALID_IBAN
+    assert not fixed.state.account_checksum_overridden
+    assert fixed.state.pending_unchecked_account is None
+
+
+@pytest.mark.parametrize("bad", ["SA1122330000007777", "1234", "abcd"])
+def test_only_a_checksum_failure_can_be_overridden(engine, writes, bad: str):
+    """A wrong length or shape is not a typo the customer can vouch for."""
+
+    session = f"typo-4-{bad}"
+    engine.handle("add a beneficiary", session)
+    engine.handle("Khaled Otaibi", session)
+    engine.handle(bad, session)
+
+    insisted = engine.handle("I'm sure", session)
+    assert insisted.state.pending_add_account is None
+    assert insisted.state.status is ConversationStatus.COLLECTING
+    assert not writes
+
+
+def test_declining_the_flagged_iban_cancels(engine, writes):
+    engine.handle("add a beneficiary", "typo-5")
+    engine.handle("Khaled Otaibi", "typo-5")
+    engine.handle(MISTYPED_IBAN, "typo-5")
+
+    result = engine.handle("no", "typo-5")
+    assert result.state.status is ConversationStatus.CANCELLED
+    assert result.state.pending_unchecked_account is None
+    assert not writes
+
+
+def test_the_flagged_iban_prompt_is_what_an_aside_resumes(engine, writes):
+    """A balance question mid-flow must not turn a later "yes" into a blind ok."""
+
+    engine.handle("اضف مستفيد جديد", "typo-6")
+    engine.handle("نورة سعد", "typo-6")
+    engine.handle(MISTYPED_IBAN, "typo-6")
+
+    aside = engine.handle("كم رصيدي", "typo-6")
+    assert "الآيبان" in aside.reply
+    assert "أنا متأكد" in aside.reply
+
+    insisted = engine.handle("نعم", "typo-6")
+    assert insisted.state.account_checksum_overridden
+    assert insisted.state.language.value == "ar"
 
 
 def test_add_request_is_not_a_listing_request(engine, writes):

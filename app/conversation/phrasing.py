@@ -72,6 +72,10 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         # figures and must reach the customer unchanged.
         "insufficient_funds",
         "preflight_blocked",
+        # Names the exact character position a checksum implicates, and repeats
+        # that warning at the point of no return.
+        "beneficiary_iban_typo",
+        "unchecked_account_note",
         "alias_created",
         "alias_forgotten",
         "alias_not_found",

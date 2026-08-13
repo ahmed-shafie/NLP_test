@@ -96,6 +96,11 @@ class ConversationState(BaseModel):
     pending_add_name: str | None = None
     pending_add_account: str | None = None
     add_resumes_transfer: bool = False
+    # An IBAN that failed only its mod-97 checksum, held for one turn in case the
+    # customer insists it is right; ``account_checksum_overridden`` records that
+    # they did, so the write is traceable to their explicit override.
+    pending_unchecked_account: str | None = None
+    account_checksum_overridden: bool = False
     # Advisory pre-flight notes (FX) shown at confirmation; these never block.
     preflight_warnings: list[str] = Field(default_factory=list)
     # Pre-flight refusals from the Banking Core (insufficient funds, inactive
@@ -126,6 +131,8 @@ class ConversationState(BaseModel):
         self.pending_add_name = None
         self.pending_add_account = None
         self.add_resumes_transfer = False
+        self.pending_unchecked_account = None
+        self.account_checksum_overridden = False
         self.preflight_warnings = []
         self.preflight_blocking = []
         self.offered_amount = None
