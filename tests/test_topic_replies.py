@@ -21,6 +21,7 @@ from app.conversation.topic_replies import (
 from app.embeddings import get_embedder
 from app.schemas import Language
 
+QUESTION = "ليش انخصم مني مرتين؟"
 CHARGED_TWICE = "تم التحصيل مرتين"
 TIMING = "توقيت التحويل"
 NOT_RECEIVED = "لم يستلم المستلم التحويل"
@@ -81,46 +82,118 @@ def test_meta_labels_have_no_answer() -> None:
 
 
 def test_unanimous_neighbours_answer_the_topic() -> None:
-    answer = decide(0.80, {CHARGED_TWICE: 10}, 10, Language.AR)
+    answer = decide(QUESTION, 0.80, {CHARGED_TWICE: 10}, 10, Language.AR)
     assert answer is not None
     assert answer.subject == CHARGED_TWICE
 
 
 def test_unanimous_but_distant_neighbours_stay_generic() -> None:
-    assert decide(0.70, {CHARGED_TWICE: 10}, 10, Language.AR) is None
+    assert decide(QUESTION, 0.70, {CHARGED_TWICE: 10}, 10, Language.AR) is None
 
 
 def test_a_split_vote_needs_the_higher_bar() -> None:
     """Eight of ten is enough at 0.95 similarity, not at 0.80."""
 
     votes = {CHARGED_TWICE: 8, TIMING: 1, NOT_RECEIVED: 1}
-    assert decide(0.95, votes, 10, Language.AR) is not None
-    assert decide(0.80, votes, 10, Language.AR) is None
+    assert decide(QUESTION, 0.95, votes, 10, Language.AR) is not None
+    assert decide(QUESTION, 0.80, votes, 10, Language.AR) is None
 
 
 def test_a_weak_majority_stays_generic() -> None:
     """Six of ten name the topic — agreement the gate does not accept."""
 
     votes = {CHARGED_TWICE: 6, TIMING: 2, NOT_RECEIVED: 2}
-    assert decide(0.99, votes, 10, Language.AR) is None
+    assert decide(QUESTION, 0.99, votes, 10, Language.AR) is None
 
 
 def test_disagreeing_topics_stay_generic_even_within_one_family() -> None:
     """Measured: answering these at family level quadruples wrong answers."""
 
     votes = {TIMING: 4, NOT_RECEIVED: 4, "انتظار التحويل": 2}
-    assert decide(0.95, votes, 10, Language.AR) is None
+    assert decide(QUESTION, 0.95, votes, 10, Language.AR) is None
 
 
 def test_no_topic_at_all_stays_generic() -> None:
     """Nearest rows are executable requests, so there is no subject to answer."""
 
-    assert decide(0.99, {}, 10, Language.EN) is None
+    assert decide(QUESTION, 0.99, {}, 10, Language.EN) is None
 
 
 def test_gate_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "topic_reply_unanimous_threshold", 0.99)
-    assert decide(0.90, {CHARGED_TWICE: 10}, 10, Language.AR) is None
+    assert decide(QUESTION, 0.90, {CHARGED_TWICE: 10}, 10, Language.AR) is None
+
+
+# --------------------------------------------------- subjects the gate confuses
+
+
+def test_the_rate_and_its_fee_get_the_same_exchange_answer() -> None:
+    """Retrieval cannot tell them apart, so neither answer may exclude the other."""
+
+    assert TOPIC_FAMILIES["سعر الصرف"] == TOPIC_FAMILIES["رسوم الصرف"] == "fx"
+    reply = topic_replies.topic_reply("رسوم الصرف", Language.EN)
+    assert reply is not None
+    assert "rate" in reply and "fee" in reply
+
+
+def test_a_blocked_card_and_a_blocked_pin_get_the_same_answer() -> None:
+    assert TOPIC_FAMILIES["البطاقة لا تعمل"] == "card_blocked"
+    assert TOPIC_FAMILIES["رمز التعريف الشخصي محظور"] == "card_blocked"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "my card is not working",
+        "أظن إني ماني قادر استخدم بطاقتي",
+        "علاش ما خدماش البطاقة الافتراضية ديالي؟",
+    ],
+)
+def test_a_card_that_does_not_work_is_not_answered_as_a_stolen_card(
+    question: str,
+) -> None:
+    """ "Call support now to block it" is only right for a theft."""
+
+    answer = decide(question, 0.95, {"بطاقة مخترقة": 10}, 10, Language.AR)
+
+    assert answer is not None
+    assert answer.reply == FAMILY_REPLIES["card_blocked"][Language.AR]
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["كيف أقدر أجمد بطاقتي من التطبيق؟", "how do I freeze my card in the app?"],
+)
+def test_freezing_a_card_is_answered_as_urgent(question: str) -> None:
+    """Retrieval reads this as a question about the app; the answer is urgent."""
+
+    language = Language.EN if question.isascii() else Language.AR
+    answer = decide(question, 0.95, {"ربط البطاقة": 10}, 10, language)
+
+    assert answer is not None
+    assert answer.reply == FAMILY_REPLIES["security"][language]
+
+
+def test_unblocking_a_card_is_not_a_theft_report() -> None:
+    answer = decide(
+        "كيف أقدر ألغي حظر بطاقتي بالتطبيق؟",
+        0.95,
+        {"البطاقة لا تعمل": 10},
+        10,
+        Language.AR,
+    )
+
+    assert answer is not None
+    assert answer.reply == FAMILY_REPLIES["card_blocked"][Language.AR]
+
+
+def test_the_cues_cannot_answer_a_question_the_gate_refused() -> None:
+    """A cue corrects the subject; it never lowers the bar for answering."""
+
+    assert (
+        decide("my card is not working", 0.50, {"بطاقة مخترقة": 10}, 10, Language.EN)
+        is None
+    )
 
 
 # ------------------------------------------------------------ through the engine

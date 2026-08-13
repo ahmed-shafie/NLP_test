@@ -2047,7 +2047,7 @@ class ConversationEngine:
             return None
         with tracer.block("topic_answer") as span:
             evidence = classifier.topic_evidence(text)
-            answer = templates.topic_answer(evidence, lang)
+            answer = templates.topic_answer(text, evidence, lang)
             if answer is None:
                 span.skip(f"no confident topic @ {evidence.top_score}")
                 return None

@@ -1062,7 +1062,7 @@ def alias_not_found(name: str, language: Language) -> str:
 
 
 def topic_answer(
-    evidence: TopicEvidence, language: Language
+    text: str, evidence: TopicEvidence, language: Language
 ) -> topic_replies.TopicAnswer | None:
     """Answer a refused customer-service question in its own topic.
 
@@ -1074,5 +1074,5 @@ def topic_answer(
     """
 
     return topic_replies.decide(
-        evidence.top_score, evidence.votes, evidence.retrieved, language
+        text, evidence.top_score, evidence.votes, evidence.retrieved, language
     )

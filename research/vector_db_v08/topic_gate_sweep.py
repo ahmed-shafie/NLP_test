@@ -101,10 +101,12 @@ def score(rows: list[Cached], k: int) -> tuple[int, int, list[tuple[str, str, st
     examples: list[tuple[str, str, str]] = []
     for row in rows:
         top, votes, retrieved = row.evidence(k)
-        answer = decide(top, votes, retrieved, row.language)
+        answer = decide(row.text, top, votes, retrieved, row.language)
         if answer is None:
             continue
         answered += 1
+        # The gold reply is read from the gold topic alone: correcting it with
+        # the same cues the gate uses would score the correction against itself.
         if answer.reply != topic_reply(row.gold, row.language):
             wrong += 1
             if len(examples) < 12:
