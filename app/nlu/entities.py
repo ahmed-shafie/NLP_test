@@ -227,6 +227,14 @@ _EN_NOT_A_NAME = frozenset(
     | {alias.lower() for aliases in SUPPORTED_CURRENCIES.values() for alias in aliases}
 )
 
+# "pay Mona 40 riyals": a payee named with no "to" anchor, recognised only when
+# the very next thing is an amount and the sentence is not about a bill.
+_EN_PAY_NAME_RE = re.compile(
+    r"\b(?:pay|send|transfer|wire|remit|give)\s+"
+    r"([A-Za-z][\w'\u2019-]*(?:\s+[A-Za-z][\w'\u2019-]*){0,2}?)\s+(?=\d)",
+    re.IGNORECASE,
+)
+
 _EN_SPELLED_AMOUNT = (
     "hundred",
     "thousand",
@@ -344,6 +352,26 @@ def extract_lowercase_recipient(text: str) -> str | None:
     return None
 
 
+def extract_recipient_without_anchor(text: str) -> str | None:
+    """Read "pay Mona 40 riyals" — a payee named with no "to" before it.
+
+    Without the "to" anchor the only evidence that the word is a person is its
+    position: straight after a move verb and straight before an amount. That is
+    also the shape of "pay mobily 100", so a message that resolves to a biller or
+    mentions a bill is left alone — a biller must never become a payee.
+    """
+
+    if has_bill_word(text) or resolve_biller(text) is not None:
+        return None
+    match = _EN_PAY_NAME_RE.search(normalize_digits(text))
+    if match is None:
+        return None
+    words = match.group(1).split()
+    if any(w.lower() in _EN_NOT_A_NAME or w.lower() in _EN_NAME_LEAD for w in words):
+        return None
+    return " ".join(words)
+
+
 def extract_recipient(text: str, language: Language) -> str | None:
     """Return the beneficiary name via language-specific surface patterns.
 
@@ -354,7 +382,11 @@ def extract_recipient(text: str, language: Language) -> str | None:
     pattern = _AR_RECIPIENT_RE if language is Language.AR else _EN_RECIPIENT_RE
     match = pattern.search(text)
     if not match:
-        return None if language is Language.AR else extract_lowercase_recipient(text)
+        if language is Language.AR:
+            return None
+        return extract_lowercase_recipient(text) or extract_recipient_without_anchor(
+            text
+        )
     candidate = match.group(1).strip(" ,،.")
     if not candidate:
         return None
@@ -382,11 +414,13 @@ _REF_CUE_RE = re.compile(
     r"\s*[:#\-]?\s*(\d{2,})",
     re.IGNORECASE,
 )
-# An amount following an explicit cue ("amount 320", "بمبلغ ٣٢٠").
+# An amount following an explicit cue ("amount 320", "for 210", "بمبلغ ٣٢٠").
 _AMOUNT_CUE_RE = re.compile(
-    r"(?:\bamount\b|بمبلغ|مبلغ)\s*[:#]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE
+    r"(?:\bamount\b|\bfor\b|بمبلغ|مبلغ)\s*[:#]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE
 )
 _DIGITS_RUN_RE = re.compile(r"\d{2,}")
+# A request to pay, as opposed to a bare answer naming a bill ("Water Services 5512").
+_PAY_VERB_RE = re.compile(r"\b(?:pay|settle|cover)\b|ادفع|أدفع|سدد|دفع", re.IGNORECASE)
 _BILL_WORD_RE = re.compile(r"\bbills?\b|\binvoices?\b|فاتورة|فواتير", re.IGNORECASE)
 # Free-text biller before the word "bill" (e.g. "City Power Co bill").
 _EN_BILLER_RE = re.compile(
@@ -454,12 +488,18 @@ def _reference_via_cue(normalized: str) -> str | None:
 
 
 def _bill_amount(
-    normalized: str, currency: str | None, reference: str | None
+    normalized: str,
+    currency: str | None,
+    reference: str | None,
+    *,
+    biller_known: bool,
 ) -> Decimal | None:
-    """Amount for a bill: only via an explicit cue or adjacent to a currency.
+    """Amount for a bill: an explicit cue, a currency-adjacent number, or —
+    only when a biller is already known — a cue-less number placed where a
+    reference cannot be (see :func:`_bare_number_amount`).
 
-    A bare number with no currency/cue is treated as the reference, not the
-    amount, so "electricity bill 778899" doesn't read 778899 as the amount.
+    A number that follows the bill word stays the reference, so "electricity
+    bill 778899" doesn't read 778899 as the amount.
     """
 
     cue = _AMOUNT_CUE_RE.search(normalized)
@@ -469,7 +509,29 @@ def _bill_amount(
         for run in re.findall(r"\d+(?:\.\d+)?", normalized):
             if reference is None or run != reference:
                 return _to_decimal(run)
+    if reference is None and biller_known:
+        return _bare_number_amount(normalized)
     return None
+
+
+def _bare_number_amount(normalized: str) -> Decimal | None:
+    """A cue-less number in a bill message, when it can only be the amount.
+
+    A reference follows what it refers to ("gas bill 5566", "فاتورة الغاز ٥٥٦٦"),
+    so a number is read as money only when it comes *before* the bill word
+    ("pay 320 for my phone bill") or when the message names a biller without
+    saying "bill" at all ("pay mobily 100"). Both need the customer to be asking
+    to pay: naming a bill in answer to "which bill?" ("Water Services 5512")
+    gives the reference, not an amount.
+    """
+
+    run = _DIGITS_RUN_RE.search(normalized)
+    if run is None or _PAY_VERB_RE.search(normalized) is None:
+        return None
+    bill_word = _BILL_WORD_RE.search(normalized)
+    if bill_word is not None and run.start() > bill_word.start():
+        return None
+    return _to_decimal(run.group(0))
 
 
 def extract_biller(
@@ -525,7 +587,9 @@ def extract_bill_entities(
     )
     currency = extract_currency(normalized)
     reference = _reference_via_cue(normalized)
-    amount = _bill_amount(normalized, currency, reference)
+    amount = _bill_amount(
+        normalized, currency, reference, biller_known=biller is not None
+    )
     if reference is None and (biller is not None or has_bill_word(text)):
         amount_digits = _amount_digits(amount)
         for run in _DIGITS_RUN_RE.findall(normalized):
