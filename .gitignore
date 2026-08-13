@@ -19,6 +19,11 @@ env/
 stanza_resources/
 *.spacy
 
+# Local databases (beneficiary demo / dev)
+*.db
+*.sqlite
+*.sqlite3
+
 # Env / secrets
 .env
 .env.*
@@ -28,3 +33,6 @@ stanza_resources/
 .vscode/
 .idea/
 .DS_Store
+
+# Research cache: retrieved neighbours of the held-out slice (regenerated)
+research/vector_db_v08/topic_evidence.jsonl

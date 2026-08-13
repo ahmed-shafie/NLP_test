@@ -1,0 +1,35 @@
+digraph degradation {
+  rankdir=TB;
+  bgcolor="white";
+  node [fontname="Helvetica", fontsize=11, style="filled", color="#334155"];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+  graph [fontname="Helvetica", fontsize=12, labelloc="t",
+         label="Figure 5 — Graceful Degradation: every model is optional"];
+
+  start [label="parse(text)", shape=note, fillcolor="#e0f2fe"];
+
+  d1 [label="embeddings\nloaded?", shape=diamond, fillcolor="#fef9c3"];
+  semantic [label="semantic intent\n(intent_source=semantic)", fillcolor="#dcfce7"];
+  keyword  [label="keyword intent\n(intent_source=keyword)", fillcolor="#fee2e2"];
+
+  d2 [label="NER model\n(spaCy/Stanza)\nloaded?", shape=diamond, fillcolor="#fef9c3"];
+  ner   [label="NER slot extraction", fillcolor="#dcfce7"];
+  regex [label="regex slot extraction", fillcolor="#fee2e2"];
+
+  d3 [label="LLM reachable\n& needed?", shape=diamond, fillcolor="#fef9c3"];
+  llm   [label="LLM fills slots +\nclarification (llm_assisted=true)", fillcolor="#f3e8ff"];
+  skip  [label="skip LLM\n(unchanged result)", fillcolor="#e2e8f0"];
+
+  done [label="NLUResponse", shape=note, fillcolor="#dbeafe"];
+
+  start -> d1;
+  d1 -> semantic [label="yes"];
+  d1 -> keyword  [label="no"];
+  semantic -> d2; keyword -> d2;
+  d2 -> ner   [label="yes"];
+  d2 -> regex [label="no"];
+  ner -> d3; regex -> d3;
+  d3 -> llm  [label="yes", color="#7c3aed", fontcolor="#7c3aed"];
+  d3 -> skip [label="no"];
+  llm -> done; skip -> done;
+}

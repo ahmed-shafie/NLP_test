@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Banking NLU Brain — Resource Connections</title>
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+    textarea { min-height: 60px; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    button { padding: 9px 15px; font-size: 14px; }
+    button.sm { padding: 5px 10px; font-size: 12px; box-shadow: none; }
+    td.mono, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+    .badge.active { background: rgba(5,150,105,.12); color: var(--good); border: 1px solid rgba(5,150,105,.35); }
+    .badge.kind { background: rgba(37,99,235,.1); color: var(--brand); border: 1px solid rgba(37,99,235,.3); }
+    .badge.lake { background: rgba(124,58,237,.12); color: var(--purple); border: 1px solid rgba(124,58,237,.35); }
+    .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; display: none; max-width: none; }
+    .msg.ok { display:block; background: rgba(5,150,105,.1); border: 1px solid rgba(5,150,105,.4); color: #047857; }
+    .msg.bad { display:block; background: rgba(225,29,72,.1); border: 1px solid rgba(225,29,72,.4); color: var(--danger); }
+    .hint { color: var(--muted); font-size: 12px; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="rail">
+      <a class="logo" href="/assistant" title="Home">N</a>
+      <div class="nav">
+        <a class="ic" title="Assistant" href="/assistant">💬</a>
+        <a class="ic" title="Brain (Developer mode)" href="/assistant?dev=1">🧠</a>
+        <a class="ic" title="NLU Sandbox" href="/">🧪</a>
+        <a class="ic" title="Insights" href="/brain/monitor">📊</a>
+        <a class="ic" title="Learning" href="/active-learning">🎓</a>
+        <a class="ic active" title="Connections" href="/admin">🔗</a>
+        <a class="ic" title="Audit" href="/admin/audit">🛡️</a>
+      </div>
+      <div class="me" title="user"></div>
+    </div>
+    <div class="main">
+      <div class="top">
+        <div class="av">🔗</div>
+        <div><div class="ttl">Connections</div><div class="sub">External databases &amp; datalake providers</div></div>
+      </div>
+
+  <main class="content">
+    <section class="card">
+      <h2>Banking Core — per-case configuration</h2>
+      <div class="hint" style="margin-bottom:10px">
+        Transfer, Pay bill, Balance &amp; Add beneficiary use the external
+        <b>API</b>. Beneficiary <b>lookup</b> reads the database directly (no API).
+      </div>
+      <div class="grid2">
+        <div>
+          <label><input type="checkbox" id="bcApiEnabled" /> Enable Banking Core API
+            (transfer · pay bill · balance · add beneficiary)</label>
+          <label for="bcApiUrl">API base URL</label>
+          <input type="text" id="bcApiUrl" class="mono" placeholder="http://localhost:8100" />
+          <label for="bcApiKey">API key <span class="hint">(write-only; blank = keep)</span></label>
+          <input type="password" id="bcApiKey" class="mono" placeholder="••••••" />
+          <label for="bcApiTimeout">Timeout (seconds)</label>
+          <input type="text" id="bcApiTimeout" class="mono" value="10" />
+        </div>
+        <div>
+          <label><input type="checkbox" id="bcLookupEnabled" /> Enable direct-DB
+            beneficiary lookup (disambiguation)</label>
+          <label for="bcLookupUrl">Beneficiary DB URL (SQLAlchemy)</label>
+          <input type="text" id="bcLookupUrl" class="mono" placeholder="sqlite:///./banking-core/banking_core.db" />
+          <label for="bcLookupTable">Beneficiaries table</label>
+          <input type="text" id="bcLookupTable" class="mono" value="beneficiaries" />
+          <label for="bcLookupOwner">Owner column</label>
+          <input type="text" id="bcLookupOwner" class="mono" value="owner_user" />
+        </div>
+      </div>
+      <div class="row">
+        <button id="bcSaveBtn">Save Banking Core config</button>
+        <button class="ghost" id="bcHealthBtn">Test API health</button>
+      </div>
+      <div class="msg" id="bcMsg"></div>
+    </section>
+
+    <section class="card">
+      <h2 id="formTitle">Add a connection</h2>
+      <div class="grid2">
+        <div>
+          <label for="cName">Name</label>
+          <input type="text" id="cName" placeholder="e.g. Core banking (Postgres)" />
+        </div>
+        <div>
+          <label for="cProvider">Provider</label>
+          <select id="cProvider"></select>
+        </div>
+      </div>
+      <label for="cUrl">SQLAlchemy URL <span class="hint" id="driverHint"></span></label>
+      <input type="text" id="cUrl" class="mono" placeholder="postgresql+psycopg://user:pass@host:5432/db" />
+      <label for="cQuery">Lookup query (parameterized)</label>
+      <textarea id="cQuery">SELECT id, name, account, bank FROM beneficiaries WHERE account = :account_number</textarea>
+      <div class="grid2">
+        <div>
+          <label for="cParam">Account bind parameter</label>
+          <input type="text" id="cParam" value="account_number" />
+        </div>
+        <div>
+          <label for="cMap">Column map (JSON: field → column)</label>
+          <input type="text" id="cMap" class="mono" value="{}" placeholder='{"name":"full_name"}' />
+        </div>
+      </div>
+      <div class="row">
+        <button id="saveBtn">Save connection</button>
+        <button class="ghost" id="testFormBtn">Test connection</button>
+        <button class="ghost" id="clearBtn">Clear</button>
+        <input type="hidden" id="editId" value="" />
+      </div>
+      <div class="msg" id="formMsg"></div>
+    </section>
+
+    <section class="card">
+      <h2>Configured connections</h2>
+      <div id="activeBanner" class="hint" style="margin-bottom:10px"></div>
+      <div style="overflow:auto">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Provider</th><th>URL</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="connRows"><tr><td colspan="5" class="hint">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+      <footer>
+        FastAPI · provider-agnostic via SQLAlchemy · <a href="/docs">OpenAPI docs</a>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let PRESETS = [];
+
+    async function api(path, opts) {
+      opts = opts || {};
+      const headers = Object.assign({}, opts.headers || {});
+      const res = await fetch(path, Object.assign({}, opts, { headers }));
+      let body = null;
+      try { body = await res.json(); } catch (e) { body = null; }
+      if (!res.ok) {
+        const msg = body && body.error ? body.error.message : (body && body.detail ? JSON.stringify(body.detail) : ("HTTP " + res.status));
+        throw new Error(msg);
+      }
+      return body;
+    }
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+    function showMsg(ok, text) { const m = $("formMsg"); m.className = "msg " + (ok ? "ok" : "bad"); m.textContent = text; }
+
+    async function loadProviders() {
+      PRESETS = await api("/admin/api/connections/providers");
+      const sel = $("cProvider");
+      sel.innerHTML = "";
+      PRESETS.forEach(p => {
+        const o = document.createElement("option");
+        o.value = p.provider;
+        o.textContent = p.label + (p.kind === "datalake" ? "  (datalake)" : "");
+        o.dataset.url = p.url_template; o.dataset.driver = p.driver; o.dataset.kind = p.kind;
+        sel.appendChild(o);
+      });
+      sel.onchange = applyPreset;
+      applyPreset();
+    }
+    function applyPreset() {
+      const opt = $("cProvider").selectedOptions[0];
+      if (!opt) return;
+      $("driverHint").textContent = "· driver: " + opt.dataset.driver;
+      if (!$("editId").value && (!$("cUrl").value || PRESETS.some(p => p.url_template === $("cUrl").value))) {
+        $("cUrl").value = opt.dataset.url;
+      }
+    }
+
+    function formPayload() {
+      let columnMap = {};
+      try { columnMap = JSON.parse($("cMap").value || "{}"); }
+      catch (e) { throw new Error("Column map must be valid JSON"); }
+      const opt = $("cProvider").selectedOptions[0];
+      return {
+        name: $("cName").value.trim(),
+        provider: $("cProvider").value,
+        kind: opt ? opt.dataset.kind : "database",
+        url: $("cUrl").value.trim(),
+        query: $("cQuery").value.trim(),
+        account_param: $("cParam").value.trim() || "account_number",
+        column_map: columnMap,
+      };
+    }
+
+    async function save() {
+      let payload;
+      try { payload = formPayload(); } catch (e) { return showMsg(false, e.message); }
+      if (!payload.name || !payload.url) return showMsg(false, "Name and URL are required.");
+      try {
+        const id = $("editId").value;
+        if (id) { await api("/admin/api/connections/" + id, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) }); }
+        else { await api("/admin/api/connections", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) }); }
+        showMsg(true, "Saved.");
+        clearForm(); loadConnections();
+      } catch (e) { showMsg(false, "Save failed: " + e.message); }
+    }
+
+    async function testForm() {
+      let payload;
+      try { payload = formPayload(); } catch (e) { return showMsg(false, e.message); }
+      showMsg(true, "Testing…");
+      try {
+        const r = await api("/admin/api/connections/test", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload) });
+        showMsg(r.ok, (r.ok ? "✓ " : "✗ ") + r.message + (r.elapsed_ms != null ? " (" + r.elapsed_ms + " ms)" : ""));
+      } catch (e) { showMsg(false, "Test failed: " + e.message); }
+    }
+
+    function clearForm() {
+      $("editId").value = ""; $("cName").value = ""; $("cMap").value = "{}";
+      $("cQuery").value = "SELECT id, name, account, bank FROM beneficiaries WHERE account = :account_number";
+      $("cParam").value = "account_number"; $("formTitle").textContent = "Add a connection";
+      applyPreset();
+    }
+
+    function editConn(c) {
+      $("editId").value = c.id; $("cName").value = c.name; $("cProvider").value = c.provider;
+      $("cUrl").value = c.url; $("cQuery").value = c.query; $("cParam").value = c.account_param;
+      $("cMap").value = JSON.stringify(c.column_map || {});
+      $("formTitle").textContent = "Edit connection #" + c.id;
+      applyPreset(); window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    async function loadConnections() {
+      const tbody = $("connRows");
+      try {
+        const rows = await api("/admin/api/connections");
+        const active = rows.find(r => r.is_active);
+        $("activeBanner").innerHTML = active
+          ? "Active provider: <strong>" + esc(active.name) + "</strong> (" + esc(active.provider) + "). The beneficiary lookup uses this connection."
+          : "No active connection — the beneficiary lookup falls back to NLU_DB_* environment settings.";
+        if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" class="hint">No connections yet. Add one above.</td></tr>'; return; }
+        tbody.innerHTML = "";
+        rows.forEach(c => {
+          const tr = document.createElement("tr");
+          const kindBadge = '<span class="badge ' + (c.kind === "datalake" ? "lake" : "kind") + '">' + esc(c.kind) + '</span>';
+          tr.innerHTML =
+            "<td><strong>" + esc(c.name) + "</strong><br>" + kindBadge + "</td>" +
+            "<td>" + esc(c.provider) + "</td>" +
+            '<td class="mono">' + esc(c.url) + "</td>" +
+            "<td>" + (c.is_active ? '<span class="badge active">active</span>' : '<span class="hint">inactive</span>') + "</td>" +
+            '<td><div class="actions">' +
+              '<button class="sm" data-act="activate" data-id="' + c.id + '">Activate</button>' +
+              '<button class="sm ghost" data-act="test" data-id="' + c.id + '">Test</button>' +
+              '<button class="sm ghost" data-act="edit" data-id="' + c.id + '">Edit</button>' +
+              '<button class="sm danger" data-act="delete" data-id="' + c.id + '">Delete</button>' +
+            "</div></td>";
+          tr.querySelector('[data-act=activate]').onclick = () => doActivate(c.id);
+          tr.querySelector('[data-act=test]').onclick = () => doTest(c.id);
+          tr.querySelector('[data-act=edit]').onclick = () => editConn(c);
+          tr.querySelector('[data-act=delete]').onclick = () => doDelete(c.id, c.name);
+          tbody.appendChild(tr);
+        });
+      } catch (e) { tbody.innerHTML = '<tr><td colspan="5" class="msg bad">Failed to load: ' + esc(e.message) + "</td></tr>"; }
+    }
+
+    async function doActivate(id) {
+      try { await api("/admin/api/connections/" + id + "/activate", { method: "POST" }); showMsg(true, "Activated connection #" + id); loadConnections(); }
+      catch (e) { showMsg(false, "Activate failed: " + e.message); }
+    }
+    async function doTest(id) {
+      const sample = prompt("Sample account number to run the lookup (leave blank to just check connectivity):", "");
+      const qs = sample ? ("?sample_account=" + encodeURIComponent(sample)) : "";
+      showMsg(true, "Testing connection #" + id + "…");
+      try {
+        const r = await api("/admin/api/connections/" + id + "/test" + qs, { method: "POST" });
+        showMsg(r.ok, (r.ok ? "✓ " : "✗ ") + r.message + (r.sample_columns && r.sample_columns.length ? " · columns: " + r.sample_columns.join(", ") : ""));
+      } catch (e) { showMsg(false, "Test failed: " + e.message); }
+    }
+    async function doDelete(id, name) {
+      if (!confirm("Delete connection '" + name + "'?")) return;
+      try { await api("/admin/api/connections/" + id, { method: "DELETE" }); showMsg(true, "Deleted."); loadConnections(); }
+      catch (e) { showMsg(false, "Delete failed: " + e.message); }
+    }
+
+    function bcMsg(ok, text) {
+      const el = $("bcMsg");
+      el.className = "msg " + (ok ? "ok" : "bad");
+      el.textContent = text;
+    }
+    async function loadBankingCore() {
+      try {
+        const c = await api("/admin/api/banking-core/config");
+        $("bcApiEnabled").checked = !!c.api_enabled;
+        $("bcApiUrl").value = c.api_url || "";
+        $("bcApiTimeout").value = c.api_timeout;
+        $("bcApiKey").placeholder = c.api_key_set ? "•••••• (set)" : "not set";
+        $("bcLookupEnabled").checked = !!c.lookup_enabled;
+        $("bcLookupUrl").value = c.lookup_db_url || "";
+        $("bcLookupTable").value = c.lookup_table || "beneficiaries";
+        $("bcLookupOwner").value = c.lookup_owner_column || "owner_user";
+      } catch (e) { bcMsg(false, "Failed to load: " + e.message); }
+    }
+    async function saveBankingCore() {
+      const payload = {
+        api_enabled: $("bcApiEnabled").checked,
+        api_url: $("bcApiUrl").value.trim(),
+        api_timeout: parseFloat($("bcApiTimeout").value) || 10,
+        lookup_enabled: $("bcLookupEnabled").checked,
+        lookup_db_url: $("bcLookupUrl").value.trim(),
+        lookup_table: $("bcLookupTable").value.trim(),
+        lookup_owner_column: $("bcLookupOwner").value.trim(),
+      };
+      const key = $("bcApiKey").value;
+      if (key) payload.api_key = key;
+      try {
+        await api("/admin/api/banking-core/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        $("bcApiKey").value = "";
+        bcMsg(true, "✓ Banking Core config saved.");
+        loadBankingCore();
+      } catch (e) { bcMsg(false, "Save failed: " + e.message); }
+    }
+    async function testBankingCore() {
+      bcMsg(true, "Pinging Banking Core /health…");
+      try {
+        const r = await api("/admin/api/banking-core/health", { method: "POST" });
+        bcMsg(r.ok, (r.ok ? "✓ " : "✗ ") + r.message);
+      } catch (e) { bcMsg(false, "Health check failed: " + e.message); }
+    }
+
+    $("saveBtn").onclick = save;
+    $("testFormBtn").onclick = testForm;
+    $("clearBtn").onclick = clearForm;
+    $("bcSaveBtn").onclick = saveBankingCore;
+    $("bcHealthBtn").onclick = testBankingCore;
+    loadProviders().then(loadConnections);
+    loadBankingCore();
+  </script>
+</body>
+</html>

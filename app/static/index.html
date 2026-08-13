@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Banking NLU Brain — Simulator</title>
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    .content { grid-template-columns: 1fr 1fr; }
+    .full { grid-column: 1 / -1; }
+    .result { margin-top: 14px; }
+    .chip[dir=rtl] { font-size: 15px; }
+    .clarify { margin-top: 12px; background: rgba(124,58,237,.08); border: 1px solid rgba(124,58,237,.35); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .clarify .lbl { color: var(--purple); font-size: 12px; display: block; margin-bottom: 4px; }
+    @media (max-width: 900px) { .content { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="rail">
+      <a class="logo" href="/assistant" title="Home">N</a>
+      <div class="nav">
+        <a class="ic" title="Assistant" href="/assistant">💬</a>
+        <a class="ic" title="Brain (Developer mode)" href="/assistant?dev=1">🧠</a>
+        <a class="ic active" title="NLU Sandbox" href="/">🧪</a>
+        <a class="ic" title="Insights" href="/brain/monitor">📊</a>
+        <a class="ic" title="Learning" href="/active-learning">🎓</a>
+        <a class="ic" title="Connections" href="/admin">🔗</a>
+        <a class="ic" title="Audit" href="/admin/audit">🛡️</a>
+      </div>
+      <div class="me" title="user"></div>
+    </div>
+    <div class="main">
+      <div class="top">
+        <div class="av">🧪</div>
+        <div><div class="ttl">NLU Sandbox</div><div class="sub">Stateless parse · English &amp; العربية</div></div>
+        <div class="pill" style="margin-left:auto"><span id="healthDot" class="dot"></span><span id="healthText">checking…</span></div>
+      </div>
+
+  <main class="content">
+    <!-- Parse -->
+    <section class="card full">
+      <h2>Parse utterance <span class="ep">POST /nlu/parse</span></h2>
+      <label for="parseText">Type what the user said (English or Arabic)</label>
+      <textarea id="parseText" placeholder="e.g. send 500 dollars to Ahmed">send 500 dollars to Ahmed</textarea>
+      <label for="parseAccount" style="margin-top:10px">Destination account number (optional — resolves the beneficiary from the database)</label>
+      <input id="parseAccount" type="text" placeholder="e.g. EG1003" />
+      <div class="samples" id="parseSamples"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="parseBtn">Analyze</button>
+        <button class="ghost" id="parseClear">Clear</button>
+      </div>
+      <div class="result" id="parseResult"></div>
+    </section>
+
+    <!-- Similar -->
+    <section class="card">
+      <h2>Nearest examples <span class="ep">GET /nlu/similar</span></h2>
+      <label for="simText">Utterance</label>
+      <input type="text" id="simText" value="I want to send money to Sara" />
+      <div class="row" style="margin-top:12px">
+        <div style="max-width:90px">
+          <label for="simK">k</label>
+          <input type="number" id="simK" value="3" min="1" max="20" />
+        </div>
+        <div style="flex:0 0 auto"><button id="simBtn">Search</button></div>
+      </div>
+      <div class="result" id="simResult"></div>
+    </section>
+
+    <!-- Resolve -->
+    <section class="card">
+      <h2>Resolve contact <span class="ep">POST /contacts/resolve</span></h2>
+      <label for="resName">Recipient name (try a Latin name → Arabic contact)</label>
+      <input type="text" id="resName" value="Ahmed" />
+      <div class="samples" id="resSamples"></div>
+      <div class="row" style="margin-top:12px">
+        <div style="max-width:90px">
+          <label for="resK">top_k</label>
+          <input type="number" id="resK" value="3" min="1" max="20" />
+        </div>
+        <div style="flex:0 0 auto"><button id="resBtn">Resolve</button></div>
+      </div>
+      <div class="result" id="resResult"></div>
+    </section>
+  </main>
+
+      <footer>
+        FastAPI + spaCy + Stanza + FAISS · <a href="/docs">OpenAPI docs</a>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const PARSE_SAMPLES = [
+      { t: "send 500 dollars to Ahmed" },
+      { t: "transfer 1,500 EUR to Sara from my savings account" },
+      { t: "حوّل ألف جنيه إلى محمد", rtl: true },
+      { t: "ارسل ٥٠٠ ريال الى Ahmed", rtl: true },
+      { t: "what is my account balance" },
+    ];
+    const RES_SAMPLES = [
+      { t: "Ahmed" }, { t: "Mohamed" }, { t: "سارة", rtl: true }, { t: "Laila" },
+    ];
+
+    function pct(x) { return (x * 100).toFixed(1) + "%"; }
+    function esc(s) { return String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+    function isRTL(s) { return /[\u0600-\u06FF]/.test(s); }
+
+    function renderChips(container, samples, target) {
+      container.innerHTML = "";
+      samples.forEach(s => {
+        const b = document.createElement("button");
+        b.className = "chip";
+        b.textContent = s.t;
+        if (s.rtl) b.setAttribute("dir", "rtl");
+        b.onclick = () => { target.value = s.t; target.dispatchEvent(new Event("input")); };
+        container.appendChild(b);
+      });
+    }
+
+    async function api(path, opts) {
+      opts = opts || {};
+      const headers = Object.assign({}, opts.headers || {});
+      const res = await fetch(path, Object.assign({}, opts, { headers }));
+      const body = await res.json();
+      if (!res.ok) {
+        const msg = body && body.error ? body.error.message : (body && body.detail ? JSON.stringify(body.detail) : ("HTTP " + res.status));
+        throw new Error(msg);
+      }
+      return body;
+    }
+
+    async function checkHealth() {
+      try {
+        const h = await api("/health");
+        $("healthDot").className = "dot ok";
+        $("healthText").textContent = "API online · v" + (h.version || "?");
+      } catch (e) {
+        $("healthDot").className = "dot bad";
+        $("healthText").textContent = "API offline";
+      }
+    }
+
+    function rawBlock(obj) {
+      return `<details><summary>Raw JSON</summary><pre class="raw">${esc(JSON.stringify(obj, null, 2))}</pre></details>`;
+    }
+
+    const TRACE_COLOR = { ok: "var(--accent-2)", skipped: "var(--muted)", error: "var(--danger)" };
+    function traceBlock(trace) {
+      if (!trace || !trace.length) return "";
+      const max = Math.max(...trace.map(b => b.duration_ms), 0.001);
+      const rows = trace.map(b => {
+        const c = TRACE_COLOR[b.status] || "var(--muted)";
+        const w = Math.max(2, (b.duration_ms / max) * 100);
+        const note = b.note ? ` <span class="muted">· ${esc(b.note)}</span>` : "";
+        return `<div class="item" style="padding:8px 12px">
+            <div class="top">
+              <span><span class="dot" style="background:${c}"></span>${esc(b.block)}${note}</span>
+              <span class="score">${b.duration_ms.toFixed(2)} ms</span>
+            </div>
+            <div class="meter" style="margin-top:6px"><span style="width:${w}%;background:${c}"></span></div>
+          </div>`;
+      }).join("");
+      const total = trace.reduce((s, b) => s + b.duration_ms, 0);
+      return `<details open style="margin-top:14px"><summary>block_trace · ${trace.length} blocks · ${total.toFixed(2)} ms</summary>
+        <div class="list">${rows}</div></details>`;
+    }
+
+    async function doParse() {
+      const text = $("parseText").value.trim();
+      const account = $("parseAccount").value.trim();
+      const out = $("parseResult");
+      if (!text) { out.innerHTML = '<div class="err">Enter some text first.</div>'; return; }
+      $("parseBtn").disabled = true; out.innerHTML = '<div class="muted">Analyzing…</div>';
+      try {
+        const payload = { text };
+        if (account) payload.account_number = account;
+        const r = await api("/nlu/parse", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const e = r.entities || {};
+        const rr = r.resolved_recipient;
+        const intentClass = r.intent === "transfer_money" ? "transfer" : "fallback";
+        const recipientName = rr ? esc(rr.contact.name) : '<span class="muted">— none —</span>';
+        const llmBadge = r.llm_assisted ? '<span class="badge llm" title="LiteLLM exception handler filled or corrected slots">LLM assisted</span>' : "";
+        const benBadge = r.beneficiary_source
+          ? `<span class="badge ${r.beneficiary_source === "database" ? "semantic" : "llm"}" title="How the beneficiary was resolved">beneficiary: ${esc(r.beneficiary_source)}</span>`
+          : "";
+        const b = r.resolved_beneficiary;
+        const benBlock = b
+          ? `<div class="kv" style="margin-top:10px">
+               <div class="k">beneficiary</div><div class="v" dir="auto"><b>${esc(b.name)}</b></div>
+               <div class="k">account</div><div class="v">${b.account ? esc(b.account) : '<span class="muted">null</span>'}</div>
+               <div class="k">bank</div><div class="v" dir="auto">${b.bank ? esc(b.bank) : '<span class="muted">null</span>'}</div>
+             </div>`
+          : (account
+              ? `<div class="clarify" style="background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.35)"><span class="lbl" style="color:var(--warn)">account ${esc(account)} not found in database</span><span dir="auto">Delegated to the LLM (see clarification below).</span></div>`
+              : "");
+        const clarify = r.clarification ? `<div class="clarify"><span class="lbl">LLM clarification</span><span dir="auto">${esc(r.clarification)}</span></div>` : "";
+        out.innerHTML = `
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="badge ${intentClass}">${esc(r.intent)}</span>
+            <span class="badge ${esc(r.intent_source)}">${esc(r.intent_source)}</span>
+            ${benBadge}
+            ${llmBadge}
+            <span class="muted">language: <b>${esc(r.language)}</b></span>
+          </div>
+          <div style="margin-top:10px">
+            <label>confidence — ${pct(r.confidence)}</label>
+            <div class="meter"><span style="width:${pct(r.confidence)}"></span></div>
+          </div>
+          <div class="kv">
+            <div class="k">amount</div><div class="v">${e.amount ?? '<span class="muted">null</span>'}</div>
+            <div class="k">currency</div><div class="v">${e.currency ?? '<span class="muted">null</span>'}</div>
+            <div class="k">recipient</div><div class="v" dir="auto">${e.recipient ? esc(e.recipient) : '<span class="muted">null</span>'}</div>
+            <div class="k">source account</div><div class="v">${e.source_account ?? '<span class="muted">null</span>'}</div>
+            <div class="k">resolved contact</div><div class="v" dir="auto">${recipientName}${rr ? ` <span class="muted">(${esc(rr.contact.account || "")}, ${pct(rr.score)})</span>` : ""}</div>
+          </div>
+          ${benBlock}
+          ${clarify}
+          ${traceBlock(r.block_trace)}
+          ${rawBlock(r)}`;
+      } catch (err) {
+        out.innerHTML = `<div class="err">${esc(err.message)}</div>`;
+      } finally {
+        $("parseBtn").disabled = false;
+      }
+    }
+
+    async function doSimilar() {
+      const text = $("simText").value.trim();
+      const k = parseInt($("simK").value, 10) || 3;
+      const out = $("simResult");
+      if (!text) { out.innerHTML = '<div class="err">Enter some text first.</div>'; return; }
+      $("simBtn").disabled = true; out.innerHTML = '<div class="muted">Searching…</div>';
+      try {
+        const r = await api(`/nlu/similar?text=${encodeURIComponent(text)}&k=${k}`);
+        if (!r.length) { out.innerHTML = '<div class="muted">No results (embedding model may be unavailable).</div>'; return; }
+        out.innerHTML = '<div class="list">' + r.map(x => `
+          <div class="item">
+            <div class="top">
+              <span dir="auto">${esc(x.text)}</span>
+              <span class="score">${pct(x.score)}</span>
+            </div>
+            <div class="muted" style="font-size:12px;margin-top:4px">${esc(x.intent)}</div>
+          </div>`).join("") + "</div>" + rawBlock(r);
+      } catch (err) {
+        out.innerHTML = `<div class="err">${esc(err.message)}</div>`;
+      } finally {
+        $("simBtn").disabled = false;
+      }
+    }
+
+    async function doResolve() {
+      const name = $("resName").value.trim();
+      const top_k = parseInt($("resK").value, 10) || 3;
+      const out = $("resResult");
+      if (!name) { out.innerHTML = '<div class="err">Enter a name first.</div>'; return; }
+      $("resBtn").disabled = true; out.innerHTML = '<div class="muted">Resolving…</div>';
+      try {
+        const r = await api("/contacts/resolve", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, top_k }),
+        });
+        const m = r.matched;
+        const matchedHtml = m
+          ? `<div class="item"><div class="top"><span dir="auto"><b>${esc(m.contact.name)}</b> <span class="muted">${esc(m.contact.account || "")}</span></span><span class="score">${pct(m.score)}</span></div><div class="muted" style="font-size:12px;margin-top:4px">best match</div></div>`
+          : '<div class="muted">No confident match.</div>';
+        const cands = (r.candidates || []).map(c => `
+          <div class="item"><div class="top"><span dir="auto">${esc(c.contact.name)} <span class="muted">${esc(c.contact.account || "")}</span></span><span class="score">${pct(c.score)}</span></div></div>`).join("");
+        out.innerHTML = matchedHtml +
+          '<label style="margin-top:14px">candidates</label><div class="list">' + cands + "</div>" + rawBlock(r);
+      } catch (err) {
+        out.innerHTML = `<div class="err">${esc(err.message)}</div>`;
+      } finally {
+        $("resBtn").disabled = false;
+      }
+    }
+
+    renderChips($("parseSamples"), PARSE_SAMPLES, $("parseText"));
+    renderChips($("resSamples"), RES_SAMPLES, $("resName"));
+    $("parseBtn").onclick = doParse;
+    $("parseClear").onclick = () => { $("parseText").value = ""; $("parseAccount").value = ""; $("parseResult").innerHTML = ""; };
+    $("simBtn").onclick = doSimilar;
+    $("resBtn").onclick = doResolve;
+    $("parseText").addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") doParse(); });
+    checkHealth();
+    doParse();
+  </script>
+</body>
+</html>

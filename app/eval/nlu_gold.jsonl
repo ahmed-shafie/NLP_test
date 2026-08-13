@@ -1,0 +1,303 @@
+{"text": "send 50 to Ahmed", "language": "en", "intent": "transfer_money", "slots": {"amount": "50", "currency": "SAR", "recipient": "Ahmed"}}
+{"text": "transfer 500 USD to John", "language": "en", "intent": "transfer_money", "slots": {"amount": "500", "currency": "USD", "recipient": "John"}}
+{"text": "wire 1000 EUR to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "1000", "currency": "EUR", "recipient": "Sara"}}
+{"text": "send 20 to Mohammed", "language": "en", "intent": "transfer_money", "slots": {"amount": "20", "currency": "SAR", "recipient": "Mohammed"}}
+{"text": "move 250 from savings to Lara", "language": "en", "intent": "transfer_money", "slots": {"amount": "250", "currency": "SAR", "recipient": "Lara"}}
+{"text": "send 300 to Khaled", "language": "en", "intent": "transfer_money", "slots": {"amount": "300", "currency": "SAR", "recipient": "Khaled"}}
+{"text": "transfer 150 to Yusuf", "language": "en", "intent": "transfer_money", "slots": {"amount": "150", "currency": "SAR", "recipient": "Yusuf"}}
+{"text": "send 5000 SAR to Mohammed", "language": "en", "intent": "transfer_money", "slots": {"amount": "5000", "currency": "SAR", "recipient": "Mohammed"}}
+{"text": "wire 250 dollars to John", "language": "en", "intent": "transfer_money", "slots": {"amount": "250", "currency": "USD", "recipient": "John"}}
+{"text": "transfer 80 to Fatima", "language": "en", "intent": "transfer_money", "slots": {"amount": "80", "currency": "SAR", "recipient": "Fatima"}}
+{"text": "send 1200 to Layla", "language": "en", "intent": "transfer_money", "slots": {"amount": "1200", "currency": "SAR", "recipient": "Layla"}}
+{"text": "please transfer 640 to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "640", "currency": "SAR", "recipient": "Sara"}}
+{"text": "send 45 EUR to Khaled", "language": "en", "intent": "transfer_money", "slots": {"amount": "45", "currency": "EUR", "recipient": "Khaled"}}
+{"text": "remit 900 to Ahmed", "language": "en", "intent": "transfer_money", "slots": {"amount": "900", "currency": "SAR", "recipient": "Ahmed"}}
+{"text": "send 60 GBP to John", "language": "en", "intent": "transfer_money", "slots": {"amount": "60", "currency": "GBP", "recipient": "John"}}
+{"text": "transfer 100 to Mohammed", "language": "en", "intent": "transfer_money", "slots": {"amount": "100", "currency": "SAR", "recipient": "Mohammed"}}
+{"text": "send 2000 to Yusuf", "language": "en", "intent": "transfer_money", "slots": {"amount": "2000", "currency": "SAR", "recipient": "Yusuf"}}
+{"text": "wire 30 to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "30", "currency": "SAR", "recipient": "Sara"}}
+{"text": "send 70 to Laila", "language": "en", "intent": "transfer_money", "slots": {"amount": "70", "currency": "SAR", "recipient": "Laila"}}
+{"text": "transfer 410 SAR to Khaled", "language": "en", "intent": "transfer_money", "slots": {"amount": "410", "currency": "SAR", "recipient": "Khaled"}}
+{"text": "حول 100 إلى محمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "100", "currency": "SAR", "recipient": "محمد"}}
+{"text": "ابعث 1000 ريال إلى سارة", "language": "ar", "intent": "transfer_money", "slots": {"amount": "1000", "currency": "SAR", "recipient": "ساره"}}
+{"text": "حول 300 درهم لعلي", "language": "ar", "intent": "transfer_money", "slots": {"amount": "300", "currency": "AED", "recipient": "علي"}}
+{"text": "ابعت 200 جنيه لمحمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "200", "currency": "EGP", "recipient": "محمد"}}
+{"text": "اريد تحويل 500 دولار الى خالد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "500", "currency": "USD", "recipient": "خالد"}}
+{"text": "حول 250 إلى أحمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "250", "currency": "SAR", "recipient": "أحمد"}}
+{"text": "ارسل 60 يورو إلى سارة", "language": "ar", "intent": "transfer_money", "slots": {"amount": "60", "currency": "EUR", "recipient": "ساره"}}
+{"text": "حول 1500 ريال إلى فاطمة", "language": "ar", "intent": "transfer_money", "slots": {"amount": "1500", "currency": "SAR", "recipient": "فاطمة"}}
+{"text": "ابعت 90 لعلي", "language": "ar", "intent": "transfer_money", "slots": {"amount": "90", "currency": "SAR", "recipient": "علي"}}
+{"text": "حولي 320 إلى خالد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "320", "currency": "SAR", "recipient": "خالد"}}
+{"text": "ارسل 45 جنيه إلى محمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "45", "currency": "EGP", "recipient": "محمد"}}
+{"text": "حول 700 إلى ليلى", "language": "ar", "intent": "transfer_money", "slots": {"amount": "700", "currency": "SAR", "recipient": "ليلى"}}
+{"text": "اريد ارسال 130 ريال الى احمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "130", "currency": "SAR", "recipient": "أحمد"}}
+{"text": "حول 80 درهم إلى سارة", "language": "ar", "intent": "transfer_money", "slots": {"amount": "80", "currency": "AED", "recipient": "ساره"}}
+{"text": "ابعت 5000 ريال لمحمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "5000", "currency": "SAR", "recipient": "محمد"}}
+{"text": "I urgently need to send 200 to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "200", "currency": "SAR", "recipient": "Sara"}}
+{"text": "send 250 to Mona", "language": "en", "intent": "transfer_money", "slots": {"amount": "250", "currency": "SAR", "recipient": "Mona"}}
+{"text": "transfer 1200 SAR to Khalid Fahad", "language": "en", "intent": "transfer_money", "slots": {"amount": "1200", "currency": "SAR", "recipient": "Khalid Fahad"}}
+{"text": "please move 75.50 to Laila Omar", "language": "en", "intent": "transfer_money", "slots": {"amount": "75.50", "currency": "SAR", "recipient": "Laila Omar"}}
+{"text": "I want to send money to Sara Adel", "language": "en", "intent": "transfer_money", "slots": {"recipient": "Sara Adel"}}
+{"text": "wire 3000 USD to Ahmed Mahmoud", "language": "en", "intent": "transfer_money", "slots": {"amount": "3000", "currency": "USD", "recipient": "Ahmed Mahmoud"}}
+{"text": "pay Mona 40 riyals", "language": "en", "intent": "transfer_money", "slots": {"amount": "40", "recipient": "Mona"}}
+{"text": "send 500 to Ahmed from savings", "language": "en", "intent": "transfer_money", "slots": {"amount": "500", "currency": "SAR", "recipient": "Ahmed"}}
+{"text": "can you transfer 90 to Noura Saad please", "language": "en", "intent": "transfer_money", "slots": {"amount": "90", "currency": "SAR", "recipient": "Noura Saad"}}
+{"text": "I need to transfer some money", "language": "en", "intent": "transfer_money"}
+{"text": "make a transfer of 15 SAR to Mohammed Nour", "language": "en", "intent": "transfer_money", "slots": {"amount": "15", "currency": "SAR", "recipient": "Mohammed Nour"}}
+{"text": "send two hundred to Mona", "language": "en", "intent": "transfer_money", "slots": {"recipient": "Mona"}, "tags": ["spelled_number"]}
+{"text": "transfer 10000 to Khalid", "language": "en", "intent": "transfer_money", "slots": {"amount": "10000", "currency": "SAR", "recipient": "Khalid"}, "tags": ["large_amount"]}
+{"text": "send 0.50 to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "0.50", "currency": "SAR", "recipient": "Sara"}, "tags": ["small_amount"]}
+{"text": "send 1,500 SAR to Laila", "language": "en", "intent": "transfer_money", "slots": {"amount": "1500", "currency": "SAR", "recipient": "Laila"}, "tags": ["thousands_separator"]}
+{"text": "transfer money to my brother Ahmed", "language": "en", "intent": "transfer_money", "slots": {"recipient": "Ahmed"}}
+{"text": "send 200 EUR to Mohammed Saad", "language": "en", "intent": "transfer_money", "slots": {"amount": "200", "currency": "EUR", "recipient": "Mohammed Saad"}, "tags": ["fx"]}
+{"text": "trasnfer 300 to Mona", "language": "en", "intent": "transfer_money", "slots": {"amount": "300", "currency": "SAR", "recipient": "Mona"}, "tags": ["typo"]}
+{"text": "snd 120 to Sara", "language": "en", "intent": "transfer_money", "slots": {"amount": "120", "currency": "SAR", "recipient": "Sara"}, "tags": ["typo"]}
+{"text": "transfar 45 sar to Khalid", "language": "en", "intent": "transfer_money", "slots": {"amount": "45", "currency": "SAR", "recipient": "Khalid"}, "tags": ["typo"]}
+{"text": "hey can u send 60 to laila", "language": "en", "intent": "transfer_money", "slots": {"amount": "60", "currency": "SAR", "recipient": "laila"}, "tags": ["informal"]}
+{"text": "plz transfer 800 to noura saad", "language": "en", "intent": "transfer_money", "slots": {"amount": "800", "currency": "SAR", "recipient": "noura saad"}, "tags": ["informal"]}
+{"text": "حوّل 500 ريال إلى أحمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "500", "currency": "SAR", "recipient": "أحمد"}}
+{"text": "أريد تحويل 250 ريال إلى منى علي", "language": "ar", "intent": "transfer_money", "slots": {"amount": "250", "currency": "SAR", "recipient": "منى علي"}}
+{"text": "قم بتحويل مبلغ 1000 ريال إلى خالد فهد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "1000", "currency": "SAR", "recipient": "خالد فهد"}}
+{"text": "أرسل 75 ريال إلى ليلى عمر", "language": "ar", "intent": "transfer_money", "slots": {"amount": "75", "currency": "SAR", "recipient": "ليلى عمر"}}
+{"text": "تحويل إلى سارة عادل", "language": "ar", "intent": "transfer_money", "slots": {"recipient": "سارة عادل"}}
+{"text": "أرغب في تحويل مبلغ", "language": "ar", "intent": "transfer_money"}
+{"text": "حوّل 300 دولار إلى محمد نور", "language": "ar", "intent": "transfer_money", "slots": {"amount": "300", "currency": "USD", "recipient": "محمد نور"}, "tags": ["fx"]}
+{"text": "حولي الي عبدالله 500", "language": "ar", "intent": "transfer_money", "slots": {"amount": "500", "currency": "SAR", "recipient": "عبدالله"}, "tags": ["colloquial", "amount_last"]}
+{"text": "حولي الي سارة 500", "language": "ar", "intent": "transfer_money", "slots": {"amount": "500", "currency": "SAR", "recipient": "سارة"}, "tags": ["colloquial", "amount_last"]}
+{"text": "حولي الي منى 250", "language": "ar", "intent": "transfer_money", "slots": {"amount": "250", "currency": "SAR", "recipient": "منى"}, "tags": ["colloquial", "amount_last"]}
+{"text": "حولي الى خالد فهد 900", "language": "ar", "intent": "transfer_money", "slots": {"amount": "900", "currency": "SAR", "recipient": "خالد فهد"}, "tags": ["colloquial", "amount_last"]}
+{"text": "ابغى احول 400 لمنى", "language": "ar", "intent": "transfer_money", "slots": {"amount": "400", "currency": "SAR", "recipient": "منى"}, "tags": ["colloquial"]}
+{"text": "ودي احول لسارة 150", "language": "ar", "intent": "transfer_money", "slots": {"amount": "150", "currency": "SAR", "recipient": "سارة"}, "tags": ["colloquial", "amount_last"]}
+{"text": "تكفى حول 80 لليلى", "language": "ar", "intent": "transfer_money", "slots": {"amount": "80", "currency": "SAR", "recipient": "ليلى"}, "tags": ["colloquial"]}
+{"text": "حول 100 لاحمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "100", "currency": "SAR", "recipient": "أحمد"}, "tags": ["colloquial", "attached_lam"]}
+{"text": "ابغي احول فلوس", "language": "ar", "intent": "transfer_money", "tags": ["colloquial"]}
+{"text": "سدد لمنى 60 ريال", "language": "ar", "intent": "transfer_money", "slots": {"amount": "60", "recipient": "منى"}, "tags": ["colloquial"]}
+{"text": "حوّل ٢٠٠ ريال إلى محمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "200", "currency": "SAR", "recipient": "محمد"}, "tags": ["arabic_digits"]}
+{"text": "حولي الي سارة ٥٠٠", "language": "ar", "intent": "transfer_money", "slots": {"amount": "500", "currency": "SAR", "recipient": "سارة"}, "tags": ["arabic_digits", "colloquial", "amount_last"]}
+{"text": "أرسل ١٥٠٠ ريال إلى نورة سعد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "1500", "currency": "SAR", "recipient": "نورة سعد"}, "tags": ["arabic_digits"]}
+{"text": "حول ٧٥ لخالد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "75", "currency": "SAR", "recipient": "خالد"}, "tags": ["arabic_digits", "attached_lam"]}
+{"text": "حوّل ١٠٠٠٠ ريال إلى منى علي", "language": "ar", "intent": "transfer_money", "slots": {"amount": "10000", "currency": "SAR", "recipient": "منى علي"}, "tags": ["arabic_digits", "large_amount"]}
+{"text": "حول 500 الى احمد", "language": "ar", "intent": "transfer_money", "slots": {"amount": "500", "currency": "SAR", "recipient": "أحمد"}, "tags": ["orthography"]}
+{"text": "حوّل ٣٠٠ إلي إبراهيم", "language": "ar", "intent": "transfer_money", "slots": {"amount": "300", "currency": "SAR"}, "tags": ["orthography", "arabic_digits"]}
+{"text": "ارسل 220 ريال الى ليلي عمر", "language": "ar", "intent": "transfer_money", "slots": {"amount": "220", "currency": "SAR"}, "tags": ["orthography"]}
+{"text": "حول 500 SAR إلى Mona", "language": "ar", "intent": "transfer_money", "slots": {"amount": "500", "currency": "SAR", "recipient": "Mona"}, "tags": ["codeswitch"]}
+{"text": "transfer 300 إلى سارة", "language": "en", "intent": "transfer_money", "slots": {"amount": "300", "currency": "SAR"}, "tags": ["codeswitch"]}
+{"text": "pay my STC bill 778899 amount 320", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "001", "reference_number": "778899", "amount": "320", "currency": "SAR"}}
+{"text": "pay my Mobily bill 5512 amount 150", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "005", "reference_number": "5512", "amount": "150", "currency": "SAR"}}
+{"text": "pay Zain bill reference 4455123 amount 90", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "044", "reference_number": "4455123", "amount": "90", "currency": "SAR"}}
+{"text": "settle my Saudi Electric Company bill 99100 amount 200", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "002", "reference_number": "99100", "amount": "200", "currency": "SAR"}}
+{"text": "pay my electricity bill 778899 amount 200", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "002", "reference_number": "778899", "amount": "200", "currency": "SAR"}}
+{"text": "pay the water bill 4455 amount 120", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "015", "reference_number": "4455", "amount": "120", "currency": "SAR"}}
+{"text": "pay Marafiq bill 5566 amount 310", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "004", "reference_number": "5566", "amount": "310", "currency": "SAR"}}
+{"text": "pay National Water Company bill 7788 amount 60", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "138", "reference_number": "7788", "amount": "60", "currency": "SAR"}}
+{"text": "pay my gas bill 9911 amount 75", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "148", "reference_number": "9911", "amount": "75", "currency": "SAR"}}
+{"text": "pay STC bill 100200 amount 500", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "001", "reference_number": "100200", "amount": "500", "currency": "SAR"}}
+{"text": "pay Mobily bill 220033 amount 45", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "005", "reference_number": "220033", "amount": "45", "currency": "SAR"}}
+{"text": "pay Zain bill 5512 amount 130", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "044", "reference_number": "5512", "amount": "130", "currency": "SAR"}}
+{"text": "سدد فاتورة الكهرباء 778899 بمبلغ 320", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "002", "reference_number": "778899", "amount": "320", "currency": "SAR"}}
+{"text": "سدد فاتورة المياه رقم ٤٤٥٥ بمبلغ ١٠٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "015", "reference_number": "4455", "amount": "100", "currency": "SAR"}}
+{"text": "ادفع فاتورة موبايلي ٣٢٠ ريال رقم ٥٥١٢", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "005", "reference_number": "5512", "amount": "320", "currency": "SAR"}}
+{"text": "ادفع فاتورة زين رقم ٤٤٥٥١٢٣ بمبلغ ٩٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "044", "reference_number": "4455123", "amount": "90", "currency": "SAR"}}
+{"text": "ادفع فاتورة الكهرباء رقم ٩٩١٠٠ بمبلغ ٢٠٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "002", "reference_number": "99100", "amount": "200", "currency": "SAR"}}
+{"text": "سدد فاتورة مرافق رقم ٥٥٦٦ بمبلغ ٣١٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "004", "reference_number": "5566", "amount": "310", "currency": "SAR"}}
+{"text": "ادفع فاتورة الغاز رقم ٩٩١١ بمبلغ ٧٥", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "148", "reference_number": "9911", "amount": "75", "currency": "SAR"}}
+{"text": "ادفع فاتورة اس تي سي رقم ١٠٠٢٠٠ بمبلغ ٥٠٠", "language": "ar", "intent": "pay_bill", "slots": {"reference_number": "100200", "amount": "500", "currency": "SAR"}}
+{"text": "this is frustrating, pay my STC bill 778899 amount 320", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "001", "amount": "320", "reference_number": "778899"}}
+{"text": "ادفع المخالفة", "language": "ar", "intent": "pay_bill", "slots": {}}
+{"text": "ادفع المخالفة 12345", "language": "ar", "intent": "pay_bill", "slots": {}}
+{"text": "pay my fine", "language": "en", "intent": "pay_bill", "slots": {}}
+{"text": "I want to pay a penalty", "language": "en", "intent": "pay_bill", "slots": {}}
+{"text": "I want to pay a bill", "language": "en", "intent": "pay_bill", "tags": ["bare_request"]}
+{"text": "I need to pay a bill please", "language": "en", "intent": "pay_bill", "tags": ["bare_request"]}
+{"text": "I need to pay the electricity bill", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "002"}}
+{"text": "settle my Mobily bill reference 4455 for 210", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "005", "reference_number": "4455", "amount": "210", "currency": "SAR"}}
+{"text": "pay the Ejar bill 9911 amount 1500", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "153", "reference_number": "9911", "amount": "1500", "currency": "SAR"}}
+{"text": "can I pay my water bill", "language": "en", "intent": "pay_bill"}
+{"text": "pay my internet bill 778899 amount 200", "language": "en", "intent": "pay_bill", "slots": {"reference_number": "778899", "amount": "200", "currency": "SAR"}, "tags": ["generic_category"]}
+{"text": "pay egar bill 4455 amount 300", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "153", "reference_number": "4455", "amount": "300", "currency": "SAR"}, "tags": ["typo"]}
+{"text": "pay mobiley 100", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "005", "amount": "100", "currency": "SAR"}, "tags": ["typo"]}
+{"text": "pay my Zain bill", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "044"}}
+{"text": "bill payment for STC", "language": "en", "intent": "pay_bill", "slots": {"biller_code": "001"}}
+{"text": "I'd like to settle an invoice", "language": "en", "intent": "pay_bill", "tags": ["bare_request"]}
+{"text": "pay 320 for my phone bill", "language": "en", "intent": "pay_bill", "slots": {"amount": "320", "currency": "SAR"}, "tags": ["generic_category"]}
+{"text": "pay my Acme Telecom bill", "language": "en", "intent": "pay_bill", "tags": ["unsupported_biller"]}
+{"text": "pay my gas bill 5566", "language": "en", "intent": "pay_bill", "slots": {"reference_number": "5566"}}
+{"text": "أبغى أدفع فاتورة", "language": "ar", "intent": "pay_bill", "tags": ["bare_request", "colloquial"]}
+{"text": "ابغى ادفع فاتورة مويه", "language": "ar", "intent": "pay_bill", "tags": ["colloquial", "dialect_term"]}
+{"text": "ادفع فاتورة الموية", "language": "ar", "intent": "pay_bill", "tags": ["colloquial", "dialect_term"]}
+{"text": "ادفع ل اس تي سي", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "001"}, "tags": ["arabic_spellout"]}
+{"text": "ادفع لاس تي سي", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "001"}, "tags": ["arabic_spellout", "attached_lam"]}
+{"text": "ادفع فاتورة اس تي سي", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "001"}, "tags": ["arabic_spellout"]}
+{"text": "ادفع فاتورة وزين", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "044"}, "tags": ["attached_waw"]}
+{"text": "سدد فاتورة موبايلي رقم ٤٤٥٥ بمبلغ ٢١٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "005", "reference_number": "4455", "amount": "210", "currency": "SAR"}, "tags": ["arabic_digits"]}
+{"text": "ابغى اسدد فاتورة الاتصالات", "language": "ar", "intent": "pay_bill", "tags": ["colloquial"]}
+{"text": "ادفع فاتورة ايجار ٩٩١١ بمبلغ ١٥٠٠", "language": "ar", "intent": "pay_bill", "slots": {"biller_code": "153", "reference_number": "9911", "amount": "1500", "currency": "SAR"}, "tags": ["arabic_digits"]}
+{"text": "ابغى ادفع فاتورة الجوال", "language": "ar", "intent": "pay_bill", "tags": ["generic_category", "colloquial"]}
+{"text": "دفع فاتورة شركة نجم للمياه", "language": "ar", "intent": "pay_bill", "tags": ["unsupported_biller"]}
+{"text": "سدد فاتورة الغاز ٥٥٦٦", "language": "ar", "intent": "pay_bill", "slots": {"reference_number": "5566"}, "tags": ["arabic_digits"]}
+{"text": "what is my balance", "language": "en", "intent": "balance_inquiry"}
+{"text": "what's my current balance", "language": "en", "intent": "balance_inquiry"}
+{"text": "how much money is in my account", "language": "en", "intent": "balance_inquiry"}
+{"text": "check my balance please", "language": "en", "intent": "balance_inquiry"}
+{"text": "what is my savings balance", "language": "en", "intent": "balance_inquiry", "tags": ["named_account"]}
+{"text": "balance of my savings account", "language": "en", "intent": "balance_inquiry", "tags": ["named_account"]}
+{"text": "is there enough money in my current account", "language": "en", "intent": "balance_inquiry", "tags": ["named_account"]}
+{"text": "show me my account balance", "language": "en", "intent": "balance_inquiry"}
+{"text": "what is left in my account", "language": "en", "intent": "balance_inquiry"}
+{"text": "balance", "language": "en", "intent": "balance_inquiry", "tags": ["single_word"]}
+{"text": "my balance?", "language": "en", "intent": "balance_inquiry", "tags": ["single_word"]}
+{"text": "whats my ballance", "language": "en", "intent": "balance_inquiry", "tags": ["typo"]}
+{"text": "how much do I have in savings", "language": "en", "intent": "balance_inquiry", "tags": ["named_account"]}
+{"text": "available funds", "language": "en", "intent": "balance_inquiry"}
+{"text": "can you tell me my balance", "language": "en", "intent": "balance_inquiry"}
+{"text": "كم رصيدي", "language": "ar", "intent": "balance_inquiry"}
+{"text": "كم رصيد حسابي الان", "language": "ar", "intent": "balance_inquiry"}
+{"text": "وش رصيدي", "language": "ar", "intent": "balance_inquiry", "tags": ["colloquial"]}
+{"text": "ابغى اعرف رصيدي", "language": "ar", "intent": "balance_inquiry", "tags": ["colloquial"]}
+{"text": "كم باقي عندي في الحساب", "language": "ar", "intent": "balance_inquiry", "tags": ["colloquial"]}
+{"text": "رصيد حساب التوفير", "language": "ar", "intent": "balance_inquiry", "tags": ["named_account"]}
+{"text": "كم رصيد حسابي في التوفير", "language": "ar", "intent": "balance_inquiry", "tags": ["named_account"]}
+{"text": "اعرض رصيد الحساب الجاري", "language": "ar", "intent": "balance_inquiry", "tags": ["named_account"]}
+{"text": "رصيدي", "language": "ar", "intent": "balance_inquiry", "tags": ["single_word"]}
+{"text": "كم الفلوس اللي عندي", "language": "ar", "intent": "balance_inquiry", "tags": ["colloquial"]}
+{"text": "وش اللي موجود بحسابي", "language": "ar", "intent": "balance_inquiry", "tags": ["colloquial"]}
+{"text": "كم رصيدى", "language": "ar", "intent": "balance_inquiry", "tags": ["orthography"]}
+{"text": "ابغا اشوف الرصيد", "language": "ar", "intent": "balance_inquiry", "tags": ["colloquial", "typo"]}
+{"text": "كم ٱلرصيد المتوفر", "language": "ar", "intent": "balance_inquiry", "tags": ["orthography"]}
+{"text": "list all my beneficiaries", "language": "en", "intent": "list_beneficiaries"}
+{"text": "list my beneficiary", "language": "en", "intent": "list_beneficiaries"}
+{"text": "list my benificary", "language": "en", "intent": "list_beneficiaries", "tags": ["typo"]}
+{"text": "show my saved beneficiaries", "language": "en", "intent": "list_beneficiaries"}
+{"text": "who are the beneficiaries I saved", "language": "en", "intent": "list_beneficiaries"}
+{"text": "show me the list of my payees", "language": "en", "intent": "list_beneficiaries"}
+{"text": "check my beneficiaries", "language": "en", "intent": "list_beneficiaries"}
+{"text": "beneficiaries", "language": "en", "intent": "list_beneficiaries", "tags": ["single_word"]}
+{"text": "my saved recipients", "language": "en", "intent": "list_beneficiaries"}
+{"text": "what payees do I have saved", "language": "en", "intent": "list_beneficiaries"}
+{"text": "do I have any beneficiaries", "language": "en", "intent": "list_beneficiaries"}
+{"text": "display all my beneficiaries", "language": "en", "intent": "list_beneficiaries"}
+{"text": "my transfer contacts", "language": "en", "intent": "list_beneficiaries"}
+{"text": "قائمة المستفيدين", "language": "ar", "intent": "list_beneficiaries"}
+{"text": "اعرض المستفيدين اللي لدي", "language": "ar", "intent": "list_beneficiaries"}
+{"text": "وش المستفيدين اللي عندي", "language": "ar", "intent": "list_beneficiaries", "tags": ["colloquial"]}
+{"text": "ابغى اشوف المستفيدين", "language": "ar", "intent": "list_beneficiaries", "tags": ["colloquial"]}
+{"text": "المستفدين", "language": "ar", "intent": "list_beneficiaries", "tags": ["typo", "single_word"]}
+{"text": "المستفيدين", "language": "ar", "intent": "list_beneficiaries", "tags": ["single_word"]}
+{"text": "اعرض لي المستفيدين المحفوظين", "language": "ar", "intent": "list_beneficiaries"}
+{"text": "مين المستفيدين عندي", "language": "ar", "intent": "list_beneficiaries", "tags": ["colloquial"]}
+{"text": "عندي كم مستفيد", "language": "ar", "intent": "list_beneficiaries", "tags": ["colloquial"]}
+{"text": "اظهر قائمة المستفيدين", "language": "ar", "intent": "list_beneficiaries"}
+{"text": "add a new beneficiary please", "language": "en", "intent": "add_beneficiary"}
+{"text": "add beneficiary", "language": "en", "intent": "add_beneficiary"}
+{"text": "I want to add a new payee", "language": "en", "intent": "add_beneficiary"}
+{"text": "register a new beneficiary please", "language": "en", "intent": "add_beneficiary"}
+{"text": "save a new recipient", "language": "en", "intent": "add_beneficiary"}
+{"text": "can you add someone to my beneficiaries", "language": "en", "intent": "add_beneficiary"}
+{"text": "create a beneficiary", "language": "en", "intent": "add_beneficiary"}
+{"text": "add Laila Omar as a beneficiary", "language": "en", "intent": "add_beneficiary", "tags": ["inline_name"]}
+{"text": "add a new benificiary", "language": "en", "intent": "add_beneficiary", "tags": ["typo"]}
+{"text": "I need to add a payee before transferring", "language": "en", "intent": "add_beneficiary"}
+{"text": "اضف لي مستفيد جديد", "language": "ar", "intent": "add_beneficiary"}
+{"text": "أضف مستفيداً جديداً", "language": "ar", "intent": "add_beneficiary"}
+{"text": "ابغى اضيف مستفيد", "language": "ar", "intent": "add_beneficiary", "tags": ["colloquial"]}
+{"text": "اريد اضافة مستفيد جديد", "language": "ar", "intent": "add_beneficiary"}
+{"text": "سجل مستفيد جديد", "language": "ar", "intent": "add_beneficiary"}
+{"text": "اضف نورة سعد كمستفيد", "language": "ar", "intent": "add_beneficiary", "tags": ["inline_name"]}
+{"text": "كيف اضيف مستفيد", "language": "ar", "intent": "add_beneficiary", "tags": ["how_to"]}
+{"text": "ودي اضيف مستفيد جديد", "language": "ar", "intent": "add_beneficiary", "tags": ["colloquial"]}
+{"text": "اضافة مستفيد", "language": "ar", "intent": "add_beneficiary"}
+{"text": "good afternoon", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "hello!", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "morning!", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "thanks!", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "many thanks", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "how is it going", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "see you later", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "good evening", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "thanks for your help", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "hello", "language": "en", "intent": "small_talk", "slots": {}}
+{"text": "مرحباً بك", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "اهلين", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "صباح الخير", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "شكرا على المساعدة", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "كيف الحال", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "شكرا لك", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "اهلا", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "سلام عليكم ورحمة الله", "language": "ar", "intent": "small_talk", "slots": {}}
+{"text": "good morning", "language": "en", "intent": "small_talk"}
+{"text": "hey", "language": "en", "intent": "small_talk", "tags": ["single_word"]}
+{"text": "how are you", "language": "en", "intent": "small_talk"}
+{"text": "thank you", "language": "en", "intent": "small_talk"}
+{"text": "who am I talking to", "language": "en", "intent": "small_talk"}
+{"text": "what can you do", "language": "en", "intent": "small_talk", "tags": ["capability"]}
+{"text": "could you help me out", "language": "en", "intent": "small_talk"}
+{"text": "bye", "language": "en", "intent": "small_talk", "tags": ["single_word"]}
+{"text": "good night", "language": "en", "intent": "small_talk"}
+{"text": "nice, thanks", "language": "en", "intent": "small_talk"}
+{"text": "هلا", "language": "ar", "intent": "small_talk", "tags": ["colloquial", "single_word"]}
+{"text": "مشكور", "language": "ar", "intent": "small_talk", "tags": ["colloquial", "single_word"]}
+{"text": "انت مين", "language": "ar", "intent": "small_talk"}
+{"text": "وش الاشياء اللي تسويها", "language": "ar", "intent": "small_talk", "tags": ["colloquial", "capability"]}
+{"text": "تقدر تعاوني", "language": "ar", "intent": "small_talk", "tags": ["colloquial"]}
+{"text": "اشوفك على خير", "language": "ar", "intent": "small_talk"}
+{"text": "يعطيك العافية", "language": "ar", "intent": "small_talk", "tags": ["colloquial"]}
+{"text": "you're such a stupid bot", "language": "en", "intent": "inappropriate", "slots": {}}
+{"text": "shut up, useless machine", "language": "en", "intent": "inappropriate", "slots": {}}
+{"text": "this is bullshit", "language": "en", "intent": "inappropriate", "slots": {}}
+{"text": "pay my electricity bill you idiot", "language": "en", "intent": "inappropriate", "slots": {}}
+{"text": "انت غبي وما تفهم", "language": "ar", "intent": "inappropriate", "slots": {}}
+{"text": "اسكت يا تافه", "language": "ar", "intent": "inappropriate", "slots": {}}
+{"text": "you stupid bot", "language": "en", "intent": "inappropriate", "tags": ["mild"]}
+{"text": "you stupid bot, pay my bill", "language": "en", "intent": "inappropriate", "tags": ["mild", "mixed_with_request"]}
+{"text": "what an idiot assistant", "language": "en", "intent": "inappropriate", "tags": ["mild"]}
+{"text": "shut up and transfer my money", "language": "en", "intent": "inappropriate", "tags": ["mild", "mixed_with_request"]}
+{"text": "يا حمار حول الفلوس", "language": "ar", "intent": "inappropriate", "tags": ["mild", "mixed_with_request"]}
+{"text": "هذا كلام فاشل", "language": "ar", "intent": "inappropriate", "tags": ["mild"]}
+{"text": "I want to apply for a car loan", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "loan"]}
+{"text": "what is the interest rate on car finance", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "loan"]}
+{"text": "my credit card was stolen", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "card"]}
+{"text": "block my debit card", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "card"]}
+{"text": "I need a new ATM card", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "card"]}
+{"text": "increase my credit limit", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "card"]}
+{"text": "I'd like to open a savings account", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "account_opening"]}
+{"text": "close my account", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "account_opening"]}
+{"text": "I want to file a complaint", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "complaint"]}
+{"text": "there is a transaction I don't recognise", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "dispute"]}
+{"text": "dispute a charge on my statement", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "dispute"]}
+{"text": "send me my account statement", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "statement"]}
+{"text": "what are your working hours", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "general_info"]}
+{"text": "where is the nearest branch", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "general_info"]}
+{"text": "what is the SWIFT code of the bank", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "general_info"]}
+{"text": "I forgot my internet banking password", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "auth"]}
+{"text": "change my mobile number", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "profile"]}
+{"text": "what is the exchange rate for the euro today", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "fx_rate"]}
+{"text": "invest in mutual funds", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "investment"]}
+{"text": "cancel my standing order", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "standing_order"]}
+{"text": "how is the weather today", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "off_topic"]}
+{"text": "tell me a joke", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "off_topic"]}
+{"text": "who won the match last night", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "off_topic"]}
+{"text": "asdkfj qwer", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "gibberish"]}
+{"text": "?????", "language": "en", "intent": "fallback", "tags": ["out_of_scope", "gibberish"]}
+{"text": "ابغى تمويل شخصي", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "loan"]}
+{"text": "كم نسبة الفائدة على التمويل العقاري", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "loan"]}
+{"text": "بطاقتي الائتمانية ضايعة", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "card"]}
+{"text": "اوقف بطاقتي", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "card"]}
+{"text": "ابغى بطاقة جديدة", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "card"]}
+{"text": "ارفع حد بطاقتي", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "card"]}
+{"text": "ابغى افتح حساب توفير", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "account_opening"]}
+{"text": "ابغى اقفل حسابي", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "account_opening"]}
+{"text": "عندي شكوى", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "complaint"]}
+{"text": "فيه عملية ما اعرفها في حسابي", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "dispute"]}
+{"text": "ابغى كشف حساب", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "statement"]}
+{"text": "وش اوقات العمل عندكم", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "general_info"]}
+{"text": "وين اقرب فرع", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "general_info"]}
+{"text": "وش رقم السويفت للبنك", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "general_info"]}
+{"text": "نسيت كلمة السر", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "auth"]}
+{"text": "ابغى تحديث رقم جوالي", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "profile"]}
+{"text": "كم سعر صرف الدولار", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "fx_rate"]}
+{"text": "ابغى استثمر في الاسهم", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "investment"]}
+{"text": "الغِ الامر المستمر", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "standing_order"]}
+{"text": "كيف الجو اليوم", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "off_topic"]}
+{"text": "قل لي نكتة", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "off_topic"]}
+{"text": "من فاز في المباراة", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "off_topic"]}
+{"text": "اقصثب دهزو", "language": "ar", "intent": "fallback", "tags": ["out_of_scope", "gibberish"]}

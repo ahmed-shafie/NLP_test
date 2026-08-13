@@ -1,0 +1,44 @@
+digraph beneficiary {
+  rankdir=TB;
+  bgcolor="white";
+  node [fontname="Helvetica", fontsize=11, style="filled", color="#334155"];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+  graph [fontname="Helvetica", fontsize=12, labelloc="t",
+         label="Figure 6 — Beneficiary Account Lookup (configurable provider) + LLM fallback"];
+
+  req [label="request:\n{ account_number, query }", shape=note, fillcolor="#e0f2fe"];
+
+  d0 [label="account_number\nprovided?", shape=diamond, fillcolor="#fef9c3"];
+  nolookup [label="no DB lookup\n(name-based contact match only)", fillcolor="#e2e8f0"];
+
+  d1 [label="DB enabled &\nreachable?", shape=diamond, fillcolor="#fef9c3"];
+
+  subgraph cluster_db {
+    label="Configurable provider (app-level config, no code changes)";
+    style="rounded"; color="#cbd5e1"; fontname="Helvetica"; fontsize=10;
+    repo [label="BeneficiaryRepository\n(SQLAlchemy engine)", fillcolor="#dbeafe"];
+    cfg  [label="NLU_DB_URL · NLU_DB_QUERY\nNLU_DB_COLUMN_MAP", shape=note, fillcolor="#f1f5f9"];
+    db   [label="PostgreSQL / Oracle / SQL Server\nImpala / Hive / SQLite / ...", shape=cylinder, fillcolor="#e0e7ff"];
+    cfg -> repo [style=dashed, label="drives"];
+    repo -> db [label="SELECT ... WHERE\naccount = :account_number"];
+  }
+
+  d2 [label="row found?", shape=diamond, fillcolor="#fef9c3"];
+  found [label="resolved_beneficiary\n(beneficiary_source=database)\nfills recipient slot", fillcolor="#dcfce7"];
+
+  llm [label="LiteLLM processes the query\n& generates a response\n(beneficiary_source=llm)", fillcolor="#f3e8ff"];
+
+  done [label="NLUResponse", shape=note, fillcolor="#dbeafe"];
+
+  req -> d0;
+  d0 -> nolookup [label="no"];
+  d0 -> d1 [label="yes"];
+  d1 -> repo [label="yes"];
+  d1 -> llm [label="no (DB down)", color="#7c3aed", fontcolor="#7c3aed"];
+  db -> d2;
+  d2 -> found [label="yes"];
+  d2 -> llm [label="no (not found)", color="#7c3aed", fontcolor="#7c3aed"];
+  nolookup -> done;
+  found -> done;
+  llm -> done;
+}

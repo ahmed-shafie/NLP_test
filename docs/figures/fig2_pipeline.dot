@@ -1,0 +1,26 @@
+digraph pipeline {
+  rankdir=LR;
+  bgcolor="white";
+  node [fontname="Helvetica", fontsize=11, style="filled", shape=box, color="#334155"];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+  graph [fontname="Helvetica", fontsize=12, labelloc="t",
+         label="Figure 2 — Haystack NLU Pipeline (shared state flows through each component)"];
+
+  text   [label="utterance\n(text)", shape=note, fillcolor="#e0f2fe"];
+  detect [label="LanguageDetector\nen / ar", fillcolor="#dbeafe"];
+  intent [label="IntentClassifier\nsemantic (FAISS) → keyword", fillcolor="#dbeafe"];
+  ents   [label="EntityExtractor\nspaCy EN / Stanza AR + regex", fillcolor="#dbeafe"];
+  contact[label="ContactResolver\nFAISS cosine → fuzzy", fillcolor="#dbeafe"];
+  llm    [label="LLMExceptionHandler\nLiteLLM (only if _needs_llm)", fillcolor="#f3e8ff"];
+  resp   [label="NLUResponse\nintent, entities, resolved,\nllm_assisted, clarification", shape=note, fillcolor="#dcfce7"];
+
+  text -> detect -> intent -> ents -> contact -> llm -> resp;
+
+  decide [label="_needs_llm?\nintent=fallback OR\namount/recipient missing", shape=diamond, fillcolor="#fef9c3"];
+  contact -> decide [style=invis];
+  llm -> decide [dir=back, style=dashed, color="#7c3aed", fontcolor="#7c3aed", label="gate"];
+
+  ollama [label="local LLM\n(Ollama qwen2.5:3b)\nJSON slots + clarification", shape=cylinder, fillcolor="#e9d5ff"];
+  llm -> ollama [color="#7c3aed"];
+  ollama -> llm [color="#7c3aed", style=dashed, label="merge\n(no overwrite)"];
+}

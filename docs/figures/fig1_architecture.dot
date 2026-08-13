@@ -1,0 +1,63 @@
+digraph architecture {
+  rankdir=TB;
+  bgcolor="white";
+  node [fontname="Helvetica", fontsize=11, style="filled", color="#334155", penwidth=1.2];
+  edge [fontname="Helvetica", fontsize=9, color="#475569"];
+  graph [fontname="Helvetica", fontsize=12, labelloc="t",
+         label="Figure 1 — System Architecture: Banking NLU Brain"];
+
+  client [label="Client\n(web simulator / mobile app)", shape=box, fillcolor="#e0f2fe"];
+
+  subgraph cluster_api {
+    label="FastAPI service (app/main.py)";
+    style="rounded,filled"; color="#cbd5e1"; fillcolor="#f8fafc"; fontsize=11;
+    ui      [label="GET /  (static simulator)", shape=box, fillcolor="#ede9fe"];
+    parse   [label="POST /nlu/parse", shape=box, fillcolor="#dcfce7"];
+    similar [label="GET /nlu/similar", shape=box, fillcolor="#dcfce7"];
+    resolve [label="POST /contacts/resolve", shape=box, fillcolor="#dcfce7"];
+    validate[label="POST /transfer/validate", shape=box, fillcolor="#dcfce7"];
+  }
+
+  subgraph cluster_brain {
+    label="NLU brain (Haystack-orchestrated pipeline)";
+    style="rounded,filled"; color="#cbd5e1"; fillcolor="#f1f5f9"; fontsize=11;
+    orch [label="Haystack Pipeline\n(app/orchestration.py)", shape=box3d, fillcolor="#fef9c3"];
+    pyd  [label="Pydantic validation\n(TransferRequest)", shape=box, fillcolor="#fee2e2"];
+  }
+
+  subgraph cluster_models {
+    label="Models & stores";
+    style="rounded,filled"; color="#cbd5e1"; fillcolor="#f8fafc"; fontsize=11;
+    spacy  [label="spaCy (EN NER)", shape=cylinder, fillcolor="#e2e8f0"];
+    stanza [label="Stanza (AR NER)", shape=cylinder, fillcolor="#e2e8f0"];
+    embed  [label="Multilingual embeddings\nparaphrase-multilingual-MiniLM-L12-v2", shape=cylinder, fillcolor="#e2e8f0"];
+    faiss  [label="FAISS index\n(intents + contacts)", shape=cylinder, fillcolor="#e2e8f0"];
+  }
+
+  subgraph cluster_llm {
+    label="LLM exception handler";
+    style="rounded,filled"; color="#cbd5e1"; fillcolor="#faf5ff"; fontsize=11;
+    litellm [label="LiteLLM gateway\n(app/llm.py)", shape=box, fillcolor="#f3e8ff"];
+    ollama  [label="Local LLM\nOllama · qwen2.5:3b", shape=cylinder, fillcolor="#e9d5ff"];
+  }
+
+  client -> ui;
+  client -> parse;
+  client -> similar;
+  client -> resolve;
+  client -> validate;
+
+  ui -> parse [style=dashed, label="fetch"];
+  parse   -> orch;
+  similar -> faiss;
+  resolve -> faiss;
+  validate -> pyd;
+
+  orch -> spacy;
+  orch -> stanza;
+  orch -> embed;
+  embed -> faiss;
+  orch -> litellm [label="only on failure", color="#7c3aed", fontcolor="#7c3aed"];
+  litellm -> ollama;
+  orch -> pyd [style=dashed];
+}

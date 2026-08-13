@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Banking NLU Brain — Behavior Monitor</title>
+  <script src="/static/vendor/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    .card h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); font-weight: 600; text-transform: none; letter-spacing: 0; }
+    .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .toolbar input[type=text] { width: auto; min-width: 200px; }
+    input[type=text] { font-size: 13px; padding: 8px 10px; }
+    button { padding: 8px 14px; font-size: 13px; }
+    label.inline { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin: 0; }
+    .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: 0 6px 18px rgba(30,58,95,.05); }
+    .stat .n { font-size: 26px; font-weight: 800; }
+    .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .stat.green .n { color: var(--good); } .stat.accent .n { color: var(--brand); } .stat.purple .n { color: var(--purple); }
+    .charts2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .chartbox { position: relative; height: 280px; }
+    .scroll table th, .scroll table td { white-space: nowrap; }
+    td.num { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+    tr.clickable { cursor: pointer; } tr.clickable:hover td { background: var(--card2); }
+    .scroll { overflow: auto; max-height: 440px; }
+    .hint { color: var(--muted); font-size: 12px; }
+    .pill { display:inline-block; padding: 3px 10px; border-radius:999px; font-size: 11px; font-weight:600; background: var(--card2); border: 1px solid var(--line); color: var(--text); }
+    .empty { text-align: center; color: var(--muted); padding: 30px; }
+    @media (max-width: 980px) { .cards { grid-template-columns: repeat(2,1fr); } .charts2 { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="rail">
+      <a class="logo" href="/assistant" title="Home">N</a>
+      <div class="nav">
+        <a class="ic" title="Assistant" href="/assistant">💬</a>
+        <a class="ic" title="Brain (Developer mode)" href="/assistant?dev=1">🧠</a>
+        <a class="ic" title="NLU Sandbox" href="/">🧪</a>
+        <a class="ic active" title="Insights" href="/brain/monitor">📊</a>
+        <a class="ic" title="Learning" href="/active-learning">🎓</a>
+        <a class="ic" title="Connections" href="/admin">🔗</a>
+        <a class="ic" title="Audit" href="/admin/audit">🛡️</a>
+      </div>
+      <div class="me" title="user"></div>
+    </div>
+    <div class="main">
+      <div class="top">
+        <div class="av">📊</div>
+        <div><div class="ttl">Brain Insights</div><div class="sub">Habits &amp; shortcuts across users</div></div>
+        <div class="pill" style="margin-left:auto"><span id="healthDot" class="dot"></span><span id="healthText">checking…</span></div>
+      </div>
+
+  <main class="content">
+    <section class="card">
+      <div class="toolbar">
+        <button id="refreshBtn">Refresh</button>
+        <label class="inline"><input type="checkbox" id="autoRefresh" /> Auto (10s)</label>
+        <input type="text" id="userFilter" placeholder="filter user id…" />
+        <span style="margin-left:auto" class="hint">Updated: <span id="updated">—</span></span>
+      </div>
+    </section>
+
+    <section class="cards">
+      <div class="stat"><div class="n" id="sUsers">0</div><div class="l">Users</div></div>
+      <div class="stat green"><div class="n" id="sActive">0</div><div class="l">With habits</div></div>
+      <div class="stat accent"><div class="n" id="sTransfers">0</div><div class="l">Transfers learned</div></div>
+      <div class="stat purple"><div class="n" id="sShortcuts">0</div><div class="l">Shortcuts</div></div>
+      <div class="stat"><div class="n" id="sCurrencies">0</div><div class="l">Currencies</div></div>
+    </section>
+
+    <section class="charts2">
+      <div class="card"><h2>Preferred currency distribution (users)</h2><div class="chartbox"><canvas id="currencyChart"></canvas></div></div>
+      <div class="card"><h2>Top recipients (transfers across users)</h2><div class="chartbox"><canvas id="recipientChart"></canvas></div></div>
+    </section>
+
+    <section class="card">
+      <h2>Per-user behavior</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>User id</th><th class="num">Transfers</th><th>Favorite recipient</th><th>Preferred currency</th><th>Last recipient</th><th class="num">Shortcuts</th></tr></thead>
+          <tbody id="userRows"><tr><td colspan="6" class="hint">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div id="emptyState"></div>
+    </section>
+  </main>
+
+      <footer>
+        FastAPI · Memory Brain (SQL + Redis cache) · <a href="/docs">OpenAPI docs</a>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const C = { accent: "#2563eb", green: "#059669", red: "#e11d48", warn: "#d97706", purple: "#7c3aed", muted: "#64748b" };
+    const PALETTE = [C.accent, C.green, C.purple, C.warn, C.red, "#3b82f6", "#10b981", "#d97706"];
+    let charts = {};
+    let lastUsers = [];
+
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c])); }
+
+    async function api(path) {
+      const headers = {};
+      const res = await fetch(path, { headers });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = body && body.error ? body.error.message : (body && body.detail ? (typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)) : ("HTTP " + res.status));
+        throw new Error(msg);
+      }
+      return body;
+    }
+
+    async function checkHealth() {
+      try { const h = await api("/health"); $("healthDot").className = "dot ok"; $("healthText").textContent = "API online · v" + (h.version || "?"); }
+      catch { $("healthDot").className = "dot bad"; $("healthText").textContent = "API offline"; }
+    }
+
+    Chart.defaults.color = C.muted;
+    Chart.defaults.borderColor = "rgba(148,163,184,.15)";
+    Chart.defaults.font.family = "system-ui, sans-serif";
+
+    function upsert(key, ctxId, config) {
+      if (charts[key]) { charts[key].data = config.data; charts[key].options = config.options; charts[key].update(); }
+      else { charts[key] = new Chart($(ctxId).getContext("2d"), config); }
+    }
+
+    function renderCharts(stats) {
+      const cur = stats.currency_distribution || {};
+      const curKeys = Object.keys(cur);
+      upsert("currency", "currencyChart", {
+        type: "doughnut",
+        data: { labels: curKeys.length ? curKeys : ["no data"],
+          datasets: [{ data: curKeys.length ? curKeys.map(k => cur[k]) : [1],
+            backgroundColor: curKeys.length ? curKeys.map((_, i) => PALETTE[i % PALETTE.length]) : [C.muted],
+            borderColor: "#ffffff", borderWidth: 2 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } }
+      });
+
+      const rec = stats.top_recipients || [];
+      upsert("recipient", "recipientChart", {
+        type: "bar",
+        data: { labels: rec.length ? rec.map(r => r.recipient) : ["no data"],
+          datasets: [{ data: rec.length ? rec.map(r => r.count) : [0], backgroundColor: C.purple }] },
+        options: { indexAxis: "y", responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
+      });
+    }
+
+    function renderUsers() {
+      const f = $("userFilter").value.trim().toLowerCase();
+      const rows = lastUsers.filter(u => !f || u.user_id.toLowerCase().includes(f));
+      const tbody = $("userRows");
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="hint">' + (lastUsers.length ? "No users match the filter." : "No users with memory yet.") + "</td></tr>";
+        return;
+      }
+      tbody.innerHTML = "";
+      rows.forEach(u => {
+        const tr = document.createElement("tr");
+        tr.className = "clickable";
+        tr.title = "Open in the Brain simulator";
+        tr.onclick = () => { window.location.href = "/brain?user=" + encodeURIComponent(u.user_id); };
+        tr.innerHTML =
+          "<td class=\"mono\">" + esc(u.user_id) + "</td>" +
+          '<td class="num">' + (u.total_transfers || 0) + "</td>" +
+          '<td dir="auto">' + (u.favorite_recipient ? esc(u.favorite_recipient) : '<span class="hint">—</span>') + "</td>" +
+          "<td>" + (u.preferred_currency ? '<span class="pill">' + esc(u.preferred_currency) + "</span>" : '<span class="hint">—</span>') + "</td>" +
+          '<td dir="auto">' + (u.last_recipient ? esc(u.last_recipient) : '<span class="hint">—</span>') + "</td>" +
+          '<td class="num">' + (u.shortcut_count || 0) + "</td>";
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function load() {
+      try {
+        const o = await api("/memory");
+        const s = o.stats || {};
+        $("sUsers").textContent = s.total_users || 0;
+        $("sActive").textContent = s.users_with_habits || 0;
+        $("sTransfers").textContent = s.total_transfers || 0;
+        $("sShortcuts").textContent = s.total_shortcuts || 0;
+        $("sCurrencies").textContent = Object.keys(s.currency_distribution || {}).length;
+        lastUsers = o.users || [];
+        renderCharts(s);
+        renderUsers();
+        $("updated").textContent = new Date().toLocaleTimeString();
+      } catch (err) {
+        $("userRows").innerHTML = '<tr><td colspan="6" class="hint">Failed: ' + esc(err.message) + "</td></tr>";
+      }
+    }
+
+    let timer = null;
+    $("autoRefresh").onchange = (e) => {
+      if (e.target.checked) { timer = setInterval(load, 10000); } else { clearInterval(timer); timer = null; }
+    };
+    $("refreshBtn").onclick = load;
+    $("userFilter").addEventListener("input", renderUsers);
+    checkHealth();
+    load();
+  </script>
+</body>
+</html>
