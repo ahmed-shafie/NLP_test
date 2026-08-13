@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 from app.config import BILLER_CATEGORIES, CURRENCY_SYMBOLS, SUPPORTED_CURRENCIES
 from app.data_loader import canonicalize_recipient, resolve_biller
+from app.nlu.normalize import normalize
 from app.schemas import BillEntities, Language
 
 # Arabic-Indic (٠-٩) and Extended Arabic-Indic (۰-۹) digit translation to ASCII.
@@ -62,6 +63,65 @@ _EN_SOURCE_RE = re.compile(
     r"\bfrom\s+(?:my\s+)?([\w'’-]+(?:\s+[\w'’-]+){0,2}?)\s*account\b", re.IGNORECASE
 )
 _AR_SOURCE_RE = re.compile(r"من\s+حساب(?:ي)?\s*(?:ال)?([^\d،,.]{0,20})")
+
+# Arabic words that are never a person, after the "إلى"/"ل" anchor. Without this
+# "حوّل الى الايبان ..." names a payee called "الايبان" — and because the speller
+# then corrects it to the real given name "أيبان", the account it belongs to is
+# whoever that resolves to. Written unprefixed: ``_ar_word_stem`` strips ال/لل/ب.
+_AR_NOT_A_NAME = frozenset(
+    {
+        "ايبان",
+        "أيبان",
+        "آيبان",
+        "حساب",
+        "حسابي",
+        "حسابه",
+        "الحساب",
+        "رقم",
+        "مبلغ",
+        "فلوس",
+        "فلوسي",
+        "مصاري",
+        "نقود",
+        "كاش",
+        "بطاقة",
+        "بطاقتي",
+        "محفظة",
+        "محفظتي",
+        "فاتورة",
+        "فاتورتي",
+        "فواتير",
+        "سداد",
+        "رصيد",
+        "رصيدي",
+        "شخص",
+        "حد",
+        "واحد",
+        "شخصية",
+        "المستفيد",
+        "مستفيد",
+        "خدمة",
+        "العملاء",
+        "عملاء",
+        "بنك",
+        "البنك",
+        "فرع",
+        "هذا",
+        "هذه",
+        "ذا",
+        "دا",
+        "هاد",
+        "هادي",
+        "نفس",
+        "لا",
+        "ولا",
+        "نعم",
+        "ايوه",
+        "مش",
+        "ماعرف",
+    }
+)
+_AR_PREFIXES = ("لل", "ال", "بال", "و")
 
 # --- lowercase English names -------------------------------------------------
 # ``_EN_RECIPIENT_RE`` and spaCy both key on capitalisation, so a customer typing
@@ -235,6 +295,14 @@ _EN_PAY_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A digit run this long is an account, an IBAN or a reference — not a price.
+_ACCOUNT_DIGITS = 10
+# ... or the words right before it say so.
+_ACCOUNT_CUE_RE = re.compile(
+    r"(?:\biban\b|\bacc(?:oun)?t\b|\ba/c\b|ايبان|أيبان|آيبان|حساب)" r"[^\d]{0,12}$",
+    re.IGNORECASE,
+)
+
 _EN_SPELLED_AMOUNT = (
     "hundred",
     "thousand",
@@ -256,21 +324,163 @@ def normalize_digits(text: str) -> str:
 
 
 def extract_amount(text: str) -> Decimal | None:
-    """Return the first monetary amount found, applying magnitude multipliers."""
+    """Return the first monetary amount found, applying magnitude multipliers.
+
+    A run of digits that identifies an account is skipped, never read as money:
+    "حول الي ايبان ٠٦٦٦٣٥" was becoming a transfer of 66,635. An amount written
+    in words ("حوّل ألف جنيه", "five hundred") is read here too, so no model is
+    asked to supply the figure.
+    """
 
     normalized = normalize_digits(text)
-    match = _AMOUNT_RE.search(normalized)
-    if not match:
+    for match in _AMOUNT_RE.finditer(normalized):
+        if _identifies_an_account(normalized, match):
+            continue
+        raw = match.group("num").replace(",", "")
+        try:
+            value = Decimal(raw)
+        except InvalidOperation:
+            return None
+        mult = match.group("mult")
+        if mult:
+            value *= _MULTIPLIERS[mult.lower()]
+        return value
+    return extract_spelled_amount(normalized)
+
+
+# Amounts written in words. Composed left to right: a unit/tens/hundreds word
+# adds, a magnitude word multiplies what came before it ("خمسة آلاف" = 5000).
+_SPELLED_UNITS_RAW: dict[str, int] = {
+    "واحد": 1,
+    "واحده": 1,
+    "اثنين": 2,
+    "اتنين": 2,
+    "ثلاثة": 3,
+    "ثلاثه": 3,
+    "تلاتة": 3,
+    "تلاته": 3,
+    "اربعة": 4,
+    "اربعه": 4,
+    "خمسة": 5,
+    "خمسه": 5,
+    "ستة": 6,
+    "سته": 6,
+    "سبعة": 7,
+    "سبعه": 7,
+    "ثمانية": 8,
+    "تمانية": 8,
+    "تسعة": 9,
+    "تسعه": 9,
+    "عشرة": 10,
+    "عشره": 10,
+    "عشرين": 20,
+    "ثلاثين": 30,
+    "تلاتين": 30,
+    "اربعين": 40,
+    "خمسين": 50,
+    "ستين": 60,
+    "سبعين": 70,
+    "ثمانين": 80,
+    "تمانين": 80,
+    "تسعين": 90,
+    "مية": 100,
+    "ميه": 100,
+    "مئة": 100,
+    "ماية": 100,
+    "ميتين": 200,
+    "مئتين": 200,
+    "ثلاثمية": 300,
+    "ثلثمية": 300,
+    "اربعمية": 400,
+    "خمسمية": 500,
+    "خمسمائة": 500,
+    "ستمية": 600,
+    "سبعمية": 700,
+    "ثمانمية": 800,
+    "تسعمية": 900,
+    "الفين": 2_000,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+_SPELLED_MAGNITUDES_RAW: dict[str, int] = {
+    "hundred": 100,
+    "thousand": 1_000,
+    "million": 1_000_000,
+    "الف": 1_000,
+    "آلاف": 1_000,
+    "الاف": 1_000,
+    "مليون": 1_000_000,
+    "ملايين": 1_000_000,
+}
+# Looked up on normalized words, so the tables are normalized once here
+# ("خمسمية" → "خمسميه", "ألف" → "الف").
+_SPELLED_UNITS = {normalize(w): v for w, v in _SPELLED_UNITS_RAW.items()}
+_SPELLED_MAGNITUDES = {normalize(w): v for w, v in _SPELLED_MAGNITUDES_RAW.items()}
+_SPELLED_JOINERS = frozenset({"و", "and"})
+
+
+def extract_spelled_amount(text: str) -> Decimal | None:
+    """Read an amount written in words, or ``None`` when there isn't one."""
+
+    total = 0
+    current = 0
+    seen = False
+    magnified = False
+    for raw_word in re.split(r"[\s,،.]+", normalize(text)):
+        word = raw_word.strip()
+        if not word or word in _SPELLED_JOINERS:
+            continue
+        unit = _SPELLED_UNITS.get(word)
+        if unit is not None:
+            current += unit
+            seen = True
+            continue
+        magnitude = _SPELLED_MAGNITUDES.get(word)
+        if magnitude is not None:
+            total += (current or 1) * magnitude
+            current = 0
+            seen = magnified = True
+            continue
+        # Any other word ends the number; a later one starts afresh.
+        total += current
+        current = 0
+    total += current
+    if not seen or not total:
         return None
-    raw = match.group("num").replace(",", "")
-    try:
-        value = Decimal(raw)
-    except InvalidOperation:
+    # A bare small word ("one of my accounts") is only money when the sentence
+    # also names a currency; a magnitude word ("ألف جنيه") speaks for itself.
+    if not magnified and extract_currency(text) is None:
         return None
-    mult = match.group("mult")
-    if mult:
-        value *= _MULTIPLIERS[mult.lower()]
-    return value
+    return Decimal(total)
+
+
+def _identifies_an_account(normalized: str, match: re.Match[str]) -> bool:
+    """True when this run of digits is an account/IBAN rather than an amount.
+
+    Either the customer said so ("iban", "حساب", "account number" right before it)
+    or the run is too long to be money in this product.
+    """
+
+    digits = match.group("num").replace(",", "")
+    if "." not in digits and len(digits) >= _ACCOUNT_DIGITS:
+        return True
+    return _ACCOUNT_CUE_RE.search(normalized[: match.start()]) is not None
 
 
 def extract_currency(text: str) -> str | None:
@@ -372,6 +582,31 @@ def extract_recipient_without_anchor(text: str) -> str | None:
     return " ".join(words)
 
 
+def _ar_word_stem(word: str) -> str:
+    """Strip the Arabic proclitics that glue onto a noun ("الايبان" → "ايبان")."""
+
+    for prefix in _AR_PREFIXES:
+        if word.startswith(prefix) and len(word) > len(prefix) + 1:
+            return word[len(prefix) :]
+    return word
+
+
+def _is_ar_person_name(candidate: str) -> bool:
+    """False when the captured words name an account, a bill or nobody at all.
+
+    Checked before the speller runs: "الايبان" is one edit from the given name
+    "أيبان", so a correction here would turn the word IBAN into a payee.
+    """
+
+    words = [w for w in re.split(r"\s+", candidate) if w]
+    if not words:
+        return False
+    return not any(
+        word in _AR_NOT_A_NAME or _ar_word_stem(word) in _AR_NOT_A_NAME
+        for word in words
+    )
+
+
 def extract_recipient(text: str, language: Language) -> str | None:
     """Return the beneficiary name via language-specific surface patterns.
 
@@ -389,6 +624,8 @@ def extract_recipient(text: str, language: Language) -> str | None:
         )
     candidate = match.group(1).strip(" ,،.")
     if not candidate:
+        return None
+    if language is Language.AR and not _is_ar_person_name(candidate):
         return None
     return canonicalize_recipient(candidate)
 

@@ -774,22 +774,45 @@ def warnings_note(warnings: list[str], language: Language) -> str:
 
     notes: list[str] = []
     for warning in warnings:
-        if warning.startswith("low_funds"):
-            short = warning.split(":", 1)[1].strip() if ":" in warning else ""
-            if language is Language.AR:
-                notes.append(f"⚠️ الرصيد غير كافٍ ({short}) — يمكنك المتابعة.")
-            else:
-                notes.append(
-                    f"⚠️ Balance may be insufficient ({short}) — "
-                    "you can still proceed."
-                )
-        elif warning.startswith("fx"):
+        if warning.startswith("fx"):
             detail = warning.split(":", 1)[1].strip() if ":" in warning else ""
             if language is Language.AR:
                 notes.append(f"ℹ️ سيتم تحويل العملة ({detail}).")
             else:
                 notes.append(f"ℹ️ A currency conversion applies ({detail}).")
     return " ".join(notes)
+
+
+def insufficient_funds(
+    requested: str, available: str, currency: str, language: Language
+) -> str:
+    """Refuse a debit the balance can't fund and offer the balance instead.
+
+    Both figures come from the Banking Core and are printed exactly as given.
+    """
+
+    if language is Language.AR:
+        return (
+            f"رصيدك {available} {currency} وما يكفي لـ{requested} {currency}، "
+            f"فما أقدر أنفّذ التحويل. أحوّل {available} {currency} بدالها؟ "
+            "(نعم/لا) أو اكتب مبلغ تاني."
+        )
+    return (
+        f"Your balance is {available} {currency}, which doesn't cover "
+        f"{requested} {currency}, so I can't put this through. Shall I send "
+        f"{available} {currency} instead? (yes/no) — or give me another amount."
+    )
+
+
+def preflight_blocked(language: Language) -> str:
+    """Refuse for any other Banking Core reason (e.g. an inactive account)."""
+
+    if language is Language.AR:
+        return "ما أقدر أكمل العملية على هذا الحساب — خدمة العملاء تقدر توضّح السبب."
+    return (
+        "I can't put this through on that account — customer support can tell "
+        "you why."
+    )
 
 
 def greeting(language: Language) -> str:

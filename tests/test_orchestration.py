@@ -63,29 +63,29 @@ def test_pipeline_has_connected_components():
     } <= set(pipe.graph.nodes)
 
 
-def test_llm_fills_missing_word_amount(monkeypatch):
+def test_llm_fills_a_name_the_rules_missed(monkeypatch):
+    """A slot the customer did type may be filled by the model."""
+
     handler = _FakeHandler(
         LLMResult(
             intent="transfer_money",
-            amount=Decimal("1000"),
-            currency="EGP",
-            recipient=None,
+            amount=None,
+            currency=None,
+            recipient="karim",
             source_account=None,
             clarification=None,
         )
     )
     _install(monkeypatch, handler)
 
-    result = orchestration.run_pipeline("حوّل ألف جنيه إلى محمد")
+    result = orchestration.run_pipeline("the money is for karim please")
 
     assert handler.called is True
-    assert result.intent is Intent.TRANSFER_MONEY
-    assert result.entities.amount == Decimal("1000")
-    assert result.entities.currency == "EGP"
+    assert result.entities.recipient == "karim"
     assert result.llm_assisted is True
 
 
-def test_llm_reclassifies_fallback_and_resolves_recipient(monkeypatch):
+def test_llm_reclassifies_fallback_but_invents_no_slots(monkeypatch):
     handler = _FakeHandler(
         LLMResult(
             intent="transfer_money",
@@ -101,8 +101,12 @@ def test_llm_reclassifies_fallback_and_resolves_recipient(monkeypatch):
     result = orchestration.run_pipeline("what is the weather today")
 
     assert result.intent is Intent.TRANSFER_MONEY
-    assert result.entities.recipient == "Sara"
-    assert result.resolved_recipient is not None
+    # Nobody typed "Sara", "50" or "USD": ungrounded slots are dropped, so the
+    # model can route a message but never author its financial content.
+    assert result.entities.recipient is None
+    assert result.entities.amount is None
+    assert result.entities.currency is None
+    assert result.resolved_recipient is None
     assert result.llm_assisted is True
 
 
@@ -138,9 +142,9 @@ def test_complete_transfer_skips_llm(monkeypatch):
 
 
 def test_graceful_degradation_without_llm():
-    # autouse fixture disables the LLM handler; the word-amount stays unparsed.
+    # autouse fixture disables the LLM handler; the rules read the word-amount.
     result = orchestration.run_pipeline("حوّل ألف جنيه إلى محمد")
-    assert result.entities.amount is None
+    assert result.entities.amount == Decimal("1000")
     assert result.llm_assisted is False
     assert result.clarification is None
 

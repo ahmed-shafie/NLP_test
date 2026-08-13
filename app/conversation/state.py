@@ -96,8 +96,14 @@ class ConversationState(BaseModel):
     pending_add_name: str | None = None
     pending_add_account: str | None = None
     add_resumes_transfer: bool = False
-    # Advisory pre-flight notes (low funds / FX) shown at confirmation; never block.
+    # Advisory pre-flight notes (FX) shown at confirmation; these never block.
     preflight_warnings: list[str] = Field(default_factory=list)
+    # Pre-flight refusals from the Banking Core (insufficient funds, inactive
+    # account): confirmation is not offered while any of these stand.
+    preflight_blocking: list[str] = Field(default_factory=list)
+    # The spendable balance offered after an insufficient-funds refusal, so a
+    # plain "yes" means "send that amount instead".
+    offered_amount: Decimal | None = None
     turns: int = 0
     # Count of flagged (abusive) turns in this session; drives the repeat-offense
     # cutoff. Kept across ``reset`` so it spans the whole session.
@@ -121,3 +127,5 @@ class ConversationState(BaseModel):
         self.pending_add_account = None
         self.add_resumes_transfer = False
         self.preflight_warnings = []
+        self.preflight_blocking = []
+        self.offered_amount = None

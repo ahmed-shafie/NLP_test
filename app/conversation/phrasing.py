@@ -68,6 +68,10 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         "confirm_prompt",
         "list_beneficiaries",
         "warnings_note",
+        # Carries the balance and the amount refused: both are Banking Core
+        # figures and must reach the customer unchanged.
+        "insufficient_funds",
+        "preflight_blocked",
         "alias_created",
         "alias_forgotten",
         "alias_not_found",

@@ -6,7 +6,7 @@ import logging
 import re
 import uuid
 from collections.abc import Sequence
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from app import banking_core_client
 from app.config import DEFAULT_CURRENCY, settings
@@ -81,14 +81,38 @@ _NEGATIVE = {
     "خطأ",
     "غلط",
 }
+# Words that abandon whatever is in progress. Common misspellings are listed
+# because a confirmation screen that doesn't recognise "cansel" leaves the
+# amount standing, and the next "yes" pays it.
 _CANCEL = {
     "cancel",
+    "cancle",
+    "cansel",
+    "canel",
+    "cancell",
+    "cencel",
+    "kansel",
+    "abort",
     "stop",
     "quit",
     "exit",
     "nevermind",
+    "nvm",
     "الغاء",
     "إلغاء",
+    "الغي",
+    "ألغي",
+    "إلغي",
+    "الغيها",
+    "لغيها",
+    "كنسل",
+    "كنسلها",
+    "بطل",
+    "بطّل",
+    "ابطل",
+    "أبطل",
+    "اوقف",
+    "أوقف",
     "توقف",
     "خروج",
 }
@@ -578,6 +602,17 @@ def route_fresh_turn(
 _ACCOUNT_SHAPED = re.compile(r"^[A-Za-z]{0,2}[\d\s\u00a0-]+$")
 
 
+def _is_control_only(text: str) -> bool:
+    """True for a bare "yes"/"no"/"cancel"/menu pick, in either language.
+
+    Saying "cancel" in the middle of an Arabic conversation asks to cancel; it
+    does not ask to be answered in English.
+    """
+
+    tokens = _tokens(text)
+    return bool(tokens) and tokens <= _CONTROL_TOKENS
+
+
 def _carries_language_signal(text: str) -> bool:
     """False for messages detection can't judge: bare numbers, IBANs, "2"."""
 
@@ -585,6 +620,22 @@ def _carries_language_signal(text: str) -> bool:
     if not re.search(r"[^\W\d_]", stripped, re.UNICODE):
         return False
     return not _ACCOUNT_SHAPED.match(stripped)
+
+
+# "insufficient_funds: available 12300.00 SAR" -> the figure the Core reported.
+_AVAILABLE_RE = re.compile(r"available\s+(\d+(?:\.\d+)?)")
+
+
+def _available_amount(blocking: str) -> Decimal | None:
+    """Read the spendable balance out of a Banking Core refusal code."""
+
+    match = _AVAILABLE_RE.search(blocking)
+    if match is None:
+        return None
+    try:
+        return Decimal(match.group(1))
+    except InvalidOperation:
+        return None
 
 
 def _mask_account(account: str) -> str:
@@ -596,6 +647,11 @@ def _mask_account(account: str) -> str:
 
 def _tokens(text: str) -> set[str]:
     return {t.strip(".,!؟،").lower() for t in text.split()}
+
+
+_CONTROL_TOKENS = (
+    _AFFIRM | _NEGATIVE | _CANCEL | _CHOOSE_TRANSFER | _CHOOSE_BILL | _CHOICE_FILLERS
+)
 
 
 def _matches(text: str, vocabulary: set[str]) -> bool:
@@ -847,11 +903,25 @@ class ConversationEngine:
             result.block_trace = list(tracer.entries)
             return result
 
+        # An offered balance stands for exactly one turn: anything other than a
+        # plain yes/no is a fresh instruction, not an answer to the offer.
+        offered = state.offered_amount
+        state.offered_amount = None
+
         forget_name = _forget_target(text)
         if forget_name:
             with tracer.block("orchestrator"):
                 result = self._forget_shortcut(state, forget_name, lang)
         elif _matches(text, _CANCEL):
+            with tracer.block("orchestrator"):
+                state.reset()
+                state.status = ConversationStatus.CANCELLED
+                result = self._finish(state, templates.cancelled(lang))
+        elif offered is not None and _matches(text, _AFFIRM):
+            with tracer.block("orchestrator") as span:
+                span.annotate("accept_offered_amount")
+                result = self._accept_offered_amount(state, offered, lang)
+        elif offered is not None and _matches(text, _NEGATIVE):
             with tracer.block("orchestrator"):
                 state.reset()
                 state.status = ConversationStatus.CANCELLED
@@ -893,7 +963,9 @@ class ConversationEngine:
 
         if override is not None:
             return override
-        if prior is not None and not _carries_language_signal(text):
+        if prior is not None and (
+            not _carries_language_signal(text) or _is_control_only(text)
+        ):
             return prior.language
         return detect_language(text)
 
@@ -2080,6 +2152,9 @@ class ConversationEngine:
         state.pending_slot = None
         state.status = ConversationStatus.CONFIRMING
         self._run_preflight(state)
+        refusal = self._preflight_refusal(state, lang)
+        if refusal is not None:
+            return refusal
         reply = self._confirm_text(state, lang)
         note = templates.warnings_note(state.preflight_warnings, lang)
         if note:
@@ -2120,6 +2195,51 @@ class ConversationEngine:
             )
         if result is not None:
             state.preflight_warnings = list(result.warnings)
+            state.preflight_blocking = list(result.blocking)
+
+    def _preflight_refusal(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult | None:
+        """Stop before confirmation when the Banking Core refused the debit.
+
+        Short of funds, the spendable balance is offered instead of the amount
+        asked for — the customer never sees a confirmation screen for money the
+        account cannot pay. Both figures are the Core's, printed verbatim.
+        """
+
+        blocking = state.preflight_blocking
+        if not blocking:
+            return None
+        state.status = ConversationStatus.COLLECTING
+        state.pending_slot = "amount"
+        shortfall = next(
+            (b for b in blocking if b.startswith("insufficient_funds")), None
+        )
+        if shortfall is None:
+            state.offered_amount = None
+            return self._finish(state, templates.preflight_blocked(lang))
+        available = _available_amount(shortfall)
+        if available is None:
+            state.offered_amount = None
+            return self._finish(state, templates.preflight_blocked(lang))
+        state.offered_amount = available
+        return self._finish(
+            state,
+            templates.insufficient_funds(
+                self._fmt_amount(state.slots.amount),
+                self._fmt_amount(available),
+                state.slots.currency or "",
+                lang,
+            ),
+        )
+
+    def _accept_offered_amount(
+        self, state: ConversationState, offered: Decimal, lang: Language
+    ) -> ConversationResult:
+        """ "Yes" to the offered balance: retry confirmation at that amount."""
+
+        state.slots.amount = offered
+        return self._enter_confirmation(state, lang)
 
     def _confirm_text(self, state: ConversationState, lang: Language) -> str:
         slots = state.slots
