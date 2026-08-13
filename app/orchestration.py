@@ -11,17 +11,20 @@ the graph, so the pipeline stays a simple, debuggable linear DAG.
 from __future__ import annotations
 
 import logging
+import re
 from functools import lru_cache
 
 from haystack import Pipeline, component
 
 from app.config import DEFAULT_CURRENCY, settings
 from app.db.beneficiary import get_beneficiary_repository
-from app.llm import get_llm_handler
+from app.llm import LLMResult, get_llm_handler
 from app.nlu import arabic, english
+from app.nlu import entities as entities_mod
 from app.nlu.contacts import get_default_matcher
 from app.nlu.intents import classify_intent
 from app.nlu.lang import detect_language
+from app.nlu.normalize import normalize_digits
 from app.nlu.semantic_intents import get_semantic_classifier
 from app.schemas import (
     Beneficiary,
@@ -186,6 +189,55 @@ def _needs_llm(state: dict) -> bool:
     return entities.amount is None or entities.recipient is None
 
 
+def _says(text: str, value: str) -> bool:
+    """True when every word of ``value`` is actually in the customer's message."""
+
+    haystack = normalize_digits(text).casefold()
+    words = [w for w in re.split(r"\s+", value.strip()) if w]
+    return bool(words) and all(w.casefold() in haystack for w in words)
+
+
+def _adopt_grounded_slots(
+    entities: TransferEntities, result: LLMResult, text: str
+) -> bool:
+    """Fill empty slots from the model, but only where the message backs it up.
+
+    The model is a reading aid, never a source of financial data: it may point
+    at a figure the rules missed, not invent one. "حول الي هذا الحساب
+    ٠١١١٥٥٥٢٤٢" came back as a transfer of 115,524 — a number nobody typed.
+    So an amount or a currency is taken only when the deterministic extractor
+    reads the same value, and a name only when the customer wrote those words.
+    """
+
+    changed = False
+    if entities.amount is None and result.amount is not None:
+        if entities_mod.extract_amount(text) == result.amount:
+            entities.amount = result.amount
+            changed = True
+    if not entities.currency and result.currency:
+        if entities_mod.extract_currency(text) == result.currency:
+            entities.currency = result.currency
+            changed = True
+    if not entities.recipient and result.recipient:
+        if _says(text, result.recipient) and _is_person_shaped(result.recipient):
+            entities.recipient = result.recipient
+            changed = True
+    if not entities.source_account and result.source_account:
+        if _says(text, result.source_account):
+            entities.source_account = result.source_account
+            changed = True
+    return changed
+
+
+def _is_person_shaped(value: str) -> bool:
+    """False for an account/IBAN/number handed back as if it were a name."""
+
+    stripped = value.strip()
+    if not stripped or any(ch.isdigit() for ch in stripped):
+        return False
+    return bool(re.search(r"[^\W\d_]", stripped, re.UNICODE))
+
+
 @component
 class LLMExceptionHandler:
     """LiteLLM safety net: fill missing slots / clarify when rules fall short."""
@@ -237,12 +289,7 @@ class LLMExceptionHandler:
                 state["intent"] = Intent.TRANSFER_MONEY
                 changed = True
 
-            for field in ("amount", "currency", "recipient", "source_account"):
-                current = getattr(entities, field)
-                new_value = getattr(result, field)
-                if (current is None or current == "") and new_value is not None:
-                    setattr(entities, field, new_value)
-                    changed = True
+            changed = _adopt_grounded_slots(entities, result, state["text"]) or changed
 
             if entities.amount is not None and entities.currency is None:
                 entities.currency = DEFAULT_CURRENCY

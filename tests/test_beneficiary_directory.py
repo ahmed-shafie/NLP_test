@@ -393,21 +393,61 @@ def test_balance_aside_during_confirmation(engine, directory_db, fake_core):
     assert done.state.status is ConversationStatus.COMPLETED
 
 
-def test_low_funds_warns_without_blocking(engine, directory_db, monkeypatch):
+def _short_of_funds(monkeypatch) -> None:
     monkeypatch.setattr(
         bcc,
         "preflight_transfer",
         lambda **k: bcc.PreflightResult(
-            ok=True, warnings=["low_funds: short 4000.00 SAR"]
+            ok=False, blocking=["insufficient_funds: available 5000.00 SAR"]
         ),
     )
-    engine.handle("send 9000 SAR to Mona", "b-fx-1")
-    result = engine.handle("send 9000 SAR to Mona", "b-fx-1")
+
+
+def test_insufficient_funds_blocks_and_offers_the_balance(
+    engine, directory_db, monkeypatch
+):
+    _short_of_funds(monkeypatch)
+    result = engine.handle("send 9000 SAR to Mona", "b-funds-1")
+    # No confirmation screen for money the account can't pay.
+    assert result.state.status is ConversationStatus.COLLECTING
+    assert "5000" in result.reply
+    assert result.state.offered_amount == Decimal("5000.00")
+
+
+def test_accepting_the_offer_confirms_that_amount_not_the_original(
+    engine, directory_db, monkeypatch
+):
+    _short_of_funds(monkeypatch)
+    engine.handle("send 9000 SAR to Mona", "b-funds-2")
+    monkeypatch.setattr(
+        bcc, "preflight_transfer", lambda **k: bcc.PreflightResult(ok=True)
+    )
+    result = engine.handle("yes", "b-funds-2")
     assert result.state.status is ConversationStatus.CONFIRMING
-    assert any("low_funds" in w for w in result.state.preflight_warnings)
-    # Confirmation still proceeds (warning never blocks).
-    done = engine.handle("yes", "b-fx-1")
+    assert result.state.slots.amount == Decimal("5000.00")
+    done = engine.handle("yes", "b-funds-2")
     assert done.state.status is ConversationStatus.COMPLETED
+    assert done.state.slots.amount == Decimal("5000.00")
+
+
+def test_declining_the_offer_sends_nothing(engine, directory_db, monkeypatch):
+    _short_of_funds(monkeypatch)
+    engine.handle("send 9000 SAR to Mona", "b-funds-3")
+    result = engine.handle("no", "b-funds-3")
+    assert result.state.status is ConversationStatus.CANCELLED
+    assert result.state.slots.amount is None
+
+
+def test_unaffordable_amount_is_never_confirmable(engine, directory_db, monkeypatch):
+    """Saying "yes" twice must not push the original amount through."""
+
+    _short_of_funds(monkeypatch)
+    engine.handle("send 9000 SAR to Mona", "b-funds-4")
+    accepted = engine.handle("yes", "b-funds-4")
+    # Still refused: the Core says the balance hasn't changed.
+    assert accepted.state.status is ConversationStatus.COLLECTING
+    done = engine.handle("yes", "b-funds-4")
+    assert done.state.status is not ConversationStatus.COMPLETED
 
 
 def test_fx_note_without_blocking(engine, directory_db, monkeypatch):

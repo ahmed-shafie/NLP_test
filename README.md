@@ -221,10 +221,17 @@ The risk is answering about the *wrong* subject, so the gate is strict — 8 of 
 retrieved rows must name the same subject, at high similarity.
 `research/vector_db_v08/topic_gate_sweep.py` calibrates it against the gold topics
 of the held-out slice: the shipped point answers **14.9%** of the questions in
-context with **1.4%** of those answers about the wrong subject. Answering at
+context with **0.8%** of those answers about the wrong subject. Answering at
 *family* level when the subjects disagree was measured and dropped — it reaches
 ~37% coverage but ~15% wrong answers, because "where is the card I ordered" and
 "my card was stolen" share a family and not a question.
+
+Two thirds of the wrong answers that remained were pairs of subjects retrieval
+cannot separate (1.4% → 0.8% at the same coverage). Two kinds of fix, both
+deterministic: subjects whose *answer* is the same no longer have two answers to
+swap (the exchange rate and its fee; a blocked card and a blocked PIN), and the
+question's own words settle the card cases where the answers must differ — a card
+that "doesn't work" is never answered as a theft, and "freeze my card" always is.
 
 ## API Endpoints
 

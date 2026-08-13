@@ -9,6 +9,8 @@ number must be a plausible length.
 from __future__ import annotations
 
 import re
+import string
+from dataclasses import dataclass
 
 # IBAN total lengths for the markets we serve. Countries outside this table are
 # accepted on structure + checksum alone.
@@ -88,3 +90,56 @@ def validate_account(raw: str) -> tuple[str | None, str | None]:
 
 def expected_iban_length(country: str = "SA") -> int | None:
     return _IBAN_LENGTHS.get(country.upper())
+
+
+@dataclass(frozen=True)
+class IbanTypoHint:
+    """Where a failed checksum says the typo probably is.
+
+    The checksum proves *that* a character is wrong, never *which* one, so this
+    only reports what the arithmetic actually pins down: ``swapped`` when one
+    adjacent pair is the sole repair, ``positions`` (1-based) for the single
+    characters that would each fix it on their own. Several positions means the
+    location is genuinely unknown — the caller must not pick one.
+    """
+
+    swapped: tuple[int, int] | None = None
+    positions: tuple[int, ...] = ()
+
+    @property
+    def is_located(self) -> bool:
+        return self.swapped is not None or len(self.positions) == 1
+
+
+def analyze_iban_typo(value: str) -> IbanTypoHint:
+    """Search the single-character edits that would satisfy the mod-97 check."""
+
+    account = normalize_account(value)
+    if not _IBAN_RE.match(account) or iban_checksum_ok(account):
+        return IbanTypoHint()
+
+    swaps = [
+        (index + 1, index + 2)
+        for index in range(len(account) - 1)
+        if account[index] != account[index + 1]
+        and iban_checksum_ok(
+            account[:index] + account[index + 1] + account[index] + account[index + 2 :]
+        )
+    ]
+
+    positions = [
+        index + 1
+        for index in range(len(account))
+        if any(
+            char != account[index]
+            and iban_checksum_ok(account[:index] + char + account[index + 1 :])
+            for char in (
+                string.digits if account[index].isdigit() else string.ascii_uppercase
+            )
+        )
+    ]
+
+    return IbanTypoHint(
+        swapped=swaps[0] if len(swaps) == 1 else None,
+        positions=tuple(positions),
+    )

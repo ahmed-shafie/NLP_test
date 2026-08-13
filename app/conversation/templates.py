@@ -14,6 +14,7 @@ import random
 
 from app.config import settings
 from app.conversation import phrasing, topic_replies
+from app.nlu import accounts
 from app.nlu.normalize import normalize, normalize_tokens
 from app.nlu.semantic_intents import TopicEvidence
 from app.schemas import Intent, Language
@@ -583,6 +584,53 @@ def beneficiary_invalid_account(name: str, reason: str, language: Language) -> s
     )
 
 
+def _typo_location(hint: accounts.IbanTypoHint, language: Language) -> str:
+    """Name the spot only when the arithmetic pins it down, never a guess."""
+
+    if hint.swapped is not None:
+        first, second = hint.swapped
+        if language is Language.AR:
+            return f"يبدو أن الخانتين {first} و{second} متبادلتان"
+        return f"characters {first} and {second} look swapped"
+    if len(hint.positions) == 1:
+        position = hint.positions[0]
+        if language is Language.AR:
+            return f"الخطأ على الأرجح في الخانة رقم {position}"
+        return f"the typo is most likely at character {position}"
+    if language is Language.AR:
+        return "خانة واحدة فيها خطأ، لكن ما أقدر أحدد أيها بالضبط"
+    return "one character is wrong, though I can't tell which"
+
+
+def beneficiary_iban_typo(
+    name: str, hint: accounts.IbanTypoHint, language: Language
+) -> str:
+    """A failed checksum reads as a typo, with a way through if it isn't one."""
+
+    where = _typo_location(hint, language)
+    if language is Language.AR:
+        return (
+            f"الآيبان ما ضبط في التحقق الحسابي — {where}. راجعه مع كشف الحساب "
+            f'وأرسله من جديد لإضافة "{name}"، أو اكتب "أنا متأكد" لأكمل بالرقم '
+            'زي ما كتبته، أو "لا" للإلغاء.'
+        )
+    return (
+        f"That IBAN doesn't pass its checksum — {where}. Check it against your "
+        f'statement and send it again to add "{name}", or reply "I\'m sure" and '
+        'I\'ll use it exactly as you typed it, or "no" to cancel.'
+    )
+
+
+def unchecked_account_note(overridden: bool, language: Language) -> str:
+    """Restate, at the point of no return, that the IBAN was never verified."""
+
+    if not overridden:
+        return ""
+    if language is Language.AR:
+        return "⚠️ الآيبان ما نجح في التحقق الحسابي وهنستخدمه زي ما كتبته."
+    return "⚠️ This IBAN failed its checksum; I'll use it exactly as you typed it."
+
+
 def confirm_add_beneficiary(name: str, masked: str, language: Language) -> str:
     if language is Language.AR:
         return f"للتأكيد — أضيف المستفيد {name} على الحساب {masked}؟ (نعم/لا)"
@@ -774,22 +822,45 @@ def warnings_note(warnings: list[str], language: Language) -> str:
 
     notes: list[str] = []
     for warning in warnings:
-        if warning.startswith("low_funds"):
-            short = warning.split(":", 1)[1].strip() if ":" in warning else ""
-            if language is Language.AR:
-                notes.append(f"⚠️ الرصيد غير كافٍ ({short}) — يمكنك المتابعة.")
-            else:
-                notes.append(
-                    f"⚠️ Balance may be insufficient ({short}) — "
-                    "you can still proceed."
-                )
-        elif warning.startswith("fx"):
+        if warning.startswith("fx"):
             detail = warning.split(":", 1)[1].strip() if ":" in warning else ""
             if language is Language.AR:
                 notes.append(f"ℹ️ سيتم تحويل العملة ({detail}).")
             else:
                 notes.append(f"ℹ️ A currency conversion applies ({detail}).")
     return " ".join(notes)
+
+
+def insufficient_funds(
+    requested: str, available: str, currency: str, language: Language
+) -> str:
+    """Refuse a debit the balance can't fund and offer the balance instead.
+
+    Both figures come from the Banking Core and are printed exactly as given.
+    """
+
+    if language is Language.AR:
+        return (
+            f"رصيدك {available} {currency} وما يكفي لـ{requested} {currency}، "
+            f"فما أقدر أنفّذ التحويل. أحوّل {available} {currency} بدالها؟ "
+            "(نعم/لا) أو اكتب مبلغ تاني."
+        )
+    return (
+        f"Your balance is {available} {currency}, which doesn't cover "
+        f"{requested} {currency}, so I can't put this through. Shall I send "
+        f"{available} {currency} instead? (yes/no) — or give me another amount."
+    )
+
+
+def preflight_blocked(language: Language) -> str:
+    """Refuse for any other Banking Core reason (e.g. an inactive account)."""
+
+    if language is Language.AR:
+        return "ما أقدر أكمل العملية على هذا الحساب — خدمة العملاء تقدر توضّح السبب."
+    return (
+        "I can't put this through on that account — customer support can tell "
+        "you why."
+    )
 
 
 def greeting(language: Language) -> str:
@@ -1062,7 +1133,7 @@ def alias_not_found(name: str, language: Language) -> str:
 
 
 def topic_answer(
-    evidence: TopicEvidence, language: Language
+    text: str, evidence: TopicEvidence, language: Language
 ) -> topic_replies.TopicAnswer | None:
     """Answer a refused customer-service question in its own topic.
 
@@ -1074,5 +1145,5 @@ def topic_answer(
     """
 
     return topic_replies.decide(
-        evidence.top_score, evidence.votes, evidence.retrieved, language
+        text, evidence.top_score, evidence.votes, evidence.retrieved, language
     )

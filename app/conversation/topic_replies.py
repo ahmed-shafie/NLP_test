@@ -12,10 +12,18 @@ other bank policy. We do not have those facts, and a plausible-sounding invented
 one is exactly the failure mode this two-tier design exists to prevent. Topics
 are grouped into families so all 94 of them are covered; the most frequent ones
 additionally carry a specific reply.
+
+Neighbouring subjects are the main source of wrong answers, and the two remedies
+here are deliberately different. Where the answer would be the same either way —
+the exchange rate and its fee, a blocked card and a blocked PIN — the subjects
+share one reply, so a mix-up cannot mislead anybody. Where the answers must
+differ — "my card doesn't work" against "my card was stolen" — the question's own
+words decide (:func:`_family_from_cues`), because retrieval demonstrably cannot.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -36,7 +44,6 @@ TOPIC_FAMILIES: dict[str, str] = {
     "تم تحصيل رسوم الدفع بالبطاقة": "fees",
     "رسوم السحب النقدي": "fees",
     "رسوم إضافية على كشف الحساب": "fees",
-    "رسوم الصرف": "fees",
     "إعادة الشحن عن طريق رسوم التحويل المصرفي": "fees",
     # An existing transfer: late, failed, rejected, cancelled.
     "لم يستلم المستلم التحويل": "transfer_issue",
@@ -67,9 +74,6 @@ TOPIC_FAMILIES: dict[str, str] = {
     "تم رفض الدفع بالبطاقة": "card_payment_issue",
     "الدفع بالبطاقة المعلق": "card_payment_issue",
     "الدفع بالبطاقة غير معترف به": "card_payment_issue",
-    "البطاقة لا تعمل": "card_payment_issue",
-    "البطاقة الافتراضية لا تعمل": "card_payment_issue",
-    "عدم التلامس لا يعمل": "card_payment_issue",
     "قبول البطاقة": "card_payment_issue",
     "فيزا أو ماستر كارد": "card_payment_issue",
     "آبل باي أو جوجل باي": "card_payment_issue",
@@ -97,9 +101,15 @@ TOPIC_FAMILIES: dict[str, str] = {
     "البطاقة المفقودة أو المسروقة": "security",
     "report_fraud": "security",
     "freeze_account": "security",
+    # A card that will not work: blocked card, blocked PIN, contactless dead.
+    # The customer reports the same symptom for all three and the answer is the
+    # same, so they share one reply rather than three that can be swapped.
+    "البطاقة لا تعمل": "card_blocked",
+    "البطاقة الافتراضية لا تعمل": "card_blocked",
+    "عدم التلامس لا يعمل": "card_blocked",
+    "رمز التعريف الشخصي محظور": "card_blocked",
     # PIN / passcode / sign-in.
     "نسيان رمز المرور": "pin_access",
-    "رمز التعريف الشخصي محظور": "pin_access",
     "تغيير رمز التعريف الشخصي": "pin_access",
     "change_pin": "pin_access",
     "logout": "pin_access",
@@ -117,8 +127,11 @@ TOPIC_FAMILIES: dict[str, str] = {
     "استرداد الأموال غير مرئي": "refunds",
     "طلب استرداد": "refunds",
     "تلقي الأموال": "refunds",
-    # Exchange rates and supported currencies.
+    # Exchanging currency: the rate and its fee are one subject to the customer,
+    # and telling the two apart from the question alone is not reliable ("وين
+    # ألقى سعر الصرف؟" is labelled رسوم الصرف), so one reply answers both.
     "سعر الصرف": "fx",
+    "رسوم الصرف": "fx",
     "الصرف عبر التطبيق": "fx",
     "دعم العملات الورقية": "fx",
     "البطاقات والعملات المدعومة": "fx",
@@ -233,6 +246,21 @@ FAMILY_REPLIES: dict[str, dict[Language, str]] = {
             "— that's not something I can do from here, and speed matters."
         ),
     },
+    "card_blocked": {
+        Language.AR: (
+            "فاهم — البطاقة مش شغالة أو محظورة (هي أو الرمز السري). ما أقدر "
+            "أفكّ حظر بطاقة ولا أعيد تعيين رمز — ده بيتم مع خدمة العملاء أو من "
+            "إعدادات البطاقة. لو البطاقة ضاعت أو تشك في عملية مش بتاعتك، "
+            "كلّمهم فورًا. أنا معاك في التحويلات والفواتير والرصيد."
+        ),
+        Language.EN: (
+            "Understood — the card won't work, or the card or PIN is blocked. I "
+            "can't unblock a card or reset a PIN — that goes through customer "
+            "support or your card settings. If the card was lost or you suspect "
+            "a transaction you didn't make, contact them right away. I'm here "
+            "for transfers, bills and your balance."
+        ),
+    },
     "pin_access": {
         Language.AR: (
             "سؤالك عن الرمز السري أو الدخول. ما أقدر أعرض ولا أغيّر رمزك — "
@@ -280,13 +308,16 @@ FAMILY_REPLIES: dict[str, dict[Language, str]] = {
     },
     "fx": {
         Language.AR: (
-            "سؤالك عن أسعار الصرف أو تحويل العملات. أنا ما أعرض أسعار صرف ولا "
-            "أنفّذ تصريف عملة — بس أقدر أحوّل مبلغ بعملة محددة لمستفيد. تحب؟"
+            "سؤالك عن تصريف العملة. أنا ما أعرض سعر الصرف ولا رسومه ومش "
+            "هخمّنهم، وما أنفّذ تصريف — خدمة العملاء تقدر تأكّد السعر والرسم "
+            "على عمليتك. بس أقدر أحوّل مبلغ بعملة محددة لمستفيد. تحب؟"
         ),
         Language.EN: (
-            "This is about exchange rates or converting currency. I don't quote "
-            "rates and can't exchange currency — but I can send an amount in a "
-            "given currency to a payee. Want to do that?"
+            "This is about exchanging currency. I don't quote the rate or its "
+            "fee and I won't guess either, and I can't exchange currency — "
+            "customer support can confirm the rate and the fee on your "
+            "transaction. I can send an amount in a given currency to a payee. "
+            "Want to do that?"
         ),
     },
     "limits": {
@@ -445,18 +476,52 @@ TOPIC_REPLIES: dict[str, dict[Language, str]] = {
             "reference. I can show you your current balance."
         ),
     },
-    "سعر الصرف": {
-        Language.AR: (
-            "سؤالك عن سعر الصرف. أنا ما أعرض أسعار صرف — بس أقدر أحوّل مبلغ "
-            "بعملة محددة لمستفيد عندك. تحب نعمل تحويل؟"
-        ),
-        Language.EN: (
-            "You're asking about the exchange rate. I don't quote rates — but I "
-            "can send an amount in a given currency to one of your payees. Want "
-            "to do a transfer?"
-        ),
-    },
 }
+
+
+# Asking to stop the card now. Retrieval reads "freeze my card in the app" as a
+# question about the app, and the answer to that one has to be the urgent one.
+# "unblock"/"ألغي حظر" is the opposite request and must not match.
+_FREEZE_CUE_RE = re.compile(
+    r"\bfreeze\b|(?<!un)\bblock\b(?!ed)\s+(?:my\s+)?card"
+    r"|جمد|تجميد|أجمد|إيقاف البطاقة|أوقف بطاق",
+    re.IGNORECASE,
+)
+# A wallet question is its own subject, not a broken card.
+_WALLET_RE = re.compile(r"apple\s*pay|google\s*pay|آبل باي|جوجل باي", re.IGNORECASE)
+_CARD_WORD_RE = re.compile(r"\b(?:card|contactless)\b|بطاقت?|كارت", re.IGNORECASE)
+# The symptom, in either order around the card word and across dialects.
+_FAULT_CUE_RE = re.compile(
+    r"not work|doesn'?t work|won'?t work|stopped work|can'?t use|cannot use"
+    r"|\bblocked\b"
+    r"|لا تعمل|لا يعمل|ما تعمل|ماتعمل|ما يعمل|ما تشتغل|ماتشتغل|مش شغال|معطل"
+    r"|ما تخدم|ماغاديش تخدم|ما كتخدم|ماكتخدمش|متخدمش|ما خدامة|خدماش|خدامش"
+    r"|ما نقدرش نستعمل|ما نقدرش نستخدم|ماني قادر استخدم|مش قادر أستخدم"
+    r"|ما أقدر أستخدم|ما اقدر استخدم|محظور|محظورة",
+    re.IGNORECASE,
+)
+
+
+def _family_from_cues(text: str, family: str) -> str:
+    """Correct the retrieved family when the question's own words settle it.
+
+    Retrieval confuses neighbouring card subjects — "freeze my card" lands on
+    card ordering, "I can't use my card" lands on a stolen card — and the two
+    answers are not interchangeable: one says "call support now to block it".
+    So the urgent answer requires an urgent word in the question, and a card
+    that merely does not work gets the blocked-card answer whatever was
+    retrieved.
+    """
+
+    if _FREEZE_CUE_RE.search(text):
+        return "security"
+    if (
+        _CARD_WORD_RE.search(text)
+        and _FAULT_CUE_RE.search(text)
+        and not _WALLET_RE.search(text)
+    ):
+        return "card_blocked"
+    return family
 
 
 def topic_reply(topic: str, language: Language) -> str | None:
@@ -485,6 +550,7 @@ class TopicAnswer:
 
 
 def decide(
+    text: str,
     top_score: float,
     votes: Mapping[str, int],
     retrieved: int,
@@ -522,6 +588,15 @@ def decide(
     )
     if share < settings.topic_reply_agreement or top_score < bar:
         return None
+    family = TOPIC_FAMILIES.get(topic)
+    if family is not None:
+        corrected = _family_from_cues(text, family)
+        if corrected != family:
+            return TopicAnswer(
+                reply=FAMILY_REPLIES[corrected][language],
+                subject=corrected,
+                score=top_score,
+            )
     reply = topic_reply(topic, language)
     if reply is None:
         return None

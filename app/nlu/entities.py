@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 from app.config import BILLER_CATEGORIES, CURRENCY_SYMBOLS, SUPPORTED_CURRENCIES
 from app.data_loader import canonicalize_recipient, resolve_biller
+from app.nlu.normalize import normalize
 from app.schemas import BillEntities, Language
 
 # Arabic-Indic (٠-٩) and Extended Arabic-Indic (۰-۹) digit translation to ASCII.
@@ -62,6 +63,65 @@ _EN_SOURCE_RE = re.compile(
     r"\bfrom\s+(?:my\s+)?([\w'’-]+(?:\s+[\w'’-]+){0,2}?)\s*account\b", re.IGNORECASE
 )
 _AR_SOURCE_RE = re.compile(r"من\s+حساب(?:ي)?\s*(?:ال)?([^\d،,.]{0,20})")
+
+# Arabic words that are never a person, after the "إلى"/"ل" anchor. Without this
+# "حوّل الى الايبان ..." names a payee called "الايبان" — and because the speller
+# then corrects it to the real given name "أيبان", the account it belongs to is
+# whoever that resolves to. Written unprefixed: ``_ar_word_stem`` strips ال/لل/ب.
+_AR_NOT_A_NAME = frozenset(
+    {
+        "ايبان",
+        "أيبان",
+        "آيبان",
+        "حساب",
+        "حسابي",
+        "حسابه",
+        "الحساب",
+        "رقم",
+        "مبلغ",
+        "فلوس",
+        "فلوسي",
+        "مصاري",
+        "نقود",
+        "كاش",
+        "بطاقة",
+        "بطاقتي",
+        "محفظة",
+        "محفظتي",
+        "فاتورة",
+        "فاتورتي",
+        "فواتير",
+        "سداد",
+        "رصيد",
+        "رصيدي",
+        "شخص",
+        "حد",
+        "واحد",
+        "شخصية",
+        "المستفيد",
+        "مستفيد",
+        "خدمة",
+        "العملاء",
+        "عملاء",
+        "بنك",
+        "البنك",
+        "فرع",
+        "هذا",
+        "هذه",
+        "ذا",
+        "دا",
+        "هاد",
+        "هادي",
+        "نفس",
+        "لا",
+        "ولا",
+        "نعم",
+        "ايوه",
+        "مش",
+        "ماعرف",
+    }
+)
+_AR_PREFIXES = ("لل", "ال", "بال", "و")
 
 # --- lowercase English names -------------------------------------------------
 # ``_EN_RECIPIENT_RE`` and spaCy both key on capitalisation, so a customer typing
@@ -227,6 +287,22 @@ _EN_NOT_A_NAME = frozenset(
     | {alias.lower() for aliases in SUPPORTED_CURRENCIES.values() for alias in aliases}
 )
 
+# "pay Mona 40 riyals": a payee named with no "to" anchor, recognised only when
+# the very next thing is an amount and the sentence is not about a bill.
+_EN_PAY_NAME_RE = re.compile(
+    r"\b(?:pay|send|transfer|wire|remit|give)\s+"
+    r"([A-Za-z][\w'\u2019-]*(?:\s+[A-Za-z][\w'\u2019-]*){0,2}?)\s+(?=\d)",
+    re.IGNORECASE,
+)
+
+# A digit run this long is an account, an IBAN or a reference — not a price.
+_ACCOUNT_DIGITS = 10
+# ... or the words right before it say so.
+_ACCOUNT_CUE_RE = re.compile(
+    r"(?:\biban\b|\bacc(?:oun)?t\b|\ba/c\b|ايبان|أيبان|آيبان|حساب)" r"[^\d]{0,12}$",
+    re.IGNORECASE,
+)
+
 _EN_SPELLED_AMOUNT = (
     "hundred",
     "thousand",
@@ -248,21 +324,163 @@ def normalize_digits(text: str) -> str:
 
 
 def extract_amount(text: str) -> Decimal | None:
-    """Return the first monetary amount found, applying magnitude multipliers."""
+    """Return the first monetary amount found, applying magnitude multipliers.
+
+    A run of digits that identifies an account is skipped, never read as money:
+    "حول الي ايبان ٠٦٦٦٣٥" was becoming a transfer of 66,635. An amount written
+    in words ("حوّل ألف جنيه", "five hundred") is read here too, so no model is
+    asked to supply the figure.
+    """
 
     normalized = normalize_digits(text)
-    match = _AMOUNT_RE.search(normalized)
-    if not match:
+    for match in _AMOUNT_RE.finditer(normalized):
+        if _identifies_an_account(normalized, match):
+            continue
+        raw = match.group("num").replace(",", "")
+        try:
+            value = Decimal(raw)
+        except InvalidOperation:
+            return None
+        mult = match.group("mult")
+        if mult:
+            value *= _MULTIPLIERS[mult.lower()]
+        return value
+    return extract_spelled_amount(normalized)
+
+
+# Amounts written in words. Composed left to right: a unit/tens/hundreds word
+# adds, a magnitude word multiplies what came before it ("خمسة آلاف" = 5000).
+_SPELLED_UNITS_RAW: dict[str, int] = {
+    "واحد": 1,
+    "واحده": 1,
+    "اثنين": 2,
+    "اتنين": 2,
+    "ثلاثة": 3,
+    "ثلاثه": 3,
+    "تلاتة": 3,
+    "تلاته": 3,
+    "اربعة": 4,
+    "اربعه": 4,
+    "خمسة": 5,
+    "خمسه": 5,
+    "ستة": 6,
+    "سته": 6,
+    "سبعة": 7,
+    "سبعه": 7,
+    "ثمانية": 8,
+    "تمانية": 8,
+    "تسعة": 9,
+    "تسعه": 9,
+    "عشرة": 10,
+    "عشره": 10,
+    "عشرين": 20,
+    "ثلاثين": 30,
+    "تلاتين": 30,
+    "اربعين": 40,
+    "خمسين": 50,
+    "ستين": 60,
+    "سبعين": 70,
+    "ثمانين": 80,
+    "تمانين": 80,
+    "تسعين": 90,
+    "مية": 100,
+    "ميه": 100,
+    "مئة": 100,
+    "ماية": 100,
+    "ميتين": 200,
+    "مئتين": 200,
+    "ثلاثمية": 300,
+    "ثلثمية": 300,
+    "اربعمية": 400,
+    "خمسمية": 500,
+    "خمسمائة": 500,
+    "ستمية": 600,
+    "سبعمية": 700,
+    "ثمانمية": 800,
+    "تسعمية": 900,
+    "الفين": 2_000,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+_SPELLED_MAGNITUDES_RAW: dict[str, int] = {
+    "hundred": 100,
+    "thousand": 1_000,
+    "million": 1_000_000,
+    "الف": 1_000,
+    "آلاف": 1_000,
+    "الاف": 1_000,
+    "مليون": 1_000_000,
+    "ملايين": 1_000_000,
+}
+# Looked up on normalized words, so the tables are normalized once here
+# ("خمسمية" → "خمسميه", "ألف" → "الف").
+_SPELLED_UNITS = {normalize(w): v for w, v in _SPELLED_UNITS_RAW.items()}
+_SPELLED_MAGNITUDES = {normalize(w): v for w, v in _SPELLED_MAGNITUDES_RAW.items()}
+_SPELLED_JOINERS = frozenset({"و", "and"})
+
+
+def extract_spelled_amount(text: str) -> Decimal | None:
+    """Read an amount written in words, or ``None`` when there isn't one."""
+
+    total = 0
+    current = 0
+    seen = False
+    magnified = False
+    for raw_word in re.split(r"[\s,،.]+", normalize(text)):
+        word = raw_word.strip()
+        if not word or word in _SPELLED_JOINERS:
+            continue
+        unit = _SPELLED_UNITS.get(word)
+        if unit is not None:
+            current += unit
+            seen = True
+            continue
+        magnitude = _SPELLED_MAGNITUDES.get(word)
+        if magnitude is not None:
+            total += (current or 1) * magnitude
+            current = 0
+            seen = magnified = True
+            continue
+        # Any other word ends the number; a later one starts afresh.
+        total += current
+        current = 0
+    total += current
+    if not seen or not total:
         return None
-    raw = match.group("num").replace(",", "")
-    try:
-        value = Decimal(raw)
-    except InvalidOperation:
+    # A bare small word ("one of my accounts") is only money when the sentence
+    # also names a currency; a magnitude word ("ألف جنيه") speaks for itself.
+    if not magnified and extract_currency(text) is None:
         return None
-    mult = match.group("mult")
-    if mult:
-        value *= _MULTIPLIERS[mult.lower()]
-    return value
+    return Decimal(total)
+
+
+def _identifies_an_account(normalized: str, match: re.Match[str]) -> bool:
+    """True when this run of digits is an account/IBAN rather than an amount.
+
+    Either the customer said so ("iban", "حساب", "account number" right before it)
+    or the run is too long to be money in this product.
+    """
+
+    digits = match.group("num").replace(",", "")
+    if "." not in digits and len(digits) >= _ACCOUNT_DIGITS:
+        return True
+    return _ACCOUNT_CUE_RE.search(normalized[: match.start()]) is not None
 
 
 def extract_currency(text: str) -> str | None:
@@ -344,6 +562,51 @@ def extract_lowercase_recipient(text: str) -> str | None:
     return None
 
 
+def extract_recipient_without_anchor(text: str) -> str | None:
+    """Read "pay Mona 40 riyals" — a payee named with no "to" before it.
+
+    Without the "to" anchor the only evidence that the word is a person is its
+    position: straight after a move verb and straight before an amount. That is
+    also the shape of "pay mobily 100", so a message that resolves to a biller or
+    mentions a bill is left alone — a biller must never become a payee.
+    """
+
+    if has_bill_word(text) or resolve_biller(text) is not None:
+        return None
+    match = _EN_PAY_NAME_RE.search(normalize_digits(text))
+    if match is None:
+        return None
+    words = match.group(1).split()
+    if any(w.lower() in _EN_NOT_A_NAME or w.lower() in _EN_NAME_LEAD for w in words):
+        return None
+    return " ".join(words)
+
+
+def _ar_word_stem(word: str) -> str:
+    """Strip the Arabic proclitics that glue onto a noun ("الايبان" → "ايبان")."""
+
+    for prefix in _AR_PREFIXES:
+        if word.startswith(prefix) and len(word) > len(prefix) + 1:
+            return word[len(prefix) :]
+    return word
+
+
+def _is_ar_person_name(candidate: str) -> bool:
+    """False when the captured words name an account, a bill or nobody at all.
+
+    Checked before the speller runs: "الايبان" is one edit from the given name
+    "أيبان", so a correction here would turn the word IBAN into a payee.
+    """
+
+    words = [w for w in re.split(r"\s+", candidate) if w]
+    if not words:
+        return False
+    return not any(
+        word in _AR_NOT_A_NAME or _ar_word_stem(word) in _AR_NOT_A_NAME
+        for word in words
+    )
+
+
 def extract_recipient(text: str, language: Language) -> str | None:
     """Return the beneficiary name via language-specific surface patterns.
 
@@ -354,9 +617,15 @@ def extract_recipient(text: str, language: Language) -> str | None:
     pattern = _AR_RECIPIENT_RE if language is Language.AR else _EN_RECIPIENT_RE
     match = pattern.search(text)
     if not match:
-        return None if language is Language.AR else extract_lowercase_recipient(text)
+        if language is Language.AR:
+            return None
+        return extract_lowercase_recipient(text) or extract_recipient_without_anchor(
+            text
+        )
     candidate = match.group(1).strip(" ,،.")
     if not candidate:
+        return None
+    if language is Language.AR and not _is_ar_person_name(candidate):
         return None
     return canonicalize_recipient(candidate)
 
@@ -382,11 +651,13 @@ _REF_CUE_RE = re.compile(
     r"\s*[:#\-]?\s*(\d{2,})",
     re.IGNORECASE,
 )
-# An amount following an explicit cue ("amount 320", "بمبلغ ٣٢٠").
+# An amount following an explicit cue ("amount 320", "for 210", "بمبلغ ٣٢٠").
 _AMOUNT_CUE_RE = re.compile(
-    r"(?:\bamount\b|بمبلغ|مبلغ)\s*[:#]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE
+    r"(?:\bamount\b|\bfor\b|بمبلغ|مبلغ)\s*[:#]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE
 )
 _DIGITS_RUN_RE = re.compile(r"\d{2,}")
+# A request to pay, as opposed to a bare answer naming a bill ("Water Services 5512").
+_PAY_VERB_RE = re.compile(r"\b(?:pay|settle|cover)\b|ادفع|أدفع|سدد|دفع", re.IGNORECASE)
 _BILL_WORD_RE = re.compile(r"\bbills?\b|\binvoices?\b|فاتورة|فواتير", re.IGNORECASE)
 # Free-text biller before the word "bill" (e.g. "City Power Co bill").
 _EN_BILLER_RE = re.compile(
@@ -454,12 +725,18 @@ def _reference_via_cue(normalized: str) -> str | None:
 
 
 def _bill_amount(
-    normalized: str, currency: str | None, reference: str | None
+    normalized: str,
+    currency: str | None,
+    reference: str | None,
+    *,
+    biller_known: bool,
 ) -> Decimal | None:
-    """Amount for a bill: only via an explicit cue or adjacent to a currency.
+    """Amount for a bill: an explicit cue, a currency-adjacent number, or —
+    only when a biller is already known — a cue-less number placed where a
+    reference cannot be (see :func:`_bare_number_amount`).
 
-    A bare number with no currency/cue is treated as the reference, not the
-    amount, so "electricity bill 778899" doesn't read 778899 as the amount.
+    A number that follows the bill word stays the reference, so "electricity
+    bill 778899" doesn't read 778899 as the amount.
     """
 
     cue = _AMOUNT_CUE_RE.search(normalized)
@@ -469,7 +746,29 @@ def _bill_amount(
         for run in re.findall(r"\d+(?:\.\d+)?", normalized):
             if reference is None or run != reference:
                 return _to_decimal(run)
+    if reference is None and biller_known:
+        return _bare_number_amount(normalized)
     return None
+
+
+def _bare_number_amount(normalized: str) -> Decimal | None:
+    """A cue-less number in a bill message, when it can only be the amount.
+
+    A reference follows what it refers to ("gas bill 5566", "فاتورة الغاز ٥٥٦٦"),
+    so a number is read as money only when it comes *before* the bill word
+    ("pay 320 for my phone bill") or when the message names a biller without
+    saying "bill" at all ("pay mobily 100"). Both need the customer to be asking
+    to pay: naming a bill in answer to "which bill?" ("Water Services 5512")
+    gives the reference, not an amount.
+    """
+
+    run = _DIGITS_RUN_RE.search(normalized)
+    if run is None or _PAY_VERB_RE.search(normalized) is None:
+        return None
+    bill_word = _BILL_WORD_RE.search(normalized)
+    if bill_word is not None and run.start() > bill_word.start():
+        return None
+    return _to_decimal(run.group(0))
 
 
 def extract_biller(
@@ -525,7 +824,9 @@ def extract_bill_entities(
     )
     currency = extract_currency(normalized)
     reference = _reference_via_cue(normalized)
-    amount = _bill_amount(normalized, currency, reference)
+    amount = _bill_amount(
+        normalized, currency, reference, biller_known=biller is not None
+    )
     if reference is None and (biller is not None or has_bill_word(text)):
         amount_digits = _amount_digits(amount)
         for run in _DIGITS_RUN_RE.findall(normalized):

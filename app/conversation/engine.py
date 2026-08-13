@@ -6,7 +6,7 @@ import logging
 import re
 import uuid
 from collections.abc import Sequence
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from app import banking_core_client
 from app.config import DEFAULT_CURRENCY, settings
@@ -81,17 +81,55 @@ _NEGATIVE = {
     "خطأ",
     "غلط",
 }
+# Words that abandon whatever is in progress. Common misspellings are listed
+# because a confirmation screen that doesn't recognise "cansel" leaves the
+# amount standing, and the next "yes" pays it.
 _CANCEL = {
     "cancel",
+    "cancle",
+    "cansel",
+    "canel",
+    "cancell",
+    "cencel",
+    "kansel",
+    "abort",
     "stop",
     "quit",
     "exit",
     "nevermind",
+    "nvm",
     "الغاء",
     "إلغاء",
+    "الغي",
+    "ألغي",
+    "إلغي",
+    "الغيها",
+    "لغيها",
+    "كنسل",
+    "كنسلها",
+    "بطل",
+    "بطّل",
+    "ابطل",
+    "أبطل",
+    "اوقف",
+    "أوقف",
     "توقف",
     "خروج",
 }
+# "The IBAN is right, use it": the way past a failed mod-97 check. Substrings of
+# the normalized turn, since these arrive as phrases rather than single tokens.
+_INSIST_PHRASES = (
+    "im sure",
+    "i m sure",
+    "i am sure",
+    "am sure",
+    "sure it s right",
+    "use it",
+    "انا متاكد",
+    "متاكد",
+    "اكيد",
+    "استخدمه",
+)
 # Leading words that mean "delete the named shortcut" (e.g. "forget laila").
 _FORGET = {"forget", "remove", "delete", "احذف", "امسح"}
 
@@ -578,6 +616,17 @@ def route_fresh_turn(
 _ACCOUNT_SHAPED = re.compile(r"^[A-Za-z]{0,2}[\d\s\u00a0-]+$")
 
 
+def _is_control_only(text: str) -> bool:
+    """True for a bare "yes"/"no"/"cancel"/menu pick, in either language.
+
+    Saying "cancel" in the middle of an Arabic conversation asks to cancel; it
+    does not ask to be answered in English.
+    """
+
+    tokens = _tokens(text)
+    return bool(tokens) and tokens <= _CONTROL_TOKENS
+
+
 def _carries_language_signal(text: str) -> bool:
     """False for messages detection can't judge: bare numbers, IBANs, "2"."""
 
@@ -585,6 +634,22 @@ def _carries_language_signal(text: str) -> bool:
     if not re.search(r"[^\W\d_]", stripped, re.UNICODE):
         return False
     return not _ACCOUNT_SHAPED.match(stripped)
+
+
+# "insufficient_funds: available 12300.00 SAR" -> the figure the Core reported.
+_AVAILABLE_RE = re.compile(r"available\s+(\d+(?:\.\d+)?)")
+
+
+def _available_amount(blocking: str) -> Decimal | None:
+    """Read the spendable balance out of a Banking Core refusal code."""
+
+    match = _AVAILABLE_RE.search(blocking)
+    if match is None:
+        return None
+    try:
+        return Decimal(match.group(1))
+    except InvalidOperation:
+        return None
 
 
 def _mask_account(account: str) -> str:
@@ -598,8 +663,23 @@ def _tokens(text: str) -> set[str]:
     return {t.strip(".,!؟،").lower() for t in text.split()}
 
 
+_CONTROL_TOKENS = (
+    _AFFIRM | _NEGATIVE | _CANCEL | _CHOOSE_TRANSFER | _CHOOSE_BILL | _CHOICE_FILLERS
+)
+
+
 def _matches(text: str, vocabulary: set[str]) -> bool:
     return bool(_tokens(text) & vocabulary)
+
+
+def _insists(text: str) -> bool:
+    """True when the customer stands by an IBAN we flagged as mistyped."""
+
+    normalized = normalize(text)
+    if any(phrase in normalized for phrase in _INSIST_PHRASES):
+        return True
+    # Nothing else is yes-able at that prompt, so a bare "yes" means "I'm sure".
+    return _matches(text, _AFFIRM)
 
 
 # Request verbs / fillers (normalized) that leak into a bare recipient answer
@@ -847,11 +927,25 @@ class ConversationEngine:
             result.block_trace = list(tracer.entries)
             return result
 
+        # An offered balance stands for exactly one turn: anything other than a
+        # plain yes/no is a fresh instruction, not an answer to the offer.
+        offered = state.offered_amount
+        state.offered_amount = None
+
         forget_name = _forget_target(text)
         if forget_name:
             with tracer.block("orchestrator"):
                 result = self._forget_shortcut(state, forget_name, lang)
         elif _matches(text, _CANCEL):
+            with tracer.block("orchestrator"):
+                state.reset()
+                state.status = ConversationStatus.CANCELLED
+                result = self._finish(state, templates.cancelled(lang))
+        elif offered is not None and _matches(text, _AFFIRM):
+            with tracer.block("orchestrator") as span:
+                span.annotate("accept_offered_amount")
+                result = self._accept_offered_amount(state, offered, lang)
+        elif offered is not None and _matches(text, _NEGATIVE):
             with tracer.block("orchestrator"):
                 state.reset()
                 state.status = ConversationStatus.CANCELLED
@@ -893,7 +987,9 @@ class ConversationEngine:
 
         if override is not None:
             return override
-        if prior is not None and not _carries_language_signal(text):
+        if prior is not None and (
+            not _carries_language_signal(text) or _is_control_only(text)
+        ):
             return prior.language
         return detect_language(text)
 
@@ -1814,6 +1910,7 @@ class ConversationEngine:
         """Fill the name or the account slot from this turn, then move forward."""
 
         if _matches(text, _NEGATIVE):
+            state.pending_unchecked_account = None
             return self._abandon_add_beneficiary(state, lang)
 
         if state.pending_slot == "beneficiary_name":
@@ -1828,13 +1925,30 @@ class ConversationEngine:
         if not raw:
             return self._advance_add_beneficiary(state, lang)
         account, reason = accounts.validate_account(raw)
+        insisted = state.pending_unchecked_account
+        state.pending_unchecked_account = None
+        if account is None and insisted is not None and _insists(raw):
+            # A checksum says a character is wrong, not that the account does not
+            # exist. The customer reading it off a statement overrules us.
+            state.pending_add_account = insisted
+            state.account_checksum_overridden = True
+            return self._advance_add_beneficiary(state, lang)
         if account is None:
             name = state.pending_add_name or ""
+            if reason == "iban_checksum":
+                state.pending_unchecked_account = accounts.normalize_account(raw)
+                return self._finish(
+                    state,
+                    templates.beneficiary_iban_typo(
+                        name, accounts.analyze_iban_typo(raw), lang
+                    ),
+                )
             return self._finish(
                 state,
                 templates.beneficiary_invalid_account(name, reason or "", lang),
             )
         state.pending_add_account = account
+        state.account_checksum_overridden = False
         return self._advance_add_beneficiary(state, lang)
 
     def _advance_add_beneficiary(
@@ -1883,6 +1997,12 @@ class ConversationEngine:
         name = state.pending_add_name or ""
         account = state.pending_add_account or ""
         resumes = state.add_resumes_transfer
+        if state.account_checksum_overridden:
+            logger.warning(
+                "beneficiary %r saved with an IBAN the customer confirmed "
+                "against a failed mod-97 check",
+                name,
+            )
         created = banking_core_client.add_beneficiary(
             owner_user=self._owner(state),
             name=name,
@@ -1892,6 +2012,7 @@ class ConversationEngine:
         state.pending_add_name = None
         state.pending_add_account = None
         state.add_resumes_transfer = False
+        state.account_checksum_overridden = False
         if not created or not created.get("ok"):
             reason = created.get("message") if created else None
             reply = templates.beneficiary_add_failed(name, lang, reason)
@@ -1984,6 +2105,14 @@ class ConversationEngine:
             return templates.choose_biller(
                 [opt.name for opt in state.biller_options], lang
             )
+        if state.pending_unchecked_account is not None:
+            # Re-ask the question actually on the table, so a following "yes"
+            # answers the checksum warning rather than an unrelated prompt.
+            return templates.beneficiary_iban_typo(
+                state.pending_add_name or "",
+                accounts.analyze_iban_typo(state.pending_unchecked_account),
+                lang,
+            )
         if state.pending_add_name:
             return templates.beneficiary_not_found(state.pending_add_name, lang)
         if state.pending_slot:
@@ -2047,7 +2176,7 @@ class ConversationEngine:
             return None
         with tracer.block("topic_answer") as span:
             evidence = classifier.topic_evidence(text)
-            answer = templates.topic_answer(evidence, lang)
+            answer = templates.topic_answer(text, evidence, lang)
             if answer is None:
                 span.skip(f"no confident topic @ {evidence.top_score}")
                 return None
@@ -2080,6 +2209,9 @@ class ConversationEngine:
         state.pending_slot = None
         state.status = ConversationStatus.CONFIRMING
         self._run_preflight(state)
+        refusal = self._preflight_refusal(state, lang)
+        if refusal is not None:
+            return refusal
         reply = self._confirm_text(state, lang)
         note = templates.warnings_note(state.preflight_warnings, lang)
         if note:
@@ -2120,6 +2252,51 @@ class ConversationEngine:
             )
         if result is not None:
             state.preflight_warnings = list(result.warnings)
+            state.preflight_blocking = list(result.blocking)
+
+    def _preflight_refusal(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult | None:
+        """Stop before confirmation when the Banking Core refused the debit.
+
+        Short of funds, the spendable balance is offered instead of the amount
+        asked for — the customer never sees a confirmation screen for money the
+        account cannot pay. Both figures are the Core's, printed verbatim.
+        """
+
+        blocking = state.preflight_blocking
+        if not blocking:
+            return None
+        state.status = ConversationStatus.COLLECTING
+        state.pending_slot = "amount"
+        shortfall = next(
+            (b for b in blocking if b.startswith("insufficient_funds")), None
+        )
+        if shortfall is None:
+            state.offered_amount = None
+            return self._finish(state, templates.preflight_blocked(lang))
+        available = _available_amount(shortfall)
+        if available is None:
+            state.offered_amount = None
+            return self._finish(state, templates.preflight_blocked(lang))
+        state.offered_amount = available
+        return self._finish(
+            state,
+            templates.insufficient_funds(
+                self._fmt_amount(state.slots.amount),
+                self._fmt_amount(available),
+                state.slots.currency or "",
+                lang,
+            ),
+        )
+
+    def _accept_offered_amount(
+        self, state: ConversationState, offered: Decimal, lang: Language
+    ) -> ConversationResult:
+        """ "Yes" to the offered balance: retry confirmation at that amount."""
+
+        state.slots.amount = offered
+        return self._enter_confirmation(state, lang)
 
     def _confirm_text(self, state: ConversationState, lang: Language) -> str:
         slots = state.slots
@@ -2127,14 +2304,19 @@ class ConversationEngine:
             masked = _mask_account(state.pending_add_account)
             name = state.pending_add_name or ""
             if state.add_resumes_transfer:
-                return templates.confirm_add_then_transfer(
+                text = templates.confirm_add_then_transfer(
                     name,
                     masked,
                     self._fmt_amount(slots.amount),
                     slots.currency or "",
                     lang,
                 )
-            return templates.confirm_add_beneficiary(name, masked, lang)
+            else:
+                text = templates.confirm_add_beneficiary(name, masked, lang)
+            note = templates.unchecked_account_note(
+                state.account_checksum_overridden, lang
+            )
+            return f"{text} {note}" if note else text
         if state.intent is Intent.PAY_BILL:
             return templates.bill_confirm_prompt(
                 self._fmt_amount(slots.amount),

@@ -80,8 +80,10 @@ def _funds_and_fx(
 ) -> tuple[list[str], list[str]]:
     """Return (warnings, blocking) for a debit of ``amount`` in ``currency``.
 
-    Per product rules both low-funds and currency-mismatch are *advisory only*
-    (they warn / note an FX conversion) and never block confirmation.
+    A debit larger than the balance is refused, not merely flagged: the reply
+    carries the spendable balance so the assistant can offer it instead of
+    inviting the customer to confirm a transfer the account cannot fund. A
+    currency mismatch stays advisory (an FX conversion is noted).
     """
 
     warnings: list[str] = []
@@ -91,8 +93,8 @@ def _funds_and_fx(
     if account.currency.upper() != currency.upper():
         warnings.append(f"fx: {account.currency}->{currency} conversion applies")
     elif account.balance < amount:
-        short = (amount - account.balance).quantize(Decimal("0.01"))
-        warnings.append(f"low_funds: short {short} {currency}")
+        available = account.balance.quantize(Decimal("0.01"))
+        blocking.append(f"insufficient_funds: available {available} {currency}")
     return warnings, blocking
 
 

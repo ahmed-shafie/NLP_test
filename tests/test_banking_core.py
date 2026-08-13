@@ -55,7 +55,7 @@ def test_balance_missing_account(client):
     assert resp.status_code == 404
 
 
-def test_preflight_low_funds_warns_not_blocks(client):
+def test_preflight_insufficient_funds_blocks_and_reports_the_balance(client):
     resp = client.post(
         "/preflight/transfer",
         json={
@@ -67,9 +67,10 @@ def test_preflight_low_funds_warns_not_blocks(client):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["ok"] is True
-    assert body["blocking"] == []
-    assert any(w.startswith("low_funds") for w in body["warnings"])
+    assert body["ok"] is False
+    # The spendable balance travels with the refusal so the assistant can offer
+    # it instead of inviting a confirmation the account cannot fund.
+    assert body["blocking"] == ["insufficient_funds: available 5000.00 SAR"]
 
 
 def test_preflight_fx_note_not_blocks(client):
