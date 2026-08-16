@@ -81,6 +81,21 @@ class Settings(BaseSettings):
     # steeply (k=5 / 0.90 doubles coverage and triples the error).
     topic_reply_unanimous_threshold: float = 0.74
 
+    # The same gate, for a question asked in English. The index is 98.9% Arabic
+    # (31431 of 31781 rows), so an English question is answered by *cross-lingual*
+    # retrieval, which scores systematically lower than the same-language
+    # retrieval the values above were calibrated on: "my card is not working"
+    # retrieves "البطاقة لا تعمل" and still peaks at 0.9213.
+    #
+    # Calibrated separately in ``research/vector_db_v08/topic_gate_english.py``
+    # against the English Banking77 test split (ArBanking77 is its translation,
+    # so the 77 subjects are the same and none of that split is indexed). The
+    # narrower window plus the higher unanimity bar answers more *and* answers
+    # wrong less than reusing the Arabic gate: 39.4% answered / 1.0% about the
+    # wrong subject, against 34.6% / 1.7%.
+    topic_reply_top_k_en: int = 7
+    topic_reply_unanimous_threshold_en: float = 0.78
+
     # Cosine-similarity floor for accepting a contact match.
     contact_match_threshold: float = 0.5
 

@@ -21,6 +21,7 @@ from app.conversation.state import (
     ConversationStatus,
 )
 from app.conversation.store import get_session_store
+from app.conversation.topic_replies import topic_reply_top_k
 from app.data_loader import (
     BillerRecord,
     biller_categories,
@@ -2175,7 +2176,7 @@ class ConversationEngine:
         if classifier is None:
             return None
         with tracer.block("topic_answer") as span:
-            evidence = classifier.topic_evidence(text)
+            evidence = classifier.topic_evidence(text, k=topic_reply_top_k(lang))
             answer = templates.topic_answer(text, evidence, lang)
             if answer is None:
                 span.skip(f"no confident topic @ {evidence.top_score}")
