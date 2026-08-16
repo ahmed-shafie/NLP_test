@@ -28,6 +28,10 @@ class ConversationStatus(str, Enum):
     CONFIRMING = "confirming"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    # The dialogue ran to its end but the bank refused the action (a rejected
+    # write, an unreachable account). Terminal like COMPLETED, and never a
+    # claim that anything was done.
+    FAILED = "failed"
 
 
 class BillerOption(BaseModel):

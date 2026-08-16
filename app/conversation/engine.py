@@ -913,7 +913,11 @@ class ConversationEngine:
         state.language = lang
 
         # A fresh utterance after a finished dialogue starts a new transfer.
-        if state.status in (ConversationStatus.COMPLETED, ConversationStatus.CANCELLED):
+        if state.status in (
+            ConversationStatus.COMPLETED,
+            ConversationStatus.CANCELLED,
+            ConversationStatus.FAILED,
+        ):
             state.reset()
             state.language = lang
 
@@ -2019,7 +2023,7 @@ class ConversationEngine:
             reply = templates.beneficiary_add_failed(name, lang, reason)
             if not resumes:
                 state.reset()
-                state.status = ConversationStatus.COMPLETED
+                state.status = ConversationStatus.FAILED
                 return self._finish(state, reply)
             state.intent = Intent.TRANSFER_MONEY
             state.status = ConversationStatus.COLLECTING
@@ -2154,6 +2158,7 @@ class ConversationEngine:
         state.intent = Intent.BALANCE_INQUIRY
         state.status = ConversationStatus.COMPLETED
         if info is None:
+            state.status = ConversationStatus.FAILED
             return self._finish(state, templates.balance_unavailable(lang))
         reply = templates.balance_reply(
             info.account_type, info.currency, self._fmt_amount(info.balance), lang
@@ -2192,10 +2197,9 @@ class ConversationEngine:
         state.intent = Intent.LIST_BENEFICIARIES
         state.status = ConversationStatus.COMPLETED
         directory = get_beneficiary_directory()
-        if directory is None:
-            return self._finish(state, templates.beneficiaries_unavailable(lang))
-        hits = directory.list_all(self._owner(state))
+        hits = directory.list_all(self._owner(state)) if directory is not None else None
         if hits is None:
+            state.status = ConversationStatus.FAILED
             return self._finish(state, templates.beneficiaries_unavailable(lang))
         if not hits:
             return self._finish(state, templates.no_beneficiaries(lang))
