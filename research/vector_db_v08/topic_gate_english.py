@@ -241,7 +241,7 @@ def main() -> None:
         f"{'k':>3} {'unanimous':>9} {'majority':>8} {'agree':>5} "
         f"{'answered':>18} {'wrong':>16}"
     )
-    for k in (5, 10, 15):
+    for k in (5, 7, 10, 15):
         for uni in (0.66, 0.70, 0.74, 0.78):
             for maj in (0.78, 0.82, 0.86, 0.90, 0.94):
                 for agree in (0.6, 0.8):
