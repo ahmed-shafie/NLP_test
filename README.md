@@ -233,6 +233,18 @@ swap (the exchange rate and its fee; a blocked card and a blocked PIN), and the
 question's own words settle the card cases where the answers must differ — a card
 that "doesn't work" is never answered as a theft, and "freeze my card" always is.
 
+An English question meets its own gate. The index is 98.9% Arabic, so English is
+answered by *cross-lingual* retrieval, which scores lower than the same-language
+retrieval those numbers come from: "my card is not working" retrieves
+"البطاقة لا تعمل" nine times out of ten and peaks at 0.9213, under a bar set at
+0.94. `research/vector_db_v08/topic_gate_english.py` calibrates the English gate
+against the **English Banking77 test split** — ArBanking77 is its translation, so
+the 77 subjects are the same and none of that split is indexed. A narrower window
+(7 rows) with a higher unanimity bar (0.78) answers **39.4%** of those questions
+with **1.0%** about the wrong subject, against 34.6% / 1.7% for the Arabic gate.
+Both directions improved, so nothing was traded away; the Arabic gate is unchanged,
+where the same window costs twice the wrong answers.
+
 ## API Endpoints
 
 ### `POST /nlu/parse`

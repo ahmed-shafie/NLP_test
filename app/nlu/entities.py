@@ -656,6 +656,25 @@ _AMOUNT_CUE_RE = re.compile(
     r"(?:\bamount\b|\bfor\b|بمبلغ|مبلغ)\s*[:#]?\s*(\d+(?:\.\d+)?)", re.IGNORECASE
 )
 _DIGITS_RUN_RE = re.compile(r"\d{2,}")
+# A number written as money: a currency word or symbol against it on either side
+# ("bill 100 sar", "ادفع فاتورة موبايلي ١٠٠ ريال", "SAR 100"). Priced like that,
+# the number is the amount even where a reference would otherwise be read.
+_CURRENCY_WORDS = "|".join(
+    re.escape(alias)
+    for alias in sorted(
+        {a for aliases in SUPPORTED_CURRENCIES.values() for a in aliases}
+        | set(CURRENCY_SYMBOLS),
+        key=len,
+        reverse=True,
+    )
+)
+# Written whole, so "sara 100" is a name and a number, not 100 riyals.
+_CURRENCY_TOKEN = rf"(?<![^\W\d_])(?:{_CURRENCY_WORDS})(?![^\W\d_])"
+_MONEY_MARKED_RE = re.compile(
+    rf"(?:{_CURRENCY_TOKEN}\s*(?P<before>\d+(?:\.\d+)?)"
+    rf"|(?P<after>\d+(?:\.\d+)?)\s*{_CURRENCY_TOKEN})",
+    re.IGNORECASE,
+)
 # A request to pay, as opposed to a bare answer naming a bill ("Water Services 5512").
 _PAY_VERB_RE = re.compile(r"\b(?:pay|settle|cover)\b|ادفع|أدفع|سدد|دفع", re.IGNORECASE)
 _BILL_WORD_RE = re.compile(r"\bbills?\b|\binvoices?\b|فاتورة|فواتير", re.IGNORECASE)
@@ -719,9 +738,28 @@ def _amount_digits(amount: Decimal | None) -> str | None:
     return f"{amount.normalize():f}"
 
 
-def _reference_via_cue(normalized: str) -> str | None:
-    match = _REF_CUE_RE.search(normalized)
-    return match.group(1) if match else None
+def _reference_via_cue(
+    normalized: str, priced: frozenset[str] = frozenset()
+) -> str | None:
+    for match in _REF_CUE_RE.finditer(normalized):
+        if match.group(1) not in priced:
+            return match.group(1)
+    return None
+
+
+def _priced_runs(normalized: str) -> frozenset[str]:
+    """Digit runs the customer priced with a currency, so they name money.
+
+    "pay my mobily bill 100 sar" reads as the cue "bill" followed by 100, but
+    the customer said what 100 is. A reference is never quoted in riyals.
+    """
+
+    return frozenset(
+        run
+        for match in _MONEY_MARKED_RE.finditer(normalized)
+        for run in (match.group("before"), match.group("after"))
+        if run
+    )
 
 
 def _bill_amount(
@@ -743,7 +781,12 @@ def _bill_amount(
     if cue is not None:
         return _to_decimal(cue.group(1))
     if currency:
-        for run in re.findall(r"\d+(?:\.\d+)?", normalized):
+        runs = re.findall(r"\d+(?:\.\d+)?", normalized)
+        priced = _priced_runs(normalized)
+        for run in runs:
+            if run in priced:
+                return _to_decimal(run)
+        for run in runs:
             if reference is None or run != reference:
                 return _to_decimal(run)
     if reference is None and biller_known:
@@ -823,7 +866,7 @@ def extract_bill_entities(
         text, language, allow_semantic=allow_semantic
     )
     currency = extract_currency(normalized)
-    reference = _reference_via_cue(normalized)
+    reference = _reference_via_cue(normalized, _priced_runs(normalized))
     amount = _bill_amount(
         normalized, currency, reference, biller_known=biller is not None
     )

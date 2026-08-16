@@ -102,6 +102,34 @@ def test_bill_entities_bare_reference_no_amount():
     assert ent.amount is None
 
 
+def test_a_priced_number_after_the_bill_word_is_the_amount():
+    """ "bill 100 sar": the cue says reference, the customer said riyals."""
+
+    ent = extract_bill_entities("pay my mobily bill 100 sar", Language.EN)
+    assert ent.amount == Decimal("100")
+    assert ent.currency == "SAR"
+    assert ent.reference_number is None
+
+    arabic = extract_bill_entities("ادفع فاتورة موبايلي ١٠٠ ريال", Language.AR)
+    assert arabic.amount == Decimal("100")
+    assert arabic.reference_number is None
+
+
+def test_an_unpriced_number_after_the_bill_word_stays_the_reference():
+    """Reading it as money would put a figure the customer never quoted on the
+    confirmation; read as a reference, the worst case is being asked the amount."""
+
+    ent = extract_bill_entities("pay my mobily bill 100", Language.EN)
+    assert ent.reference_number == "100"
+    assert ent.amount is None
+
+
+def test_a_reference_and_a_priced_amount_keep_their_own_slots():
+    ent = extract_bill_entities("pay stc bill 4455 210 sar", Language.EN)
+    assert ent.reference_number == "4455"
+    assert ent.amount == Decimal("210")
+
+
 def test_bill_entities_arabic_digits():
     ent = extract_bill_entities("ادفع فاتورة الكهرباء 778899 بمبلغ 320", Language.AR)
     assert ent.biller == "الشركة السعودية للكهرباء"

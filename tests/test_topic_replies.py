@@ -17,9 +17,10 @@ from app.conversation.topic_replies import (
     TOPIC_FAMILIES,
     TOPIC_REPLIES,
     decide,
+    topic_reply_top_k,
 )
 from app.embeddings import get_embedder
-from app.schemas import Language
+from app.schemas import Intent, Language
 
 QUESTION = "ليش انخصم مني مرتين؟"
 CHARGED_TWICE = "تم التحصيل مرتين"
@@ -231,3 +232,60 @@ def test_switching_the_feature_off_restores_the_generic_prompt(
         text="ليش انخصم مني مرتين؟", session_id="topic-3", user_id="demo"
     )
     assert result.reply == templates.choose_action(Language.AR)
+
+
+# ------------------------------------------------- the gate an English question meets
+
+
+def test_an_english_question_reads_a_narrower_window() -> None:
+    """English retrieval is cross-lingual; its window is calibrated separately."""
+
+    assert topic_reply_top_k(Language.EN) == settings.topic_reply_top_k_en
+    assert topic_reply_top_k(Language.AR) == settings.topic_reply_top_k
+
+
+def test_a_unanimous_english_retrieval_clears_its_own_bar() -> None:
+    """0.79 is under the Arabic bar for the same evidence, and over the English one.
+
+    An English question is answered by Arabic rows, which score lower than the
+    same-language retrieval the Arabic bar was set from.
+    """
+
+    votes = {CHARGED_TWICE: 7}
+
+    answered = decide("why was i charged twice", 0.79, votes, 7, Language.EN)
+    assert answered is not None
+    assert answered.reply == topic_replies.topic_reply(CHARGED_TWICE, Language.EN)
+
+    assert decide("why was i charged twice", 0.75, votes, 7, Language.EN) is None
+
+
+def test_a_split_english_vote_still_meets_the_full_bar() -> None:
+    """Only unanimity moves; a majority vote is as demanding as it was."""
+
+    votes = {CHARGED_TWICE: 6, TIMING: 1}
+
+    assert decide("why was i charged twice", 0.90, votes, 7, Language.EN) is None
+    assert decide("why was i charged twice", 0.95, votes, 7, Language.EN) is not None
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+def test_an_english_card_question_is_answered_not_menued() -> None:
+    """The reported gap: this retrieves "البطاقة لا تعمل" and used to get the menu."""
+
+    result = ConversationEngine().handle(
+        text="my card is not working", session_id="topic-en-1", user_id="demo"
+    )
+    assert result.state.intent is None
+    assert result.reply == FAMILY_REPLIES["card_blocked"][Language.EN]
+    assert "(1) send money" not in result.reply
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+def test_the_english_gate_does_not_answer_a_transfer_request() -> None:
+    """A wider English gate must not turn an executable request into an answer."""
+
+    result = ConversationEngine().handle(
+        text="send 100 sar to ahmed", session_id="topic-en-2", user_id="demo"
+    )
+    assert result.state.intent is Intent.TRANSFER_MONEY

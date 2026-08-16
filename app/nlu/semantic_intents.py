@@ -102,16 +102,17 @@ class SemanticIntentClassifier:
             for hit in hits
         ]
 
-    def topic_evidence(self, text: str) -> TopicEvidence:
+    def topic_evidence(self, text: str, k: int | None = None) -> TopicEvidence:
         """Report which customer-service topics the nearest indexed rows name.
 
         Evidence only — no thresholds are applied here. Deciding whether the
         retrieval is strong enough to answer belongs with the replies
         (:mod:`app.conversation.topic_replies`), which also knows how topics
-        group into families.
+        group into families and how wide a window each language is calibrated
+        for.
         """
 
-        neighbours = self.similar(text, k=settings.topic_reply_top_k)
+        neighbours = self.similar(text, k=k or settings.topic_reply_top_k)
         votes: dict[str, int] = defaultdict(int)
         for n in neighbours:
             if n.topic:

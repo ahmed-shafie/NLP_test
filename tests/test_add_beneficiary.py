@@ -208,6 +208,18 @@ def test_banking_core_failure_is_surfaced(engine, monkeypatch):
     result = engine.handle("yes", "add-7")
     assert "already exists" in result.reply
     assert "✅" not in result.reply  # never claim success on a rejected write
+    # …and the status the UI reads must not claim it either.
+    assert result.state.status is ConversationStatus.FAILED
+
+
+def test_a_failed_write_does_not_swallow_the_next_request(engine, monkeypatch):
+    """FAILED is terminal like COMPLETED: the next utterance starts fresh."""
+
+    monkeypatch.setattr(bcc, "add_beneficiary", lambda **k: {"ok": False})
+    engine.handle(f"add beneficiary Sara Ali {VALID_IBAN}", "add-8")
+    engine.handle("yes", "add-8")
+    result = engine.handle("what is my balance", "add-8")
+    assert result.state.intent is Intent.BALANCE_INQUIRY
 
 
 # --------------------- a failed checksum is a typo, not a wall -------------- #

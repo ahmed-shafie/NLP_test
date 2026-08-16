@@ -540,6 +540,20 @@ def topic_reply(topic: str, language: Language) -> str | None:
     return FAMILY_REPLIES[family][language]
 
 
+def topic_reply_top_k(language: Language) -> int:
+    """Neighbours to retrieve for the topic vote in ``language``.
+
+    An English question retrieves Arabic rows, and the tail of that window is
+    noisier than the tail of a same-language window: measured on the English
+    Banking77 test split, narrowing it to 7 answers 39.4% of the questions with
+    1.0% about the wrong subject, against 34.6% / 1.7% at 10.
+    """
+
+    if language is Language.EN:
+        return settings.topic_reply_top_k_en
+    return settings.topic_reply_top_k
+
+
 @dataclass(frozen=True)
 class TopicAnswer:
     """A reviewed answer and the retrieval that justified sending it."""
@@ -568,6 +582,10 @@ def decide(
     2. a majority names the same topic — accepted only at the full
        ``topic_reply_threshold``.
 
+    An English question clears a higher unanimity bar (``..._en``) over a
+    narrower window, because it is answered by cross-lingual retrieval that the
+    Arabic values do not describe. See :func:`topic_reply_top_k`.
+
     A third level was measured and rejected: when the topics disagree but share a
     family, answering at family level roughly doubles coverage and *quadruples*
     wrong answers on the held-out slice (14-17% wrong vs 1.4%), because unrelated
@@ -581,11 +599,12 @@ def decide(
 
     topic = max(votes, key=lambda t: votes[t])
     share = votes[topic] / retrieved if retrieved else 0.0
-    bar = (
-        settings.topic_reply_unanimous_threshold
-        if share == 1.0
-        else settings.topic_reply_threshold
+    unanimous = (
+        settings.topic_reply_unanimous_threshold_en
+        if language is Language.EN
+        else settings.topic_reply_unanimous_threshold
     )
+    bar = unanimous if share == 1.0 else settings.topic_reply_threshold
     if share < settings.topic_reply_agreement or top_score < bar:
         return None
     family = TOPIC_FAMILIES.get(topic)
