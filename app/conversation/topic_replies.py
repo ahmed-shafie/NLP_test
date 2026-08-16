@@ -554,19 +554,25 @@ def answer_key(topic: str) -> str:
     return TOPIC_FAMILIES.get(topic, NO_ANSWER)
 
 
-def reply_for_key(key: str, text: str, language: Language) -> str | None:
-    """Return the reviewed reply for an answer key, cue corrections included."""
+def reply_for_key(key: str, text: str, language: Language) -> tuple[str, str] | None:
+    """Return the subject actually answered and its reviewed reply.
+
+    The subject comes back because a cue can redirect the answer
+    (:func:`_family_from_cues`): asking to freeze a card is answered as a theft
+    whatever the key said, and a trace naming the key would name a subject the
+    customer never read.
+    """
 
     if key == NO_ANSWER:
         return None
     family = TOPIC_FAMILIES.get(key, key)
     corrected = _family_from_cues(text, family)
     if corrected != family:
-        return FAMILY_REPLIES[corrected][language]
+        return corrected, FAMILY_REPLIES[corrected][language]
     if key in TOPIC_REPLIES:
-        return TOPIC_REPLIES[key][language]
+        return key, TOPIC_REPLIES[key][language]
     replies = FAMILY_REPLIES.get(family)
-    return None if replies is None else replies[language]
+    return None if replies is None else (key, replies[language])
 
 
 def topic_reply_top_k(language: Language) -> int:
@@ -590,6 +596,8 @@ class TopicAnswer:
     reply: str
     subject: str
     score: float
+    basis: str = "retrieval"
+    """Where ``score`` comes from: a retrieval similarity, or a head probability."""
 
 
 def _from_head(
@@ -623,11 +631,15 @@ def _from_head(
     retrieved_topic = max(votes, key=lambda t: votes[t])
     if answer_key(retrieved_topic) != prediction.key:
         return None
-    reply = reply_for_key(prediction.key, text, language)
-    if reply is None:
+    answered = reply_for_key(prediction.key, text, language)
+    if answered is None:
         return None
+    subject, reply = answered
     return TopicAnswer(
-        reply=reply, subject=prediction.key, score=prediction.probability
+        reply=reply,
+        subject=subject,
+        score=prediction.probability,
+        basis="head",
     )
 
 

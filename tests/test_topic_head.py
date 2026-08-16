@@ -59,15 +59,22 @@ def test_a_label_with_no_reviewed_answer_maps_to_no_answer() -> None:
 
 def test_an_answer_key_resolves_to_the_reviewed_reply() -> None:
     key = TOPIC_FAMILIES[CASH_FEE]
-    assert reply_for_key(key, QUESTION, Language.AR) == FAMILY_REPLIES[key][Language.AR]
+    assert reply_for_key(key, QUESTION, Language.AR) == (
+        key,
+        FAMILY_REPLIES[key][Language.AR],
+    )
 
 
 def test_the_question_words_still_correct_the_answer() -> None:
-    """The cue rules apply to the head's answer exactly as to a retrieved one."""
+    """The cue rules apply to the head's answer exactly as to a retrieved one.
 
-    assert (
-        reply_for_key("card_ordering", "how do I freeze my card?", Language.EN)
-        == FAMILY_REPLIES["security"][Language.EN]
+    And the *corrected* subject comes back, so a trace of the turn names the
+    subject the customer actually read.
+    """
+
+    assert reply_for_key("card_ordering", "how do I freeze my card?", Language.EN) == (
+        "security",
+        FAMILY_REPLIES["security"][Language.EN],
     )
 
 
