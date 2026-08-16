@@ -28,6 +28,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from app.config import settings
+from app.nlu.topic_head import NO_ANSWER, Prediction
 from app.schemas import Language
 
 # Every topic in the corpus maps to a family. Meta labels (``confirm``, ``deny``,
@@ -540,6 +541,34 @@ def topic_reply(topic: str, language: Language) -> str | None:
     return FAMILY_REPLIES[family][language]
 
 
+def answer_key(topic: str) -> str:
+    """Name the answer ``topic`` delivers: itself, its family, or none.
+
+    The trained head predicts this rather than the raw topic, because it is what
+    the customer reads: two topics sharing one reviewed reply cannot mislead
+    anybody, so telling them apart would only cost accuracy.
+    """
+
+    if topic in TOPIC_REPLIES:
+        return topic
+    return TOPIC_FAMILIES.get(topic, NO_ANSWER)
+
+
+def reply_for_key(key: str, text: str, language: Language) -> str | None:
+    """Return the reviewed reply for an answer key, cue corrections included."""
+
+    if key == NO_ANSWER:
+        return None
+    family = TOPIC_FAMILIES.get(key, key)
+    corrected = _family_from_cues(text, family)
+    if corrected != family:
+        return FAMILY_REPLIES[corrected][language]
+    if key in TOPIC_REPLIES:
+        return TOPIC_REPLIES[key][language]
+    replies = FAMILY_REPLIES.get(family)
+    return None if replies is None else replies[language]
+
+
 def topic_reply_top_k(language: Language) -> int:
     """Neighbours to retrieve for the topic vote in ``language``.
 
@@ -563,12 +592,52 @@ class TopicAnswer:
     score: float
 
 
+def _from_head(
+    text: str,
+    top_score: float,
+    votes: Mapping[str, int],
+    language: Language,
+    prediction: Prediction | None,
+) -> TopicAnswer | None:
+    """Answer on the trained head's probability where retrieval refused.
+
+    Three conditions, all measured on the held-out slices: the head is almost
+    certain (``topic_head_threshold``), the question did retrieve something
+    related at all (``topic_head_score_floor`` — a query far from every indexed
+    row is out of scope, whatever the head says), and the retrieved majority
+    agrees on the *same answer*. Agreement is what keeps this safe: the head
+    alone answers more questions but about the wrong subject three times as
+    often.
+
+    Measured against retrieval alone (held-out ArBanking77 Saudi split /
+    Banking77 English test): 19.1% -> 28.9% answered at 0.3% -> 0.8% wrong in
+    Arabic, and 39.4% -> 50.3% at 1.0% -> 0.9% wrong in English.
+    """
+
+    if prediction is None or prediction.key == NO_ANSWER:
+        return None
+    if prediction.probability < settings.topic_head_threshold:
+        return None
+    if top_score < settings.topic_head_score_floor or not votes:
+        return None
+    retrieved_topic = max(votes, key=lambda t: votes[t])
+    if answer_key(retrieved_topic) != prediction.key:
+        return None
+    reply = reply_for_key(prediction.key, text, language)
+    if reply is None:
+        return None
+    return TopicAnswer(
+        reply=reply, subject=prediction.key, score=prediction.probability
+    )
+
+
 def decide(
     text: str,
     top_score: float,
     votes: Mapping[str, int],
     retrieved: int,
     language: Language,
+    prediction: Prediction | None = None,
 ) -> TopicAnswer | None:
     """Choose an answer for the retrieved topics, or ``None`` to stay generic.
 
@@ -592,10 +661,29 @@ def decide(
     subjects share a family — "where is the card I ordered" and "my card was
     stolen" are not the same question. Disagreement now keeps the generic prompt.
     See ``research/vector_db_v08/topic_gate_sweep.py``.
+
+    Where all of that refuses, the trained head gets one confined attempt
+    (:func:`_from_head`); retrieval keeps the first word, so a question this gate
+    already answers keeps its measured answer.
     """
 
     if not votes:
         return None
+
+    answer = _from_retrieval(text, top_score, votes, retrieved, language)
+    if answer is not None:
+        return answer
+    return _from_head(text, top_score, votes, language, prediction)
+
+
+def _from_retrieval(
+    text: str,
+    top_score: float,
+    votes: Mapping[str, int],
+    retrieved: int,
+    language: Language,
+) -> TopicAnswer | None:
+    """Answer on the retrieval vote alone (the gate that shipped first)."""
 
     topic = max(votes, key=lambda t: votes[t])
     share = votes[topic] / retrieved if retrieved else 0.0

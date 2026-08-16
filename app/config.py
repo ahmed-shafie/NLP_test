@@ -96,6 +96,21 @@ class Settings(BaseSettings):
     topic_reply_top_k_en: int = 7
     topic_reply_unanimous_threshold_en: float = 0.78
 
+    # A trained head over the same query embedding names the answer a question
+    # deserves *with a probability*, which similarity cannot (see
+    # ``app/nlu/topic_head.py``). It only speaks where the votes above refused.
+    topic_head_enabled: bool = True
+
+    # Probability the head must reach, and the similarity the question must still
+    # have retrieved. Calibrated in
+    # ``research/vector_db_v08/topic_classifier.py`` on the same held-out slices:
+    # with the retrieved majority also agreeing on the answer, the Saudi split
+    # goes 19.1% -> 28.9% answered at 0.3% -> 0.8% wrong, and the English test
+    # split 39.4% -> 50.3% at 1.0% -> 0.9%. Dropping the probability to 0.99
+    # reaches 37.7% in Arabic but at 2.3% wrong, so it stays here.
+    topic_head_threshold: float = 0.999
+    topic_head_score_floor: float = 0.80
+
     # Cosine-similarity floor for accepting a contact match.
     contact_match_threshold: float = 0.5
 

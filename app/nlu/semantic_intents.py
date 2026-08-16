@@ -19,6 +19,7 @@ from app.config import settings
 from app.embeddings import get_embedder
 from app.nlu.corpus import CorpusExample, load_corpus_examples
 from app.nlu.examples import INTENT_EXAMPLES
+from app.nlu.topic_head import Prediction, get_topic_head
 from app.schemas import Intent
 from app.vectorstore import FaissVectorStore
 
@@ -41,12 +42,14 @@ class TopicEvidence:
 
     ``votes`` counts the neighbours per topic (rows with no topic - executable
     requests - are not counted, so the counts can sum to less than
-    ``retrieved``).
+    ``retrieved``). ``prediction`` is the trained head's reading of the same
+    query vector, absent when no head is loaded.
     """
 
     top_score: float
     votes: dict[str, int]
     retrieved: int
+    prediction: Prediction | None = None
 
 
 class SemanticIntentClassifier:
@@ -110,16 +113,24 @@ class SemanticIntentClassifier:
         (:mod:`app.conversation.topic_replies`), which also knows how topics
         group into families and how wide a window each language is calibrated
         for.
+
+        The query is encoded once and both readings come off that one vector, so
+        the trained head costs no second model and no second encode.
         """
 
-        neighbours = self.similar(text, k=k or settings.topic_reply_top_k)
+        query = self._embedder.encode_one(text)
+        hits = self._store.search(query, k or settings.topic_reply_top_k)
         votes: dict[str, int] = defaultdict(int)
-        for n in neighbours:
-            if n.topic:
-                votes[n.topic] += 1
-        top = neighbours[0].score if neighbours else 0.0
+        for hit in hits:
+            if hit.payload.topic:
+                votes[hit.payload.topic] += 1
+        top = hits[0].score if hits else 0.0
+        head = get_topic_head()
         return TopicEvidence(
-            top_score=round(top, 4), votes=dict(votes), retrieved=len(neighbours)
+            top_score=round(top, 4),
+            votes=dict(votes),
+            retrieved=len(hits),
+            prediction=None if head is None else head.predict(query),
         )
 
     def classify(self, text: str) -> tuple[Intent, float]:
