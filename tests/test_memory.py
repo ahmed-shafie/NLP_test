@@ -96,6 +96,36 @@ def test_resolve_shortcut_arabic_spelling_variants(memory):
     assert memory.resolve_shortcut("ar", "اَلايجار").name == "الإيجار"
 
 
+def test_resolve_shortcut_through_the_definite_article(memory):
+    """Only the customer knows whether they will type "إيجار" or "الايجار"."""
+
+    memory.upsert_shortcut("al", Shortcut(name="إيجار", recipient="محمد"))
+    assert memory.resolve_shortcut("al", "ادفع الايجار").name == "إيجار"
+    assert memory.resolve_shortcut("al", "حوّل للايجار ٥٠٠").name == "إيجار"
+    # A different word that merely starts with the article stays unmatched.
+    assert memory.resolve_shortcut("al", "ادفع الراتب") is None
+
+
+def test_resolve_shortcut_label_in_the_other_language(memory):
+    """A shortcut is saved once; the customer types whichever language they are in."""
+
+    memory.upsert_shortcut("lb", Shortcut(name="rent", recipient="Landlord"))
+    assert memory.resolve_shortcut("lb", "ادفع الايجار").name == "rent"
+
+    memory.upsert_shortcut("lb2", Shortcut(name="راتب", recipient="Ahmed"))
+    assert memory.resolve_shortcut("lb2", "pay the salary").name == "راتب"
+
+    # A different label is not a translation of this one.
+    assert memory.resolve_shortcut("lb", "ادفع الراتب") is None
+
+
+def test_a_beneficiary_name_is_never_translated(memory):
+    """Labels are the customer's own words; a name is an identity (#30/#32)."""
+
+    memory.upsert_shortcut("nm", Shortcut(name="mona", recipient="Mona Ali"))
+    assert memory.resolve_shortcut("nm", "ادفع الايجار") is None
+
+
 def test_resolve_shortcut_cross_script_name(memory):
     # A person-name shortcut saved in one script matches when referenced in the
     # other (C1), via the name gazetteer's transliteration pairs.

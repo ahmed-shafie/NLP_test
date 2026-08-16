@@ -99,3 +99,22 @@ def normalize_tokens(text: str) -> list[str]:
 
     normalized = normalize(text)
     return normalized.split() if normalized else []
+
+
+# Arabic proclitics that fuse onto the next word, longest first: "لاس تي سي" =
+# "ل" + "اس تي سي", "للمياه" = "لـ" + "المياه", "وزين" = "و" + "زين", and the
+# bare article in "الايجار" = "ال" + "ايجار".
+AR_PROCLITICS = ("لل", "بال", "وال", "فال", "كال", "ال", "ل", "ب", "ف", "و", "ك")
+
+
+def strip_proclitic(token: str) -> str:
+    """Drop a fused Arabic proclitic from ``token``, keeping 2-letter words whole.
+
+    Callers use this as a *retry*: "الايجار" and "إيجار" are the same biller and
+    the same shortcut, but only the customer knows which form they will type.
+    """
+
+    for prefix in AR_PROCLITICS:
+        if token.startswith(prefix) and len(token) - len(prefix) >= 2:
+            return token[len(prefix) :]
+    return token

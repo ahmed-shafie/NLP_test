@@ -470,3 +470,17 @@ def test_typo_biller_name_resolves(engine: ConversationEngine):
     assert result.state.status is ConversationStatus.CONFIRMING
     assert result.state.slots.biller_code == "153"
     assert result.state.slots.biller == "Ejar"
+
+
+def test_rent_with_the_definite_article_is_a_bill_not_a_transfer(
+    engine: ConversationEngine,
+) -> None:
+    """ "ادفع الايجار" named the Ejar biller; it must not ask "who to?"."""
+
+    result = engine.handle(
+        text="ادفع الايجار", session_id="rent-article", user_id="demo"
+    )
+
+    assert result.state.intent is Intent.PAY_BILL
+    assert result.state.slots.biller_code == "153"
+    assert result.state.slots.recipient is None

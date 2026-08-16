@@ -18,7 +18,7 @@ from app.memory.schemas import (
     UserSummary,
 )
 from app.memory.store import get_memory_store
-from app.nlu.normalize import normalize
+from app.nlu.normalize import normalize, strip_proclitic
 from app.schemas import TransferRequest
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,48 @@ _REPEAT_TRANSFER = {
 }
 
 _MAX_COMMON_AMOUNTS = 5
+
+# Bilingual labels for the *shortcut names* customers actually save. A shortcut
+# saved as "rent" has to answer "ادفع الايجار" too, since the customer types
+# whichever language they are in, not the one they saved in.
+#
+# Hand-written and deliberately small — no model translates anything here. What
+# it may cover is limited on purpose:
+#   * a label only ever selects a shortcut the customer created, and the payee
+#     still comes from that shortcut's own ``recipient``, so a wrong label can
+#     never redirect money to a different person;
+#   * beneficiary *names* are excluded — a typed name is never translated
+#     (a shortcut "mom" is a label the customer chose, "Mona" is an identity);
+#   * utility words (water, electricity, internet) are excluded — those are
+#     biller names, and the biller catalogue already reads both languages.
+_LABEL_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("rent", "إيجار", "الإيجار"),
+    ("salary", "راتب", "الراتب"),
+    ("school", "مدرسة", "المدرسة"),
+    ("university", "جامعة", "الجامعة"),
+    ("gym", "نادي", "النادي", "الجيم"),
+    ("insurance", "تأمين", "التأمين"),
+    ("loan", "قرض", "القرض"),
+    ("charity", "صدقة", "الصدقة"),
+    ("zakat", "زكاة", "الزكاة"),
+    ("mom", "mum", "mother", "ماما", "أمي", "الوالدة"),
+    ("dad", "father", "بابا", "أبي", "الوالد"),
+    ("brother", "أخوي", "أخي"),
+    ("sister", "أختي", "اختي"),
+    ("wife", "زوجتي", "المدام"),
+    ("husband", "زوجي"),
+    ("son", "ابني", "ولدي"),
+    ("daughter", "بنتي", "ابنتي"),
+    ("landlord", "المالك"),
+    ("driver", "السواق", "سواق"),
+    ("maid", "الخدامة", "خدامة"),
+)
+
+_LABEL_EQUIVALENTS: dict[str, frozenset[str]] = {}
+for _group in _LABEL_GROUPS:
+    _members = frozenset(normalize(label) for label in _group)
+    for _label in _members:
+        _LABEL_EQUIVALENTS[_label] = _members
 
 
 class MemoryBrain:
@@ -167,7 +209,11 @@ class MemoryBrain:
         spelling variants (alef/ya/ta-marbuta, diacritics, digits) still match.
         A single-word name that is a recognised person name also matches across
         scripts (e.g. a shortcut "mohammed" referenced as "محمد"), using the
-        name gazetteer's transliteration pairs.
+        name gazetteer's transliteration pairs. A fused Arabic proclitic is
+        stripped on both sides, so a shortcut saved as "إيجار" answers "ادفع
+        الايجار" and one saved as "الإيجار" answers "ادفع إيجار"; a small
+        hand-written label table (:data:`_LABEL_GROUPS`) does the same across
+        languages, so "rent" answers "ادفع الايجار".
         """
 
         memory = self._store.get(user_id)
@@ -175,6 +221,7 @@ class MemoryBrain:
             return None
         normalized = normalize(text)
         tokens = set(normalized.split())
+        tokens |= {strip_proclitic(token) for token in tokens}
         # Expand the message tokens with their cross-script equivalents once.
         expanded = set(tokens)
         for token in tokens:
@@ -188,7 +235,9 @@ class MemoryBrain:
                 if name in normalized:
                     return shortcut
                 continue
-            if name in tokens:
+            if name in tokens or strip_proclitic(name) in tokens:
+                return shortcut
+            if _LABEL_EQUIVALENTS.get(strip_proclitic(name), frozenset()) & tokens:
                 return shortcut
             # Cross-script: a person-name shortcut referenced in the other script.
             if ({name} | transliterations(name)) & expanded:
