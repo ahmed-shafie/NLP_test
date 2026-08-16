@@ -82,6 +82,17 @@ def test_biller_matches_through_fused_arabic_prefix():
     assert resolve_biller_gazetteer("فاتورة للكهرباء").biller_code == "002"
 
 
+@pytest.mark.parametrize(
+    "text", ["ادفع الايجار", "ادفع الإيجار", "ابغى اسدد الايجار حقي"]
+)
+def test_biller_matches_through_the_definite_article(text: str):
+    """The catalogue lists "إيجار"; customers type "الايجار"."""
+
+    rec = resolve_biller_gazetteer(text)
+    assert rec is not None
+    assert rec.biller_code == "153"
+
+
 def test_biller_semantic_disabled_by_default():
     # Arbitrary chit-chat must not be mis-resolved to a near-neighbour biller.
     assert resolve_biller_gazetteer("hello") is None

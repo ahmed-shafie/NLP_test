@@ -27,6 +27,7 @@ from app.nlu.normalize import (
     normalize_digits,
     normalize_tokens,
     strip_diacritics,
+    strip_proclitic,
 )
 
 logger = logging.getLogger(__name__)
@@ -223,22 +224,10 @@ def resolve_biller_gazetteer(text: str) -> BillerRecord | None:
     return candidates[0] if candidates else None
 
 
-# Arabic proclitics that fuse onto the next word, longest first: "لاس تي سي" =
-# "ل" + "اس تي سي", "للمياه" = "لـ" + "المياه", "وزين" = "و" + "زين".
-_AR_PROCLITICS = ("لل", "بال", "وال", "فال", "كال", "ل", "ب", "ف", "و", "ك")
-
-
 def _unprefixed_tokens(tokens: list[str]) -> list[str]:
     """Drop a fused Arabic proclitic from each token (keeping 2-letter words)."""
 
-    out = []
-    for token in tokens:
-        for prefix in _AR_PROCLITICS:
-            if token.startswith(prefix) and len(token) - len(prefix) >= 2:
-                token = token[len(prefix) :]
-                break
-        out.append(token)
-    return out
+    return [strip_proclitic(token) for token in tokens]
 
 
 def _gazetteer_candidates(text: str) -> list[BillerRecord]:
