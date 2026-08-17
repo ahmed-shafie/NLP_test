@@ -102,10 +102,7 @@ class ContactMatcher:
             query = self._embedder.encode_one(name)
             hits = self._store.search(query, window)
             ranked = [
-                ContactMatch(
-                    contact=hit.payload,
-                    score=min(max(hit.score, 0.0), 1.0),
-                )
+                ContactMatch(contact=hit.payload, score=min(max(hit.score, 0.0), 1.0))
                 for hit in hits
             ]
         else:

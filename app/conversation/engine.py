@@ -2186,7 +2186,7 @@ class ConversationEngine:
             if answer is None:
                 span.skip(f"no confident topic @ {evidence.top_score}")
                 return None
-            span.annotate(f"{answer.subject} @ {answer.score}")
+            span.annotate(f"{answer.subject} @ {answer.score} ({answer.basis})")
             return answer.reply
 
     def _handle_list_beneficiaries(

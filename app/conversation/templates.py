@@ -1171,5 +1171,10 @@ def topic_answer(
     """
 
     return topic_replies.decide(
-        text, evidence.top_score, evidence.votes, evidence.retrieved, language
+        text,
+        evidence.top_score,
+        evidence.votes,
+        evidence.retrieved,
+        language,
+        evidence.prediction,
     )
