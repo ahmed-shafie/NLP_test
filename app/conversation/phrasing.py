@@ -102,6 +102,7 @@ CONVERSATIONAL_REPLIES: frozenset[str] = frozenset(
         "greeting",
         "inappropriate",
         "no_beneficiaries",
+        "opening",
         "resume_note",
         "slot_prompt",
         "small_talk",

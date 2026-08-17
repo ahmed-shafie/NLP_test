@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.config import settings
+from app.conversation import templates
 from app.conversation.engine import ConversationResult, get_engine
-from app.conversation.schemas import ConversationRequest, ConversationResponse
+from app.conversation.schemas import (
+    ConversationRequest,
+    ConversationResponse,
+    OpeningResponse,
+)
 from app.conversation.state import ConversationStatus
+from app.schemas import Language
 
 router = APIRouter(tags=["conversation"])
 
@@ -37,6 +43,18 @@ def _require_conversation() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The conversation engine is disabled.",
         )
+
+
+@router.get("/conversation/opening", response_model=OpeningResponse)
+def conversation_opening(
+    language: Language = Query(
+        default=Language.EN, description="Language to greet the customer in."
+    ),
+) -> OpeningResponse:
+    """Return the line to show when a conversation opens, before any message."""
+
+    _require_conversation()
+    return OpeningResponse(reply=templates.opening(language), language=language)
 
 
 @router.post("/conversation/text", response_model=ConversationResponse)

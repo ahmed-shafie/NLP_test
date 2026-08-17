@@ -29,6 +29,13 @@ class ConversationRequest(BaseModel):
     )
 
 
+class OpeningResponse(BaseModel):
+    """Output for ``GET /conversation/opening``."""
+
+    reply: str
+    language: Language
+
+
 class ConversationResponse(BaseModel):
     """Output for the conversation endpoints."""
 
