@@ -192,6 +192,7 @@ body.dev .inspect.dev-only{display:flex !important;}
 const $ = (id) => document.getElementById(id);
 let sessionId = null;
 let langHint = null; // null = auto
+let openingTurn = null;
 const AR_RE = /[\u0600-\u06FF]/;
 function userId(){ return $("userId").value.trim() || "demo"; }
 function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
@@ -391,8 +392,29 @@ async function send(text){
 function newSession(){
   sessionId=null;
   $("stream").innerHTML='<div class="day">Today</div>';
+  openingTurn=null;
   renderContext({});
+  showOpening();
   $("msg").focus();
+}
+
+// Greet first, so an empty chat says what the assistant can do instead of
+// waiting silently. The wording comes from the backend: the same opening line
+// serves every channel, and nothing here invents a capability.
+async function showOpening(){
+  const lang = langHint || ((navigator.language||"").toLowerCase().startsWith("ar") ? "ar" : "en");
+  try{
+    const r = await api(`/conversation/opening?language=${encodeURIComponent(lang)}`, null, 1);
+    if(r && r.reply && !$("stream").querySelector(".turn")) openingTurn = addBot(r.reply).parentElement;
+  }catch{}
+}
+
+// A language toggle before the first message re-greets in the chosen language;
+// once the customer has said something the transcript is left alone.
+function regreet(){
+  if(!openingTurn || $("stream").querySelectorAll(".turn").length !== 1) return;
+  openingTurn.remove(); openingTurn = null;
+  showOpening();
 }
 
 async function loadMemory(){
@@ -522,6 +544,7 @@ $("userId").addEventListener("change",()=>{ newSession(); loadMemory(); });
 $("langBtn").onclick=()=>{
   langHint = langHint==="ar" ? "en" : (langHint==="en" ? null : "ar");
   $("langBtn").textContent = langHint==="ar" ? "ع" : (langHint==="en" ? "EN" : "EN / ع");
+  regreet();
 };
 $("devToggle").onclick=()=>applyDevMode(!document.body.classList.contains("dev"));
 $("scSave").onclick=saveShortcut;
@@ -532,6 +555,7 @@ try{ devInit = localStorage.getItem("assistant.devmode")==="1"; }catch{}
 if(new URLSearchParams(location.search).get("dev")==="1") devInit=true;
 applyDevMode(devInit);
 renderQuick();
+showOpening();
 warmUp();
 loadMemory();
 $("msg").focus();

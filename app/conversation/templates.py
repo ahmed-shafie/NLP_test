@@ -130,6 +130,26 @@ _GREETING: dict[Language, tuple[str, ...]] = {
     ),
 }
 
+# Shown by a channel when the conversation opens, before the customer has said
+# anything. Names only what the assistant can actually do, so the first line is
+# never a promise the engine can't keep.
+_OPENING: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "Hey there 👋 I can transfer money, tell you your balance, or pay a "
+        "bill for you — what do you need?",
+        "Hi 👋 Transfers, your balance, bill payments — I'm at your service. "
+        "What can I do?",
+        "Welcome 👋 I can send money, check your balance, or settle a bill — "
+        "just say the word.",
+    ),
+    Language.AR: (
+        "هلا والله 👋 حيّاك! أقدر أحوّل لك فلوس، أقولك كم رصيدك، أو أسدّد "
+        "فاتورتك — آمر.",
+        "أهلين وسهلين 👋 تحويل، رصيد، سداد فواتير — أنا جاهز. وش تبي؟",
+        "حيّاك الله 👋 أقدر أحوّل، أعلّمك برصيدك، أو أدفع فاتورتك — أمرك.",
+    ),
+}
+
 _FALLBACK: dict[Language, tuple[str, ...]] = {
     Language.EN: (
         "Hmm, I didn't quite catch that 🤔 — I can send money or pay a "
@@ -865,6 +885,12 @@ def preflight_blocked(language: Language) -> str:
 
 def greeting(language: Language) -> str:
     return phrasing.varied("greeting", _GREETING, language)
+
+
+def opening(language: Language) -> str:
+    """The line a channel shows before the customer has typed anything."""
+
+    return phrasing.varied("opening", _OPENING, language)
 
 
 def fallback(language: Language) -> str:

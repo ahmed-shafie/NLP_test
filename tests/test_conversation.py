@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings
+from app.conversation import templates
 from app.conversation.engine import ConversationEngine
 from app.conversation.state import (
     ConversationSlots,
@@ -176,3 +177,37 @@ def test_conversation_disabled_returns_503(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "conversation_enabled", False)
     resp = client.post("/conversation/text", json={"text": "hi"})
     assert resp.status_code == 503
+
+
+# --------------------------------- opening --------------------------------- #
+
+
+@pytest.mark.parametrize("language", [Language.EN, Language.AR])
+def test_opening_offers_the_three_things_the_assistant_can_do(language: Language):
+    resp = client.get("/conversation/opening", params={"language": language.value})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["language"] == language.value
+    assert body["reply"] == templates.opening(language)
+    assert body["reply"].strip()
+
+
+def test_opening_answers_in_the_requested_script():
+    arabic = client.get("/conversation/opening", params={"language": "ar"}).json()
+    english = client.get("/conversation/opening", params={"language": "en"}).json()
+    assert any("\u0600" <= ch <= "\u06ff" for ch in arabic["reply"])
+    assert not any("\u0600" <= ch <= "\u06ff" for ch in english["reply"])
+
+
+@pytest.mark.parametrize("language", [Language.EN, Language.AR])
+def test_opening_quotes_no_figure(language: Language):
+    # A greeting arrives before any Banking Core call, so a balance, a fee or a
+    # limit in it could only have been invented.
+    for variant in templates._OPENING[language]:
+        assert not any(ch.isdigit() or "\u0660" <= ch <= "\u0669" for ch in variant)
+
+
+def test_opening_starts_no_flow(engine: ConversationEngine):
+    result = engine.handle(templates.opening(Language.EN), "opening-echo")
+    assert result.state.intent is not Intent.TRANSFER_MONEY
+    assert result.state.status is not ConversationStatus.CONFIRMING
