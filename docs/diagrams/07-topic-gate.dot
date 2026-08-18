@@ -1,0 +1,30 @@
+
+digraph gate {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", label="7. Customer-service answer gate (retrieval + trained head, PR #40)"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  q  [label="customer question", shape=note, fillcolor="#fff6e5", color="#b8860b"];
+  v  [label="encode once → v (384-d)\nparaphrase-multilingual-MiniLM-L12-v2"];
+  kn [label="FAISS kNN vote over the indexed corpus\ntop-k, cosine ≥ threshold, majority agreement"];
+  ok1[label="answer (retrieval was sure)", fillcolor="#eef7ee", color="#2f7d32"];
+  hd [label="TopicHead: h=ReLU(v·W1+b1) [384×1024]\np=softmax(h·W2+b2) [1024×28]\nnumpy only, allow_pickle=False"];
+  c1 [label="p ≥ 0.999 ?", shape=diamond, fillcolor="#fff6e5", color="#b8860b"];
+  c2 [label="best retrieved score ≥ 0.80 ?", shape=diamond, fillcolor="#fff6e5", color="#b8860b"];
+  c3 [label="retrieved majority agrees\non the same reply ?", shape=diamond, fillcolor="#fff6e5", color="#b8860b"];
+  c4 [label="predicted class is the\nexplicit \"\" no-answer class ?", shape=diamond, fillcolor="#fff6e5", color="#b8860b"];
+  ok2[label="answer (head rescued it)\nSaudi 19.1% → 28.9% · English 39.4% → 50.3%", fillcolor="#eef7ee", color="#2f7d32"];
+  menu[label="generic menu / refuse\n(safe default)", fillcolor="#f2f2f2", color="#777777"];
+
+  q -> v -> kn;
+  kn -> ok1 [label="sure"];
+  kn -> hd  [label="refused"];
+  hd -> c4;
+  c4 -> menu [label="yes — protects executable requests"];
+  c4 -> c1 [label="no"];
+  c1 -> menu [label="no"]; c1 -> c2 [label="yes"];
+  c2 -> menu [label="no"]; c2 -> c3 [label="yes"];
+  c3 -> menu [label="no"]; c3 -> ok2 [label="yes"];
+}

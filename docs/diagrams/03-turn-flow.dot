@@ -1,0 +1,35 @@
+
+digraph turn {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", label="3. Lifecycle of one turn (POST /conversation/text)"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  node [shape=box];
+  in   [label="{text, user_id, session_id?, language?}", shape=note, fillcolor="#fff6e5", color="#b8860b"];
+  mw   [label="middleware: request-id · size limit · metrics · audit"];
+  rest [label="memory_restore — load session from Redis\n+ learned shortcuts for this customer"];
+  mod  [label="moderation — abuse gate"];
+  pipe [label="NLU pipeline (see diagram 4)\nlanguage → intent → entities → contacts → beneficiary → LLM exception"];
+  route[label="decide_action — executable request or customer-service question?", shape=diamond, fillcolor="#fff6e5", color="#b8860b"];
+  topic[label="topic_answer — retrieval vote + trained head\n(see diagram 7)"];
+  slots[label="slot filling — first missing required slot\ntransfer: amount, currency, recipient\nbill: biller, reference, amount, currency"];
+  dis  [label="disambiguation — several people / billers match\n⇒ ask, never guess"];
+  conf [label="confirmation — deterministic summary\n\"send 500.00 SAR to Ahmed Ali? (yes/no)\""];
+  pre  [label="Banking Core: /accounts/balance · /preflight/transfer · /preflight/bill"];
+  exec [label="Banking Core write"];
+  ok   [label="status=completed\naction object emitted", fillcolor="#eef7ee", color="#2f7d32"];
+  fail [label="status=failed\nrefusal reason quoted from the Core", fillcolor="#fbeced", color="#8c2f39"];
+  out  [label="{reply, state, action?, block_trace}", shape=note, fillcolor="#fff6e5", color="#b8860b"];
+
+  in -> mw -> rest -> mod -> pipe -> route;
+  route -> topic [label="question"];
+  route -> slots [label="executable"];
+  slots -> dis -> conf -> pre -> exec;
+  slots -> conf [style=dashed, label="all slots present"];
+  exec -> ok [label="accepted"];
+  exec -> fail [label="rejected / unreachable"];
+  topic -> out; ok -> out; fail -> out;
+  slots -> out [style=dashed, label="ask for the missing slot"];
+}

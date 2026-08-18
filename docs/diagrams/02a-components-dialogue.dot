@@ -1,0 +1,34 @@
+
+digraph components_a {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", newrank=true, ranksep=0.55, label="2a. Components — HTTP edge and dialogue layer"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  subgraph cluster_edge {
+    label="HTTP edge  (app/main.py)"; style="rounded"; color="#3d5a99";
+    mw [label="RequestContextMiddleware (request-id)\nBodySizeLimitMiddleware (max_request_bytes)\nMetricsMiddleware (Prometheus)\nAuditMiddleware (optional)"];
+    rt [label="Routers: /conversation · /nlu · /memory ·\n/active-learning · /admin  (+ /v1 alias)"];
+  }
+
+  subgraph cluster_dlg {
+    label="Dialogue  (app/conversation/)"; style="rounded"; color="#2f7d32";
+    eng  [label="engine.py\nturn orchestration, slot filling,\ndisambiguation, confirmation, asides"];
+    st   [label="state.py\nConversationState · slots · status"];
+    store[label="store.py\nsession store (Redis / in-memory)"];
+    mod  [label="moderation.py\nabuse gate"];
+    tpl  [label="templates.py\nbilingual reply + opening tables"];
+    phr  [label="phrasing.py\ntwo-tier phrasing + post-gen validator"];
+    trep [label="topic_replies.py\n28 reviewed customer-service replies"];
+  }
+
+  down [label="↓ understanding + platform: see diagram 2b", shape=plaintext, fillcolor=white];
+
+  mw -> rt -> eng;
+  eng -> {st store mod};
+  eng -> {tpl phr trep};
+  {rank=same; st; store; mod}
+  {rank=same; tpl; phr; trep}
+  phr -> down [style=dashed];
+}

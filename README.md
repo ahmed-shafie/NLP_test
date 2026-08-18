@@ -18,6 +18,15 @@ An NLU (Natural Language Understanding) microservice for a mobile-banking AI ass
 - **Memory Brain** — per-user **habits** (favourite recipient, usual currency, default source account, recent amounts — learned automatically) and **shortcuts** (named transfer templates like `rent`), backed by SQL (durable) + a Redis cache. Supplying a `user_id` lets the assistant pre-fill slots and expand shortcuts.
 - **Graceful degradation** — runs in regex/fuzzy-only mode when NLP/embedding models are not downloaded, skips the LLM entirely when no LLM server is reachable, and keeps auditing locally when ELK is unavailable.
 
+## Documentation
+
+| Document | Read it when |
+|---|---|
+| [`docs/SYSTEM_ARCHITECTURE.md`](docs/SYSTEM_ARCHITECTURE.md) | you need the whole picture: 10 diagrams, component-by-component inventory, data model, configuration surface, measured performance envelope, security posture |
+| [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md) | you are setting up, running the gates, or looking for where something lives |
+| [`docs/CHANGE_GUIDE.md`](docs/CHANGE_GUIDE.md) | you are about to edit the code: where a change belongs, two worked examples, the pre-push checklist |
+| [`docs/DESIGN.md`](docs/DESIGN.md) · [`docs/DESIGN_pay_bills.md`](docs/DESIGN_pay_bills.md) | design rationale for a specific subsystem |
+
 ## Tech Stack
 
 | Layer | Tool |

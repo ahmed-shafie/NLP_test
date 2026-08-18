@@ -1,0 +1,31 @@
+
+digraph data {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", label="8. Data stores and artefacts"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  node [shape=record, style=filled, fillcolor="#f4f6fb"];
+  acc [label="{accounts (Banking Core)|owner_user\laccount_number\laccount_type\lcurrency\lbalance\l}", color="#8c2f39", fillcolor="#fbeced"];
+  ben [label="{beneficiaries (Banking Core)|owner_user\lname / name_ar\laccount (IBAN)\lbank · currency\lis_favorite\l}", color="#8c2f39", fillcolor="#fbeced"];
+  bil [label="{billers (Banking Core)|sadad_code\lname / name_ar\lcategory\l}", color="#8c2f39", fillcolor="#fbeced"];
+  ses [label="{Redis|conversation session\l(state, slots, status)\lmemory cache\l}", shape=cylinder];
+  mb  [label="{memory_brain.db|learned shortcuts\l(\"rent\" → landlord)\lhabit counters\l}", shape=cylinder];
+  al  [label="{active_learning.db|low-confidence utterances\lreviewer decisions\l}", shape=cylinder];
+  cfg [label="{app_config.db|connection providers\lbank config · audit rows\l}", shape=cylinder];
+  corp[label="{app/nlu/data/example_corpus.jsonl|31,781 rows · 31,450 AR / 331 EN\l31,292 fallback (must not act)\l}", shape=folder];
+  head[label="{app/nlu/data/topic_head.npz|W1 384×1024 · W2 1024×28\lfloat32 · 1.6 MB\lstamped with the embedding model name\l}", shape=folder];
+  gaz [label="{gazetteers|~28k names · SADAD catalogue\l}", shape=folder];
+
+  {rank=same; acc; ben; bil}
+  {rank=same; ses; mb}
+  {rank=same; al; cfg}
+  {rank=same; corp; head}
+  ses -> al [style=invis]; al -> corp [style=invis]; corp -> gaz [style=invis];
+  ben -> ses [style=invis]; mb -> head [style=invis];
+  lb1 [label="Banking Core (PostgreSQL) — financial truth", shape=plaintext, fillcolor=white];
+  lb2 [label="NLU app state", shape=plaintext, fillcolor=white];
+  lb3 [label="repository artefacts (versioned)", shape=plaintext, fillcolor=white];
+  {rank=same; lb1; acc} {rank=same; lb2; ses} {rank=same; lb3; corp}
+}

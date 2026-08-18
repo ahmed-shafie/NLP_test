@@ -1,0 +1,44 @@
+
+digraph components_b {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", newrank=true, ranksep=0.55, label="2b. Components — understanding, integration and platform"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  eng [label="conversation/engine.py\n(diagram 2a)", fillcolor="#eef7ee", color="#2f7d32"];
+
+  subgraph cluster_nlu {
+    label="Understanding  (app/nlu/ + app/orchestration.py)"; style="rounded"; color="#b8860b";
+    orch [label="orchestration.py\nHaystack pipeline (6 components)"];
+    lang [label="lang.py · arabic.py · normalize.py\nscript detection, digit folding,\nproclitic / article stripping"];
+    ents [label="entities.py\namount · currency · IBAN ·\nreference · biller · recipient"];
+    sem  [label="semantic_intents.py · intents.py\nembeddings + FAISS kNN + keywords"];
+    corp [label="corpus.py · examples.py\n31,781-row example index"];
+    head [label="topic_head.py\ntrained MLP 384→1024→28 (numpy)"];
+    cont [label="contacts.py\ngazetteer + rapidfuzz + vectors"];
+    acct [label="accounts.py\nIBAN mod-97 · account words"];
+  }
+
+  subgraph cluster_int {
+    label="Integration & platform"; style="rounded"; color="#8c2f39";
+    bcc  [label="banking_core_client.py\nbalance · pre-flight · write"];
+    dbb  [label="db/beneficiary.py · db/directory.py\nSQL beneficiary directory"];
+    emb  [label="embeddings.py · vectorstore.py\nSentenceTransformer + FAISS"];
+    mem  [label="memory/\nlearned shortcuts & habits"];
+    al   [label="active_learning/\nreview queue + index rebuild"];
+    adm  [label="admin/\nconnections · bank config · audit · ELK"];
+    trc  [label="trace.py\nblock_trace spans"];
+  }
+
+  eng -> orch;
+  orch -> {lang ents sem cont acct};
+  {rank=same; lang; ents; sem}
+  {rank=same; cont; acct; head}
+  sem -> corp; sem -> head [style=dashed, label="same vector"];
+  head -> emb; cont -> emb; corp -> emb;
+  eng -> bcc; cont -> dbb; eng -> mem; eng -> trc; orch -> trc;
+  {rank=same; bcc; dbb; emb}
+  {rank=same; mem; al; adm; trc}
+  al -> corp [style=dashed]; adm -> bcc [style=dashed];
+}

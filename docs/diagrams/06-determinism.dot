@@ -1,0 +1,37 @@
+
+digraph det {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", label="6. Determinism boundary — what a model may and may not do"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  subgraph cluster_model {
+    label="Models: may NOMINATE candidates"; style="rounded"; color="#6b4c9a";
+    m1 [label="embeddings + FAISS\nintent candidates", fillcolor="#f7f0fb", color="#6b4c9a"];
+    m2 [label="trained topic head\npicks one of 28 stored replies", fillcolor="#f7f0fb", color="#6b4c9a"];
+    m3 [label="LLM (exception path)\nproposes slot values / rephrases", fillcolor="#f7f0fb", color="#6b4c9a"];
+  }
+
+  subgraph cluster_rule {
+    label="Deterministic layer: DECIDES"; style="rounded"; color="#2f7d32";
+    r1 [label="entity readers\namount · currency · IBAN · reference", fillcolor="#eef7ee", color="#2f7d32"];
+    r2 [label="beneficiary directory + IBAN mod-97\nidentity and account numbers", fillcolor="#eef7ee", color="#2f7d32"];
+    r3 [label="Banking Core\nbalances · limits · result", fillcolor="#eef7ee", color="#2f7d32"];
+  }
+
+  subgraph cluster_reply {
+    label="Reply construction (app/conversation/phrasing.py)"; style="rounded"; color="#3d5a99";
+    tA [label="Tier A — deterministic templates\namounts, IBANs, names, balances,\nconfirmations, refusals, results\nNO model may touch these"];
+    tB [label="Tier B — conversational\ngreetings, opening line, explanations,\nclarifying questions, apologies\nmay vary / be rephrased"];
+    val[label="post-generation validator\nany digit, name or IBAN not present verbatim\nin the source object ⇒ generated text rejected,\nfixed template restored", fillcolor="#fff6e5", color="#b8860b"];
+  }
+
+  m1 -> r1 [label="candidates"]; m3 -> r1 [label="candidates"];
+  m1 -> r2; r1 -> r3;
+  r1 -> tA; r2 -> tA; r3 -> tA;
+  m2 -> tB; m3 -> tB;
+  tB -> val;
+  tA -> out; val -> out;
+  out [label="reply sent to the customer", shape=note, fillcolor="#f4f6fb"];
+}

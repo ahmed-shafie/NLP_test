@@ -1,0 +1,28 @@
+
+digraph deploy {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", label="9. Deployment and scaling (measured configuration)"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  subgraph cluster_host {
+    label="One host — 8 vCPU / 31 GB (load-tested)"; style="rounded"; color="#3d5a99";
+    subgraph cluster_app {
+      label="NLU app container — uvicorn --workers 8, OMP_NUM_THREADS=1"; style="rounded,dashed"; color="#9aa7bd";
+      w1 [label="worker 1\nmodel + FAISS index\n~600 MB RSS"];
+      w2 [label="worker 2\n…"];
+      wn [label="worker 8\n…"];
+    }
+    core [label="Banking Core :8100", fillcolor="#fbeced", color="#8c2f39"];
+    pg   [label="PostgreSQL :5432", shape=cylinder, fillcolor="#fbeced", color="#8c2f39"];
+    rd   [label="Redis :6379", shape=cylinder];
+  }
+  lb  [label="load balancer / API gateway", fillcolor="#fff6e5", color="#b8860b"];
+  hz  [label="the app is stateless (sessions live in Redis)\n⇒ N hosts ≈ N × capacity", shape=plaintext, fillcolor=white];
+
+  lb -> w1; lb -> w2; lb -> wn;
+  w1 -> rd; w2 -> rd; wn -> rd;
+  w1 -> core; w2 -> core; wn -> core; core -> pg;
+  lb -> hz [style=invis];
+}
