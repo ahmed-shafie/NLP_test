@@ -1,0 +1,44 @@
+
+digraph context {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", label="1. System context"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  subgraph cluster_ch {
+    label="Channels"; style="rounded,dashed"; color="#9aa7bd";
+    web  [label="Web assistant UI\n/assistant?dev=1", fillcolor="#eef7ee", color="#2f7d32"];
+    flut [label="Flutter client\n(Android / iOS)", fillcolor="#eef7ee", color="#2f7d32"];
+    api  [label="Any channel via REST\nPOST /v1/conversation/text", fillcolor="#eef7ee", color="#2f7d32"];
+  }
+
+  cust [label="Customer\n(Saudi Arabic / MSA / English)", shape=oval, fillcolor="#fff6e5", color="#b8860b"];
+
+  subgraph cluster_nlu {
+    label="NLU / language layer  (this repository, app/)"; style="rounded"; color="#3d5a99";
+    nlu [label="FastAPI NLU service\nlanguage · intent · slots · dialogue state ·\nresolution · deterministic replies · block_trace",
+         fillcolor="#e7edfa"];
+  }
+
+  subgraph cluster_bank {
+    label="Bank side  (source of financial truth)"; style="rounded"; color="#8c2f39";
+    core [label="Banking Core service\nbalances · pre-flight · writes · refusals", fillcolor="#fbeced", color="#8c2f39"];
+    pg   [label="PostgreSQL\naccounts · beneficiaries · SADAD billers", shape=cylinder, style=filled, fillcolor="#fbeced", color="#8c2f39"];
+  }
+
+  subgraph cluster_inf {
+    label="Supporting infrastructure"; style="rounded,dashed"; color="#9aa7bd";
+    redis [label="Redis\nsessions + memory cache", shape=cylinder, style=filled];
+    faiss [label="FAISS index (in-process)\n31,781 examples · contacts · billers"];
+    llm   [label="Ollama qwen2.5:3b via LiteLLM\n(optional, exception path only)", fillcolor="#f7f0fb", color="#6b4c9a"];
+    obs   [label="Prometheus /metrics · JSON logs ·\nElasticsearch audit (optional)"];
+  }
+
+  cust -> web; cust -> flut; cust -> api;
+  web -> nlu; flut -> nlu; api -> nlu;
+  nlu -> core  [label="validate / execute (HTTP + API key)"];
+  core -> pg;
+  nlu -> pg    [label="beneficiary directory (read-only)", style=dashed];
+  nlu -> redis; nlu -> faiss; nlu -> llm [style=dashed]; nlu -> obs [style=dashed];
+}

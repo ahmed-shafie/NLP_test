@@ -1,0 +1,29 @@
+
+digraph fsm {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", label="5. Dialogue state machine (ConversationStatus)"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  node [shape=box, style="rounded,filled"];
+  SEL [label="SELECTING\ntransfer or bill?"];
+  COL [label="COLLECTING\nasking for a missing slot"];
+  DIS [label="DISAMBIGUATING\nwhich Ahmed / which biller?"];
+  CON [label="CONFIRMING\ndeterministic summary, yes/no"];
+  DONE[label="COMPLETED", fillcolor="#eef7ee", color="#2f7d32"];
+  FAIL[label="FAILED\nthe bank refused —\nnever reported as done", fillcolor="#fbeced", color="#8c2f39"];
+  CAN [label="CANCELLED", fillcolor="#f2f2f2", color="#777777"];
+
+  SEL -> COL [label="intent known"];
+  COL -> COL [label="next missing slot"];
+  COL -> DIS [label="ambiguous identity"];
+  DIS -> COL [label="customer picks"];
+  COL -> CON [label="all slots filled"];
+  CON -> DONE [label="yes + Core accepted"];
+  CON -> FAIL [label="yes + Core rejected"];
+  CON -> COL [label="correction (\"no, 300\")"];
+  CON -> CAN [label="no / cancel"];
+  COL -> CAN [label="cancel"];
+  COL -> COL [label="aside: balance / question\nanswered, flow resumes", style=dashed];
+}

@@ -8,6 +8,11 @@ conversation, a per-user Memory Brain, configurable beneficiary lookup, and full
 operations (observability, audit/ELK).
 **Audience:** engineers and reviewers integrating, operating, or extending the service.
 
+> **Superseded for the current system by [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md).** This
+> document describes the transfer-centred system as of the P1/P2 milestones and is kept for its
+> depth on those layers; it predates the separate Banking Core service, the bill-payment flow, the
+> customer-service answer gate and the trained topic head. Read `SYSTEM_ARCHITECTURE.md` first.
+
 > This document is the end-to-end ("A to Z") companion to `DESIGN.md`. `DESIGN.md` covers the NLU
 > core in depth; this document covers the **whole system as it stands today**, including the
 > observability (P1) and the conversation + Memory Brain (P2) layers.

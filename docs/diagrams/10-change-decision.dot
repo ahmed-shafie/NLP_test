@@ -1,0 +1,50 @@
+
+digraph change {
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t",
+         label="Where does my change belong?"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  q0 [label="What am I changing?", shape=diamond, fillcolor="#fff6e5", color="#b8860b"];
+
+  q1 [label="Wording of a reply", shape=diamond, fillcolor="#fff6e5", color="#b8860b"];
+  q2 [label="Does the reply carry an amount,\nIBAN, name, balance or status?",
+      shape=diamond, fillcolor="#fff6e5", color="#b8860b"];
+  a1 [label="templates.py (critical tier)\n+ keep the placeholders exact\n+ phrasing.CRITICAL_REPLIES",
+      fillcolor="#eef7ee", color="#2f7d32"];
+  a2 [label="templates.py (conversational tier)\n+ phrasing.CONVERSATIONAL_REPLIES\nvariants allowed",
+      fillcolor="#eef7ee", color="#2f7d32"];
+
+  q3 [label="A new thing the customer can ASK FOR\n(a new flow / command)", shape=diamond,
+      fillcolor="#fff6e5", color="#b8860b"];
+  a3 [label="new Intent + corpus rows + cues +\nengine branch + templates +\ngold rows + tests   (§3 worked example)",
+      fillcolor="#eef7ee", color="#2f7d32"];
+
+  q4 [label="A new customer-service ANSWER\n(question, not a command)", shape=diamond,
+      fillcolor="#fff6e5", color="#b8860b"];
+  a4 [label="topic_replies.TOPIC_REPLIES + answer_key()\n(retrain the head only for a new family)",
+      fillcolor="#eef7ee", color="#2f7d32"];
+
+  q5 [label="Reading a value out of text\n(amount, biller, name, reference)", shape=diamond,
+      fillcolor="#fff6e5", color="#b8860b"];
+  a5 [label="nlu/entities.py (deterministic reader)\n+ nlu/normalize.py for Arabic forms\n+ tests/test_entities.py",
+      fillcolor="#eef7ee", color="#2f7d32"];
+
+  q6 [label="A balance / limit / result /\nanything the bank owns", shape=diamond,
+      fillcolor="#fff6e5", color="#b8860b"];
+  a6 [label="banking-core service + banking_core_client.py\nNEVER compute it in the language layer",
+      fillcolor="#fbeced", color="#8c2f39"];
+
+  q7 [label="How sure the system must be\nbefore it answers/acts", shape=diamond,
+      fillcolor="#fff6e5", color="#b8860b"];
+  a7 [label="config.py threshold + MEASURE\n(coverage % and wrong % before/after)\n+ re-run the gold gate",
+      fillcolor="#fff6e5", color="#b8860b"];
+
+  q0 -> q1; q1 -> q2 [label="yes"]; q2 -> a1 [label="yes"]; q2 -> a2 [label="no"];
+  q1 -> q3 [label="no"]; q3 -> a3 [label="yes"];
+  q3 -> q4 [label="no"]; q4 -> a4 [label="yes"];
+  q4 -> q5 [label="no"]; q5 -> a5 [label="yes"];
+  q5 -> q6 [label="no"]; q6 -> a6 [label="yes"];
+  q6 -> q7 [label="no"]; q7 -> a7 [label="yes"];
+}

@@ -1,0 +1,21 @@
+
+digraph pipeline {
+
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", rankdir=TB, labelloc="t", label="4. NLU pipeline (Haystack, app/orchestration.py)"];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled",
+         fillcolor="#f4f6fb", color="#3d5a99", penwidth=1.2];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b8c"];
+
+  u [label="utterance", shape=note, fillcolor="#fff6e5", color="#b8860b"];
+  d [label="detect\nLanguageDetector\nscript + cue based"];
+  i [label="intent\nIntentClassifier\nembedding → FAISS kNN\n+ keyword fallback"];
+  e [label="entities\nEntityExtractor\ndeterministic readers only"];
+  c [label="contacts\nContactResolver\ngazetteer · rapidfuzz (88, margin 5)\ncross-lingual vectors"];
+  b [label="beneficiary\nBeneficiaryLookup\nSQL directory:\nexact | ambiguous | none"];
+  l [label="llm\nLLMExceptionHandler\nruns only if the deterministic\nreaders found nothing"];
+  s [label="NLUState\nintent · slots · candidates · trace", shape=note, fillcolor="#fff6e5", color="#b8860b"];
+  u -> d -> i -> e -> c -> b -> l -> s;
+  tr [label="every stage appends a\nblock_trace span (name, ms, decision)", shape=plaintext, fillcolor=white];
+  {rank=same; tr}
+  b -> tr [style=invis];
+}
