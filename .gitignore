@@ -36,3 +36,6 @@ stanza_resources/
 
 # Research cache: retrieved neighbours of the held-out slice (regenerated)
 research/vector_db_v08/topic_evidence.jsonl
+
+# Release registry (manifests, live pointer, promote/rollback log)
+var/

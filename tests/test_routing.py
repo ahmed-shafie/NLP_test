@@ -130,3 +130,37 @@ def test_unrelated_questions_never_open_a_payment_flow(text: str) -> None:
 )
 def test_supported_requests_still_route(text: str, expected: Intent) -> None:
     assert _route(text) is expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # A question whose subject is money is not an instruction to move any:
+        # opening the flow asks for an amount the customer never mentioned.
+        "what is the fee for an international transfer",
+        "can i cancel a transfer after sending",
+        "كم رسوم التحويل الدولي",
+        "هل اقدر الغي التحويل بعد ارساله",
+        # Topically about paying, but the verb is "complain".
+        "ابغى اشتكي على رسوم",
+        "i want to complain about a charge",
+    ],
+)
+def test_a_question_about_money_does_not_open_a_money_flow(text: str) -> None:
+    assert _route(text) not in (Intent.TRANSFER_MONEY, Intent.PAY_BILL)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # The veto needs the turn to name nothing of its own: a question that
+        # does carry an amount, a payee or a reference is still a request.
+        ("can you transfer 500 to Ahmed?", Intent.TRANSFER_MONEY),
+        ("هل تقدر تحول 200 لسارة؟", Intent.TRANSFER_MONEY),
+        ("can you pay my stc bill 4321?", Intent.PAY_BILL),
+    ],
+)
+def test_a_question_that_names_its_own_object_still_routes(
+    text: str, expected: Intent
+) -> None:
+    assert _route(text) is expected
