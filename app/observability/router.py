@@ -14,10 +14,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.config import settings
-from app.observability import alerts
+from app.observability import alerts, signals
 from app.observability.turns import (
     TurnRecord,
     counts,
+    latency_percentile,
     list_turns,
     purge_older_than,
     session_ref_for,
@@ -87,6 +88,49 @@ class SloReport(BaseModel):
     objectives: list[SloView]
 
 
+class SignalView(BaseModel):
+    """One operational objective and its current reading."""
+
+    key: str
+    title: str
+    unit: str
+    max_value: float
+    window_minutes: int
+    severity: str
+    value: float | None
+    available: bool
+    breached: bool
+    rationale: str
+
+
+class DependencyView(BaseModel):
+    """The state of one dependency, and when it was last actually called.
+
+    ``last_success`` is part of the answer on purpose: health here comes from
+    real calls, so a dependency nobody has called is unknown, not healthy.
+    """
+
+    name: str
+    healthy: bool
+    last_success: str | None
+    last_attempt: str | None
+    consecutive_failures: int
+    attempts: int
+    failures: int
+
+
+class SignalReport(BaseModel):
+    """Operational health: latency, model availability, dependencies."""
+
+    breaching: int
+    signals: list[SignalView]
+    dependencies: list[DependencyView]
+    # Counters are per process and reset on restart; the latency percentile is
+    # read from the durable store. Stated so a reader does not mistake one for
+    # the other.
+    process_scoped_counters: bool = True
+
+
 class PurgeResult(BaseModel):
     """How many rows the retention policy removed."""
 
@@ -151,6 +195,61 @@ def get_slo() -> SloReport:
     ]
     return SloReport(
         breaching=sum(1 for m in measurements if m.breached), objectives=objectives
+    )
+
+
+@router.get("/signals", response_model=SignalReport)
+def get_signals() -> SignalReport:
+    """Read the operational objectives: reply latency, the model, dependencies."""
+
+    failures, attempts = signals.failure_ratio(signals.LLM)
+    p95_window = next(
+        (s.window_minutes for s in alerts.SIGNALS if s.key == alerts.P95_LATENCY), 60
+    )
+    readings: dict[str, float | None] = {
+        alerts.P95_LATENCY: latency_percentile(p95_window),
+        # No call attempted is not a zero rate: there is nothing to report yet.
+        alerts.LLM_UNAVAILABLE_RATE: (
+            round(100.0 * failures / attempts, 2) if attempts else None
+        ),
+        alerts.UNHEALTHY_DEPENDENCIES: (
+            float(signals.unhealthy_count()) if signals.dependencies() else None
+        ),
+    }
+    readings_out = alerts.read_signals(readings)
+    return SignalReport(
+        breaching=sum(1 for reading in readings_out if reading.breached),
+        signals=[
+            SignalView(
+                key=reading.signal.key,
+                title=reading.signal.title,
+                unit=reading.signal.unit,
+                max_value=reading.signal.max_value,
+                window_minutes=reading.signal.window_minutes,
+                severity=reading.signal.severity.value,
+                value=reading.value,
+                available=reading.available,
+                breached=reading.breached,
+                rationale=reading.signal.rationale,
+            )
+            for reading in readings_out
+        ],
+        dependencies=[
+            DependencyView(
+                name=state.name,
+                healthy=state.healthy,
+                last_success=(
+                    state.last_success.isoformat() if state.last_success else None
+                ),
+                last_attempt=(
+                    state.last_attempt.isoformat() if state.last_attempt else None
+                ),
+                consecutive_failures=state.consecutive_failures,
+                attempts=state.attempts,
+                failures=state.failures,
+            )
+            for state in signals.dependencies()
+        ],
     )
 
 

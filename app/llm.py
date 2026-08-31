@@ -20,6 +20,7 @@ from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 
 from app.config import settings
+from app.observability import signals
 from app.schemas import TransferEntities
 
 logger = logging.getLogger(__name__)
@@ -140,8 +141,10 @@ class LLMExceptionHandler:
             data = _parse_json_object(content)
         except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
             logger.warning("LLM exception handler failed: %s", exc)
+            signals.record_call(signals.LLM, ok=False)
             return None
 
+        signals.record_call(signals.LLM, ok=True)
         intent = data.get("intent")
         currency = data.get("currency")
         recipient = data.get("recipient")
@@ -195,7 +198,9 @@ class LLMExceptionHandler:
             content = response["choices"][0]["message"]["content"] or ""
         except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
             logger.warning("LLM beneficiary delegation failed: %s", exc)
+            signals.record_call(signals.LLM, ok=False)
             return None
+        signals.record_call(signals.LLM, ok=True)
         content = content.strip()
         return content or None
 
@@ -227,7 +232,11 @@ class LLMExceptionHandler:
             content = response["choices"][0]["message"]["content"] or ""
         except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
             logger.warning("LLM rephrase failed: %s", exc)
+            signals.record_call(signals.LLM, ok=False)
             return None
+        # A rewrite the guard later rejects is a normal outcome and not counted
+        # here: this records whether the model answered at all.
+        signals.record_call(signals.LLM, ok=True)
         return content.strip() or None
 
 
