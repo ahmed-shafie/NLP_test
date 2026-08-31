@@ -216,6 +216,24 @@ def test_cancel_still_wins_over_a_held_request(engine: ConversationEngine) -> No
 # --------------------------------------------------------------------------- #
 
 
+def test_a_bill_named_without_a_verb_is_still_a_new_request(
+    engine: ConversationEngine,
+) -> None:
+    """A bill noun plus a number is not a payee name for the open transfer."""
+
+    result = engine.handle("حول 250 ريال", session_id="reverse-1")
+    assert result.state.pending_slot == "recipient"
+
+    result = engine.handle("فاتوره 53535", session_id="reverse-1")
+
+    assert result.state.intent is Intent.TRANSFER_MONEY
+    assert result.state.slots.recipient is None
+    assert result.state.slots.amount == Decimal("250")
+    assert result.state.pending_switch is not None
+    assert result.state.pending_switch.intent is Intent.PAY_BILL
+    assert result.reason is ReasonCode.FLOW_SWITCH_REQUIRED
+
+
 def test_a_bare_reference_number_still_answers(engine: ConversationEngine) -> None:
     _pending_bill_reference(engine, "keep-1")
 

@@ -840,11 +840,11 @@ _BALANCE_UNAVAILABLE: dict[Language, tuple[str, ...]] = {
 _RESUME_NOTE: dict[Language, tuple[str, ...]] = {
     Language.EN: (
         "Okay, back to where we were —",
-        "Right, back to your transfer —",
+        "Right, back to what you asked for —",
         "Now, where we left off —",
     ),
     Language.AR: (
-        "طيّب، نرجع للتحويل —",
+        "طيّب، نرجع لطلبك —",
         "تمام، نكمّل من وين وقّفنا —",
         "أبشر، نرجع للطلب —",
     ),

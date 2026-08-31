@@ -1184,11 +1184,14 @@ class ConversationEngine:
         """
 
         requested = decide_action(text, lang, Intent.FALLBACK)
-        is_instruction = (
-            requested is not None
-            and _asks_to_act(text, _TRANSFER_VERBS | _PAY_VERBS)
-            and self._names_own_object(text, lang, requested)
+        is_instruction = requested is not None and self._names_own_object(
+            text, lang, requested
         )
+        if is_instruction and requested is Intent.TRANSFER_MONEY:
+            # A bare person's name answers "who to?", so a transfer needs the
+            # verb too; a bill noun or a biller is only ever the subject of a
+            # bill payment, so it reads as a request of its own without one.
+            is_instruction = _asks_to_act(text, _TRANSFER_VERBS | _PAY_VERBS)
         return classify_turn_role(
             active_intent=state.intent,
             pending_slot=state.pending_slot,
