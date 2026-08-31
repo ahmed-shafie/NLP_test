@@ -43,6 +43,9 @@ class ReasonCode(str, Enum):
     BALANCE_UNAVAILABLE = "balance_unavailable"
     DIRECTORY_UNAVAILABLE = "directory_unavailable"
 
+    # A fresh instruction arrived mid-flow, so which one to serve is unsettled.
+    FLOW_SWITCH_REQUIRED = "flow_switch_required"
+
     # The customer stopped, or the session was ended for repeated abuse.
     CANCELLED_BY_CUSTOMER = "cancelled_by_customer"
     SESSION_ENDED = "session_ended"

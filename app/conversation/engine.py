@@ -19,10 +19,12 @@ from app.conversation.state import (
     BillerOption,
     ConversationState,
     ConversationStatus,
+    PendingFlowSwitch,
     SlotSource,
 )
 from app.conversation.store import get_session_store
 from app.conversation.topic_replies import topic_reply_top_k
+from app.conversation.turn_role import TurnRole, TurnRoleEvidence, classify_turn_role
 from app.data_loader import (
     BillerRecord,
     biller_categories,
@@ -35,7 +37,7 @@ from app.memory.schemas import Shortcut
 from app.memory.service import get_memory_brain
 from app.nlu import accounts, entities, pipeline
 from app.nlu.lang import detect_language
-from app.nlu.normalize import normalize, normalize_digits
+from app.nlu.normalize import normalize, normalize_digits, strip_proclitic
 from app.nlu.semantic_intents import get_semantic_classifier
 from app.schemas import (
     BillPaymentRequest,
@@ -515,6 +517,14 @@ def _asks_to_act(text: str, verbs: set[str]) -> bool:
 _FX_CUES = {normalize(w) for w in ("convert", "conversion", "exchange", "يساوي", "صرف")}
 
 
+def _is_question(text: str) -> bool:
+    """True when the message is shaped as a question rather than an instruction."""
+
+    if "?" in text or "؟" in text:
+        return True
+    return bool({normalize(t) for t in _tokens(text)} & _QUESTION_WORDS)
+
+
 def _is_currency_conversion(text: str) -> bool:
     return entities.count_currencies(text) > 1 or bool(
         {normalize(t) for t in _tokens(text)} & _FX_CUES
@@ -668,6 +678,9 @@ def _tokens(text: str) -> set[str]:
 _CONTROL_TOKENS = (
     _AFFIRM | _NEGATIVE | _CANCEL | _CHOOSE_TRANSFER | _CHOOSE_BILL | _CHOICE_FILLERS
 )
+# The same picks as matching keys, so an article-prefixed pick is still a pick.
+_CHOOSE_TRANSFER_KEYS = _CHOOSE_TRANSFER | {normalize(w) for w in _CHOOSE_TRANSFER}
+_CHOOSE_BILL_KEYS = _CHOOSE_BILL | {normalize(w) for w in _CHOOSE_BILL}
 
 
 def _matches(text: str, vocabulary: set[str]) -> bool:
@@ -858,12 +871,19 @@ def _forget_target(text: str) -> str | None:
 
 
 def _parse_choice(text: str) -> Intent | None:
-    """Interpret a reply to the Transfer/Pay-bill menu, if it is one."""
+    """Interpret a reply to the Transfer/Pay-bill menu, if it is one.
+
+    The pick is read through the same normalisation the extractors use, so the
+    article the customer writes it with ("الفاتورة", "التحويل") is the same pick
+    as the bare word rather than an unrecognised reply.
+    """
 
     tokens = _tokens(text)
-    if tokens & _CHOOSE_BILL:
+    tokens |= {normalize(t) for t in tokens}
+    tokens |= {strip_proclitic(t) for t in tokens}
+    if tokens & _CHOOSE_BILL_KEYS:
         return Intent.PAY_BILL
-    if tokens & _CHOOSE_TRANSFER:
+    if tokens & _CHOOSE_TRANSFER_KEYS:
         return Intent.TRANSFER_MONEY
     return None
 
@@ -1139,6 +1159,117 @@ class ConversationEngine:
 
         return decide_action(text, lang, parsed.intent, state.intent)
 
+    @staticmethod
+    def _names_own_object(text: str, lang: Language, flow: Intent) -> bool:
+        """True when the message names what the flow it points at would act on.
+
+        A verb alone ("pay") is a flow the customer may well be answering a
+        prompt with; a verb plus a payee is a request of its own.
+        """
+
+        if flow is Intent.PAY_BILL:
+            if entities.has_bill_word(text):
+                return True
+            return entities.extract_bill_entities(text, lang).biller is not None
+        return entities.extract_recipient(text, lang) is not None
+
+    def _turn_role(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> TurnRoleEvidence:
+        """Read whether this turn answers the prompt, or asks for something else.
+
+        Only the deterministic chooser nominates the other flow: the semantic
+        classifier is generous by design, and reading a prompt's answer as a
+        fresh request would strand the flow the customer is already in.
+        """
+
+        requested = decide_action(text, lang, Intent.FALLBACK)
+        is_instruction = (
+            requested is not None
+            and _asks_to_act(text, _TRANSFER_VERBS | _PAY_VERBS)
+            and self._names_own_object(text, lang, requested)
+        )
+        return classify_turn_role(
+            active_intent=state.intent,
+            pending_slot=state.pending_slot,
+            requested_flow=requested,
+            is_instruction=is_instruction,
+            is_question=_is_question(text),
+            control_only=_is_control_only(text),
+        )
+
+    def _ask_flow_switch(
+        self,
+        state: ConversationState,
+        text: str,
+        requested: Intent,
+        lang: Language,
+    ) -> ConversationResult:
+        """Hold the new request and ask which of the two flows to serve.
+
+        Neither flow advances on this turn: the paused one keeps its slots and
+        the new one is not started, so no value crosses between them.
+        """
+
+        state.pending_switch = PendingFlowSwitch(intent=requested, text=text)
+        return self._finish(
+            state,
+            templates.confirm_flow_switch(state.intent, requested, lang),
+            reason=ReasonCode.FLOW_SWITCH_REQUIRED,
+        )
+
+    def _resolve_flow_switch(
+        self,
+        state: ConversationState,
+        text: str,
+        lang: Language,
+        tracer: BlockTracer,
+    ) -> ConversationResult:
+        """Serve whichever flow the customer just picked.
+
+        Picking the new request replays their original message from scratch, so
+        its amount and payee are read from what they wrote, never merged into
+        the flow that was open.
+        """
+
+        pending = state.pending_switch
+        if pending is None:  # pragma: no cover - guarded by the caller
+            return self._collect(state, text, lang, tracer)
+        state.pending_switch = None
+        choice = _parse_choice(text)
+        starts_new = choice is pending.intent or (
+            choice is None and _matches(text, _AFFIRM)
+        )
+        keeps_current = choice is state.intent or (
+            choice is None and _matches(text, _NEGATIVE)
+        )
+        if starts_new:
+            state.reset()
+            return self._collect(state, pending.text, lang, tracer)
+        if keeps_current:
+            prompt = self._active_prompt(state, lang)
+            return self._finish(
+                state,
+                prompt or templates.choose_action(lang),
+                reason=ReasonCode.SLOT_REQUIRED,
+            )
+        # Neither flow was named: ask again rather than guess which one to run.
+        state.pending_switch = pending
+        return self._finish(
+            state,
+            templates.confirm_flow_switch(state.intent, pending.intent, lang),
+            reason=ReasonCode.FLOW_SWITCH_REQUIRED,
+        )
+
+    def _answer_aside(
+        self, state: ConversationState, answer: str, lang: Language
+    ) -> ConversationResult:
+        """Answer a question asked mid-flow, then re-ask what the flow needs."""
+
+        resume = self._active_prompt(state, lang)
+        reply = f"{answer} {templates.resume_note(lang)} {resume}" if resume else answer
+        return self._finish(state, reply, reason=ReasonCode.SLOT_REQUIRED)
+
     def _collect(
         self,
         state: ConversationState,
@@ -1146,6 +1277,10 @@ class ConversationEngine:
         lang: Language,
         tracer: BlockTracer,
     ) -> ConversationResult:
+        # A held-back request is on the table: this turn says which flow to run.
+        if state.pending_switch is not None:
+            return self._resolve_flow_switch(state, text, lang, tracer)
+
         # Mid "add beneficiary" flow: this turn answers the name or the account.
         if state.intent is Intent.ADD_BENEFICIARY or state.pending_add_name:
             with tracer.block("orchestrator"):
@@ -1189,7 +1324,21 @@ class ConversationEngine:
         # Fold the NLU pipeline's own per-block trace into this turn's trace.
         tracer.extend(parsed.block_trace)
 
-        with tracer.block("orchestrator"):
+        with tracer.block("orchestrator") as span:
+            # What part this turn plays: a flow waiting for a slot would
+            # otherwise read a fresh instruction, or a question, as its answer.
+            role = self._turn_role(state, text, lang)
+            if role.role is TurnRole.NEW_REQUEST and role.requested_flow is not None:
+                span.annotate(f"new_request:{role.requested_flow.value}")
+                return self._ask_flow_switch(state, text, role.requested_flow, lang)
+            if role.role is TurnRole.ASIDE:
+                # Only divert when the corpus actually answers the question;
+                # otherwise the flow's own reading of the turn stands.
+                answer = self._topic_answer(text, lang, tracer)
+                if answer is not None:
+                    span.annotate("aside")
+                    return self._answer_aside(state, answer, lang)
+
             # Memory Brain: a saved shortcut ("pay rent") pre-fills the template.
             self._apply_shortcut(state, text, lang, parsed)
 

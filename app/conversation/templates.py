@@ -371,6 +371,30 @@ def choose_action(language: Language) -> str:
     return phrasing.varied("choose_action", _CHOOSE_ACTION, language)
 
 
+def confirm_flow_switch(
+    current: Intent | None, requested: Intent, language: Language
+) -> str:
+    """Ask whether to leave the flow in progress for the request just made.
+
+    The new instruction is not carried out and the paused flow keeps its slots,
+    so whichever the customer picks, no value moved between the two.
+    """
+
+    if language is Language.AR:
+        held = "سداد الفاتورة" if current is Intent.PAY_BILL else "التحويل"
+        wanted = "سداد فاتورة" if requested is Intent.PAY_BILL else "تحويل"
+        return (
+            f"ما زلنا في {held} وطلبك هذا {wanted} جديد. "
+            f"أُكمل {held}، أم أبدأ {wanted}؟"
+        )
+    held = "the bill payment" if current is Intent.PAY_BILL else "the transfer"
+    wanted = "a bill payment" if requested is Intent.PAY_BILL else "a transfer"
+    return (
+        f"We're in the middle of {held} and that reads as {wanted}. "
+        f"Shall I carry on with {held}, or start {wanted}?"
+    )
+
+
 def choose_biller(names: list[str], language: Language) -> str:
     """Ask the customer which biller they meant when a term is ambiguous."""
 

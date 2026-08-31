@@ -73,6 +73,18 @@ class BeneficiaryOption(BaseModel):
     name_ar: str | None = None
 
 
+class PendingFlowSwitch(BaseModel):
+    """A fresh instruction held back while we ask which flow to serve.
+
+    ``text`` is the customer's own message, replayed unchanged if they choose
+    the new request, so the amount and recipient are read from what they wrote
+    rather than from anything we inferred while the other flow was open.
+    """
+
+    intent: Intent
+    text: str
+
+
 class ConversationSlots(BaseModel):
     """Slots gathered across turns (covers both transfers and bill payments)."""
 
@@ -142,6 +154,9 @@ class ConversationState(BaseModel):
     # Which source filled each slot (slot name -> ``SlotSource`` value), kept in
     # step with ``slots`` by ``slots_from``.
     slot_provenance: dict[str, str] = Field(default_factory=dict)
+    # A new request that arrived while this flow was waiting for a slot, held
+    # until the customer says which of the two to serve.
+    pending_switch: PendingFlowSwitch | None = None
 
     @contextmanager
     def slots_from(self, source: SlotSource) -> Iterator[ConversationSlots]:
@@ -181,3 +196,4 @@ class ConversationState(BaseModel):
         self.preflight_warnings = []
         self.preflight_blocking = []
         self.offered_amount = None
+        self.pending_switch = None
