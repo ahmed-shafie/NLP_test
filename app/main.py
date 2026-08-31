@@ -37,6 +37,8 @@ from app.metrics import MetricsMiddleware, metrics_response
 from app.middleware import BodySizeLimitMiddleware
 from app.nlu import arabic, english, pipeline
 from app.nlu.semantic_intents import get_semantic_classifier
+from app.observability.router import router as observability_router
+from app.observability.store import get_engine as get_turn_store_engine
 from app.orchestration import get_nlu_pipeline
 from app.request_context import RequestContextMiddleware
 from app.schemas import (
@@ -61,6 +63,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # Overlay any persisted Banking Core config (per-case API / DB lookup) so
     # admin edits survive restarts.
     load_persisted_into_settings()
+    # Ensure the durable conversation-turn store exists.
+    if settings.turn_observability_enabled:
+        get_turn_store_engine()
     # Ensure the Memory Brain store (habits + shortcuts) tables exist.
     if settings.memory_enabled:
         get_memory_store()
@@ -273,3 +278,5 @@ app.include_router(memory_router)
 app.include_router(memory_router, prefix="/v1")
 app.include_router(active_learning_router)
 app.include_router(active_learning_router, prefix="/v1")
+# Operational, not public: served once, behind the operations key.
+app.include_router(observability_router)
