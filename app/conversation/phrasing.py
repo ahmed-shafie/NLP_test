@@ -87,6 +87,11 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         # Names the two flows on the table and asks which to run: a rewrite that
         # blurred them would decide for the customer which money moves.
         "confirm_flow_switch",
+        # Says which product the bank does not open here and what this assistant
+        # does instead: a re-worded capability claim would be a false promise.
+        "unsupported_product",
+        # Carries the Banking Core's spendable balance and offers to send it.
+        "whole_balance_offer",
     }
 )
 
@@ -99,6 +104,8 @@ CONVERSATIONAL_REPLIES: frozenset[str] = frozenset(
         "beneficiary_add_invalid_account",
         "beneficiary_invalid_account",
         "beneficiary_not_found",
+        "bill_amount_due_unavailable",
+        "biller_answer_unclear",
         "cancelled",
         "choose_action",
         "fallback",
