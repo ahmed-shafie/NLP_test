@@ -46,6 +46,12 @@ class ReasonCode(str, Enum):
     # A fresh instruction arrived mid-flow, so which one to serve is unsettled.
     FLOW_SWITCH_REQUIRED = "flow_switch_required"
 
+    # The request is for a product this assistant does not open (loan, card,
+    # investment wallet, new account).
+    PRODUCT_NOT_SUPPORTED = "product_not_supported"
+    # "The full amount" was asked for and no authoritative figure exists here.
+    AMOUNT_DUE_UNAVAILABLE = "amount_due_unavailable"
+
     # The customer stopped, or the session was ended for repeated abuse.
     CANCELLED_BY_CUSTOMER = "cancelled_by_customer"
     SESSION_ENDED = "session_ended"

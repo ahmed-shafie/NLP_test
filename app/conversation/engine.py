@@ -12,6 +12,7 @@ from app import banking_core_client
 from app.config import DEFAULT_CURRENCY, settings
 from app.conversation import moderation, templates
 from app.conversation.moderation import ModerationResult
+from app.conversation.products import Product, requested_product
 from app.conversation.reasons import ReasonCode
 from app.conversation.state import (
     BILL_REQUIRED_SLOTS,
@@ -523,6 +524,128 @@ def _is_question(text: str) -> bool:
     if "?" in text or "؟" in text:
         return True
     return bool({normalize(t) for t in _tokens(text)} & _QUESTION_WORDS)
+
+
+# "the full amount" names a figure without stating it. It is an answer to "how
+# much?", so it must be recognised as one — but the figure it refers to has to
+# come from the Banking Core, never from the assistant's own arithmetic.
+_WHOLE_AMOUNT_PHRASES = tuple(
+    normalize(phrase)
+    for phrase in (
+        "full amount",
+        "the whole amount",
+        "whole amount",
+        "all of it",
+        "everything",
+        "the total",
+        "كامل المبلغ",
+        "المبلغ كامل",
+        "المبلغ بالكامل",
+        "كل المبلغ",
+        "المبلغ كله",
+    )
+)
+# Single words that mean the same when they are the entire reply. Kept apart from
+# the phrases because "كامل" as a substring also matches unrelated words.
+_WHOLE_AMOUNT_WORDS = {normalize(w) for w in ("all", "total", "كامل", "الكامل", "الكل")}
+
+
+# Words no company name is made of. A biller answer is a name or a code, so a
+# reply carrying an interrogative, a pronoun, an auxiliary or the name of another
+# banking action is not one — which is how "is the data shared with others" came
+# back quoted as a biller that isn't in the catalogue.
+_NOT_A_COMPANY_NAME = {
+    normalize(w)
+    for w in (
+        "do",
+        "does",
+        "did",
+        "is",
+        "are",
+        "was",
+        "were",
+        "am",
+        "can",
+        "could",
+        "will",
+        "would",
+        "should",
+        "have",
+        "has",
+        "who",
+        "what",
+        "which",
+        "whose",
+        "whom",
+        "why",
+        "how",
+        "when",
+        "where",
+        "you",
+        "your",
+        "i",
+        "me",
+        "my",
+        "we",
+        "our",
+        "they",
+        "them",
+        "it",
+        "this",
+        "that",
+        "كم",
+        "وش",
+        "ايش",
+        "أيش",
+        "شو",
+        "مين",
+        "هل",
+        "ليش",
+        "لماذا",
+        "وين",
+        "متى",
+        "كيف",
+        "انت",
+        "أنت",
+        "انا",
+        "أنا",
+        "احنا",
+        "هو",
+        "هي",
+        "هذا",
+        "هذه",
+    )
+}
+# Longest plausible biller name in the catalogue is three words.
+_MAX_BILLER_NAME_WORDS = 3
+
+
+def _looks_like_a_biller_name(text: str) -> bool:
+    """True when a reply to "which biller?" is shaped like a company name."""
+
+    stripped = text.strip(" .,،؟?!")
+    if not stripped or "?" in text or "؟" in text:
+        return False
+    tokens = {normalize(t) for t in _tokens(stripped)}
+    if not tokens or len(stripped.split()) > _MAX_BILLER_NAME_WORDS:
+        return False
+    forbidden = (
+        _NOT_A_COMPANY_NAME
+        | _LIST_BENE_NOUNS
+        | _ADD_BENE_VERBS
+        | _PAY_VERBS
+        | _TRANSFER_VERBS
+        | _BALANCE_CUES
+    )
+    return not tokens & forbidden
+
+
+def _asks_for_the_whole_amount(text: str) -> bool:
+    normalized = normalize(text)
+    if any(phrase in normalized for phrase in _WHOLE_AMOUNT_PHRASES):
+        return True
+    tokens = {normalize(t) for t in _tokens(text)}
+    return bool(tokens) and tokens <= _WHOLE_AMOUNT_WORDS
 
 
 def _is_currency_conversion(text: str) -> bool:
@@ -1273,6 +1396,64 @@ class ConversationEngine:
         reply = f"{answer} {templates.resume_note(lang)} {resume}" if resume else answer
         return self._finish(state, reply, reason=ReasonCode.SLOT_REQUIRED)
 
+    def _answer_unsupported_product(
+        self, state: ConversationState, product: Product, lang: Language
+    ) -> ConversationResult:
+        """Name the product, say it isn't opened here, and keep any flow intact.
+
+        Mid-flow the paused prompt is re-asked, so an application the assistant
+        cannot take neither opens a money flow nor abandons the one in progress.
+        """
+
+        reply = templates.unsupported_product(product, lang)
+        if self._is_mid_transaction(state):
+            resume = self._active_prompt(state, lang)
+            if resume is not None:
+                reply = f"{reply} {templates.resume_note(lang)} {resume}"
+            return self._finish(state, reply, reason=ReasonCode.PRODUCT_NOT_SUPPORTED)
+        state.status = ConversationStatus.SELECTING
+        return self._finish(state, reply, reason=ReasonCode.PRODUCT_NOT_SUPPORTED)
+
+    def _answer_whole_amount(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult:
+        """Answer "the full amount" with a figure only the Banking Core can give.
+
+        A bill's outstanding amount is not something this layer can read, and it
+        will not be guessed, so the customer is asked for figures. A transfer has
+        one figure the Core does state — the spendable balance — which is offered
+        for an explicit yes before anything is debited.
+        """
+
+        state.status = ConversationStatus.COLLECTING
+        state.pending_slot = "amount"
+        if state.intent is not Intent.TRANSFER_MONEY:
+            return self._finish(
+                state,
+                templates.bill_amount_due_unavailable(lang),
+                reason=ReasonCode.AMOUNT_DUE_UNAVAILABLE,
+            )
+        info = banking_core_client.get_balance(
+            self._owner(state), account=state.slots.source_account
+        )
+        if info is None:
+            return self._finish(
+                state,
+                templates.balance_unavailable(lang),
+                reason=ReasonCode.BALANCE_UNAVAILABLE,
+            )
+        with state.slots_from(SlotSource.BANKING_CORE) as slots:
+            if not slots.currency:
+                slots.currency = info.currency
+        state.offered_amount = info.balance
+        return self._finish(
+            state,
+            templates.whole_balance_offer(
+                self._fmt_amount(info.balance), info.currency, lang
+            ),
+            reason=ReasonCode.SLOT_REQUIRED,
+        )
+
     def _collect(
         self,
         state: ConversationState,
@@ -1283,6 +1464,25 @@ class ConversationEngine:
         # A held-back request is on the table: this turn says which flow to run.
         if state.pending_switch is not None:
             return self._resolve_flow_switch(state, text, lang, tracer)
+
+        # An application for a product this assistant does not open. Answered
+        # before any slot is read, so "open an investment portfolio" is neither
+        # filed as an answer nor routed to whatever intent sits nearest it.
+        product = requested_product(text, lang)
+        if product is not None:
+            with tracer.block("orchestrator") as span:
+                span.annotate(f"unsupported_product:{product.value}")
+                return self._answer_unsupported_product(state, product, lang)
+
+        # "the full amount" answers "how much?" without stating a figure.
+        if (
+            state.pending_slot == "amount"
+            and state.slots.amount is None
+            and _asks_for_the_whole_amount(text)
+        ):
+            with tracer.block("orchestrator") as span:
+                span.annotate("whole_amount")
+                return self._answer_whole_amount(state, lang)
 
         # Mid "add beneficiary" flow: this turn answers the name or the account.
         if state.intent is Intent.ADD_BENEFICIARY or state.pending_add_name:
@@ -1545,25 +1745,39 @@ class ConversationEngine:
             self._set_biller(state, record, lang)
             return None
         # No catalogue match. Only billers in the SADAD catalogue can be paid, so
-        # rather than accepting free text we tell the customer the biller isn't
-        # on the list and ask again. Stay silent when they named nothing yet
-        # (e.g. they only answered the reference-number question).
-        # Quote the customer's own wording back: when they were answering "which
-        # bill?" the whole reply is the name, otherwise use the extracted span.
-        named: str | None
-        if state.pending_slot == "biller":
+        # free text is never accepted as one; the question is what to say back.
+        #
+        # A name is quoted only when there is one to quote: a span the extractor
+        # anchored on a bill word, or a reply shaped like a company name. Reading
+        # every reply as the name is what turned "is the data shared with others"
+        # into a rejected biller — a question quoted back as a company.
+        named, _, _ = entities.extract_biller(text, lang, allow_semantic=True)
+        if (
+            not named
+            and state.pending_slot == "biller"
+            and _looks_like_a_biller_name(text)
+        ):
             named = text.strip(" .,،؟?")
-        else:
-            named, _, _ = entities.extract_biller(text, lang, allow_semantic=True)
-        if not named:
-            return None
-        state.pending_slot = "biller"
-        state.status = ConversationStatus.COLLECTING
-        return self._finish(
-            state,
-            templates.biller_not_found(named, list(biller_categories()), lang),
-            reason=ReasonCode.BILLER_NOT_IN_CATALOGUE,
-        )
+        if named and not _has_verb(
+            named, _PAY_VERBS | _TRANSFER_VERBS | _ADD_BENE_VERBS
+        ):
+            state.pending_slot = "biller"
+            state.status = ConversationStatus.COLLECTING
+            return self._finish(
+                state,
+                templates.biller_not_found(named, list(biller_categories()), lang),
+                reason=ReasonCode.BILLER_NOT_IN_CATALOGUE,
+            )
+        if state.pending_slot == "biller":
+            # They replied to "which biller?" with something that is not one.
+            state.status = ConversationStatus.COLLECTING
+            return self._finish(
+                state,
+                templates.biller_answer_unclear(lang),
+                reason=ReasonCode.INVALID_SLOT_VALUE,
+            )
+        # They named nothing yet (e.g. they only answered the reference number).
+        return None
 
     @staticmethod
     def _set_biller(

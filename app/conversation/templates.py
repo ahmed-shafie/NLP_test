@@ -14,6 +14,7 @@ import random
 
 from app.config import settings
 from app.conversation import phrasing, topic_replies
+from app.conversation.products import Product
 from app.nlu import accounts
 from app.nlu.normalize import normalize, normalize_tokens
 from app.nlu.semantic_intents import TopicEvidence
@@ -392,6 +393,116 @@ def confirm_flow_switch(
     return (
         f"We're in the middle of {held} and that reads as {wanted}. "
         f"Shall I carry on with {held}, or start {wanted}?"
+    )
+
+
+_UNSUPPORTED_PRODUCT: dict[Product, dict[Language, str]] = {
+    Product.LOAN: {
+        Language.EN: "I can't apply for a loan or financing here",
+        Language.AR: "ما أقدر أقدّم طلب قرض أو تمويل من هنا",
+    },
+    Product.CARD: {
+        Language.EN: "I can't issue or order a card here",
+        Language.AR: "ما أقدر أصدر بطاقة أو أطلبها من هنا",
+    },
+    Product.INVESTMENT: {
+        Language.EN: "I can't open an investment portfolio here",
+        Language.AR: "ما أقدر أفتح محفظة استثمارية من هنا",
+    },
+    Product.ACCOUNT: {
+        Language.EN: "I can't open a new account here",
+        Language.AR: "ما أقدر أفتح حساب جديد من هنا",
+    },
+}
+
+
+def unsupported_product(product: Product, language: Language) -> str:
+    """Say which product was asked for, that it isn't done here, and what is.
+
+    Money-critical wording: it is a capability statement, so it names only what
+    this assistant really does and never hints that the application was taken.
+    """
+
+    refusal = _UNSUPPORTED_PRODUCT[product][language]
+    if language is Language.AR:
+        return (
+            f"{refusal} — الطلب يتم عبر تطبيق البنك أو الفرع أو خدمة العملاء. "
+            "اللي أقدر أساعدك فيه: الرصيد، التحويلات، وسداد الفواتير."
+        )
+    return (
+        f"{refusal} — that's done in the bank's app, a branch, or with customer "
+        "support. What I can do: your balance, transfers, and bill payments."
+    )
+
+
+_BILLER_ANSWER_UNCLEAR: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "For this bill I need the biller's name or its SADAD code — or say "
+        "\u201ccancel\u201d to stop.",
+        "I still need the biller: its name or SADAD code. Say \u201ccancel\u201d "
+        "if you'd rather stop.",
+    ),
+    Language.AR: (
+        "أحتاج اسم جهة الفاتورة أو رمز سداد لها — أو قل «إلغاء» للتوقف.",
+        "للفاتورة أحتاج الجهة: اسمها أو رمز سداد. قل «إلغاء» إذا تبي توقف.",
+    ),
+}
+
+_BILL_AMOUNT_DUE_UNAVAILABLE: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "I don't have this bill's outstanding amount, so I can't take "
+        "\u201cthe full amount\u201d — tell me the amount in figures.",
+        "The amount owed on this bill isn't available to me, so give me the "
+        "figure you want to pay.",
+    ),
+    Language.AR: (
+        "المبلغ المستحق على هذه الفاتورة غير متاح عندي، فما أقدر آخذ «كامل "
+        "المبلغ» — اكتب المبلغ بالأرقام.",
+        "ما عندي قيمة الفاتورة المستحقة، فأعطني المبلغ بالأرقام.",
+    ),
+}
+
+
+def biller_answer_unclear(language: Language) -> str:
+    """The reply to "which biller?" was not a biller name or a SADAD code.
+
+    Deliberately quotes nothing back: the customer's sentence was a question or
+    another request, and repeating it as if it were a biller name is what made
+    "is the data shared with others" look like a rejected biller.
+    """
+
+    return phrasing.varied("biller_answer_unclear", _BILLER_ANSWER_UNCLEAR, language)
+
+
+def bill_amount_due_unavailable(language: Language) -> str:
+    """ "The full amount" of a bill, which no source here can state.
+
+    The Banking Core answers balances and validates debits; it publishes no
+    outstanding figure per SADAD bill, and inventing one is the failure this
+    layer exists to prevent. So the request is refused by name and the customer
+    is asked for the figure.
+    """
+
+    return phrasing.varied(
+        "bill_amount_due_unavailable", _BILL_AMOUNT_DUE_UNAVAILABLE, language
+    )
+
+
+def whole_balance_offer(balance: str, currency: str, language: Language) -> str:
+    """Offer the Banking Core's spendable balance as "the full amount".
+
+    The figure is the Core's and is printed exactly as given; nothing is sent
+    until the customer says yes.
+    """
+
+    if language is Language.AR:
+        return (
+            f"رصيدك المتاح {balance} {currency}. أحوّل {balance} {currency} "
+            "كامل؟ (نعم/لا) أو اكتب مبلغ محدد."
+        )
+    return (
+        f"Your available balance is {balance} {currency}. Shall I transfer the "
+        f"whole {balance} {currency}? (yes/no) — or give me a figure."
     )
 
 
