@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.conversation.reasons import ReasonCode
 from app.conversation.state import ConversationSlots, ConversationStatus
 from app.schemas import BillPaymentRequest, Intent, Language, TransferRequest
 from app.trace import BlockTrace
@@ -47,6 +48,20 @@ class ConversationResponse(BaseModel):
     pending_slot: str | None = None
     complete: bool = False
     slots: ConversationSlots
+    slot_provenance: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Where each filled slot came from (user_text / memory_shortcut / "
+            "directory / biller_catalogue / banking_core / default)."
+        ),
+    )
+    reason_code: ReasonCode | None = Field(
+        default=None,
+        description=(
+            "Stable code for why this turn did not carry the request forward "
+            "(missing slot, ambiguity, refusal); null when it did."
+        ),
+    )
     transfer: TransferRequest | None = None
     bill: BillPaymentRequest | None = None
     flagged_terms: list[str] = Field(

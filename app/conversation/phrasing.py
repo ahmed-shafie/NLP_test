@@ -84,6 +84,9 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         # States what the assistant can and cannot do about a customer-service
         # topic; a re-worded capability claim would be a false promise.
         "topic_answer",
+        # Names the two flows on the table and asks which to run: a rewrite that
+        # blurred them would decide for the customer which money moves.
+        "confirm_flow_switch",
     }
 )
 

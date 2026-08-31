@@ -678,6 +678,10 @@ _MONEY_MARKED_RE = re.compile(
 # A request to pay, as opposed to a bare answer naming a bill ("Water Services 5512").
 _PAY_VERB_RE = re.compile(r"\b(?:pay|settle|cover)\b|ادفع|أدفع|سدد|دفع", re.IGNORECASE)
 _BILL_WORD_RE = re.compile(r"\bbills?\b|\binvoices?\b|فاتورة|فواتير", re.IGNORECASE)
+# The same word once :func:`normalize` has folded ة to ه ("فاتوره").
+_BILL_WORD_FOLDED_RE = re.compile(
+    r"\bbills?\b|\binvoices?\b|فاتوره|فواتير", re.IGNORECASE
+)
 # Free-text biller before the word "bill" (e.g. "City Power Co bill").
 _EN_BILLER_RE = re.compile(
     r"([A-Za-z][\w&'’.-]*(?:\s+[A-Za-z][\w&'’.-]*){0,3})\s+bills?\b", re.IGNORECASE
@@ -853,7 +857,11 @@ def extract_reference_number(text: str) -> str | None:
 
 
 def has_bill_word(text: str) -> bool:
-    return bool(_BILL_WORD_RE.search(text))
+    """The word "bill" in either language, however the customer spelled it."""
+
+    return bool(
+        _BILL_WORD_RE.search(text) or _BILL_WORD_FOLDED_RE.search(normalize(text))
+    )
 
 
 def extract_bill_entities(

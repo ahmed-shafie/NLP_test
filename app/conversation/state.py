@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from enum import Enum
 
@@ -34,6 +36,23 @@ class ConversationStatus(str, Enum):
     FAILED = "failed"
 
 
+class SlotSource(str, Enum):
+    """Where a slot's value came from.
+
+    Recorded per slot so a confirmed transfer can be read back afterwards: an
+    amount is only ever ``USER_TEXT``, ``MEMORY_SHORTCUT`` or ``BANKING_CORE``,
+    and a recipient that reached the Core must say ``DIRECTORY`` — a name still
+    marked ``USER_TEXT`` at confirmation means identity was never resolved.
+    """
+
+    USER_TEXT = "user_text"
+    MEMORY_SHORTCUT = "memory_shortcut"
+    DIRECTORY = "directory"
+    BILLER_CATALOGUE = "biller_catalogue"
+    BANKING_CORE = "banking_core"
+    DEFAULT = "default"
+
+
 class BillerOption(BaseModel):
     """A candidate biller offered when a generic term is ambiguous."""
 
@@ -52,6 +71,18 @@ class BeneficiaryOption(BaseModel):
     currency: str = "SAR"
     is_favorite: bool = False
     name_ar: str | None = None
+
+
+class PendingFlowSwitch(BaseModel):
+    """A fresh instruction held back while we ask which flow to serve.
+
+    ``text`` is the customer's own message, replayed unchanged if they choose
+    the new request, so the amount and recipient are read from what they wrote
+    rather than from anything we inferred while the other flow was open.
+    """
+
+    intent: Intent
+    text: str
 
 
 class ConversationSlots(BaseModel):
@@ -120,6 +151,30 @@ class ConversationState(BaseModel):
     # Last picked index per varied-reply group, so a reply isn't repeated
     # back-to-back. Keyed e.g. "inappropriate:mild:en".
     last_variant: dict[str, int] = Field(default_factory=dict)
+    # Which source filled each slot (slot name -> ``SlotSource`` value), kept in
+    # step with ``slots`` by ``slots_from``.
+    slot_provenance: dict[str, str] = Field(default_factory=dict)
+    # A new request that arrived while this flow was waiting for a slot, held
+    # until the customer says which of the two to serve.
+    pending_switch: PendingFlowSwitch | None = None
+
+    @contextmanager
+    def slots_from(self, source: SlotSource) -> Iterator[ConversationSlots]:
+        """Attribute every slot the block fills to ``source``.
+
+        Compares the slots before and after, so the caller states the source
+        once instead of at each assignment and cannot forget one.
+        """
+
+        before = self.slots.model_dump()
+        try:
+            yield self.slots
+        finally:
+            for slot, value in self.slots.model_dump().items():
+                if value is None or value == "":
+                    self.slot_provenance.pop(slot, None)
+                elif before.get(slot) != value:
+                    self.slot_provenance[slot] = source.value
 
     def reset(self) -> None:
         """Clear transfer progress to begin a fresh dialogue (keeps language)."""
@@ -127,6 +182,7 @@ class ConversationState(BaseModel):
         self.intent = None
         self.status = ConversationStatus.COLLECTING
         self.slots = ConversationSlots()
+        self.slot_provenance = {}
         self.pending_slot = None
         self.biller_options = []
         self.beneficiary_options = []
@@ -140,3 +196,4 @@ class ConversationState(BaseModel):
         self.preflight_warnings = []
         self.preflight_blocking = []
         self.offered_amount = None
+        self.pending_switch = None
