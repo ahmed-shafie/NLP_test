@@ -8,6 +8,14 @@ rather than by whoever owns the HTTP layer.
 
 Every ratio is defined over ``ReasonCode`` values the engine attaches itself, so
 an objective is measurable without re-deriving intent from the reply text.
+
+Alongside the ratios there is a second, smaller catalogue of *operational*
+objectives — latency, model availability, dependency health — which are plain
+numbers with a ceiling rather than shares of turns. They are kept in a separate
+type instead of being forced into :class:`Slo`, so the test that holds the ratio
+catalogue to the ``ReasonCode``/``ConversationStatus`` enums keeps its meaning.
+A reading that is missing is reported as unavailable and never silently skipped:
+an objective nobody can read is a broken objective, not a passing one.
 """
 
 from __future__ import annotations
@@ -142,6 +150,103 @@ CATALOGUE: tuple[Slo, ...] = (
         ),
     ),
 )
+
+
+@dataclass(frozen=True, slots=True)
+class OpsSignal:
+    """One operational objective: a measured number and the ceiling it must respect."""
+
+    key: str
+    title: str
+    unit: str
+    max_value: float
+    window_minutes: int
+    severity: Severity
+    rationale: str
+
+
+@dataclass(frozen=True, slots=True)
+class SignalReading:
+    """What an operational objective read, or that it could not be read."""
+
+    signal: OpsSignal
+    value: float | None
+    available: bool
+    breached: bool
+
+
+P95_LATENCY = "turn_latency_p95_ms"
+LLM_UNAVAILABLE_RATE = "llm_unavailable_rate_pct"
+UNHEALTHY_DEPENDENCIES = "unhealthy_dependencies"
+
+
+SIGNALS: tuple[OpsSignal, ...] = (
+    OpsSignal(
+        key=P95_LATENCY,
+        title="Time to reply, ninety-fifth percentile",
+        unit="ms",
+        max_value=1500.0,
+        window_minutes=60,
+        severity=Severity.WARNING,
+        rationale=(
+            "Measured over turns, not over every HTTP request: a slow operations "
+            "query is not a slow conversation, and mixing them lets one hide the "
+            "other. The percentile is read from the turn store, so the number "
+            "survives a restart and can be quoted for a past month."
+        ),
+    ),
+    OpsSignal(
+        key=LLM_UNAVAILABLE_RATE,
+        title="Model calls that never came back",
+        unit="%",
+        max_value=15.0,
+        window_minutes=0,
+        severity=Severity.WARNING,
+        rationale=(
+            "Counts calls that failed or timed out — not rewrites the guard "
+            "rejected, which are the guard working. Money replies are "
+            "deterministic either way, so this is a quality-of-wording signal "
+            "and never a correctness one."
+        ),
+    ),
+    OpsSignal(
+        key=UNHEALTHY_DEPENDENCIES,
+        title="Dependencies whose last real call failed",
+        unit="count",
+        max_value=0.0,
+        window_minutes=0,
+        severity=Severity.CRITICAL,
+        rationale=(
+            "Read from the outcome of real calls rather than a probe, so it "
+            "reflects what customers actually hit and adds no traffic to the "
+            "Core. Silence is therefore not health, which is why each reading "
+            "carries when the dependency was last seen."
+        ),
+    ),
+)
+
+
+def read_signals(
+    readings: dict[str, float | None],
+    catalogue: tuple[OpsSignal, ...] = SIGNALS,
+) -> list[SignalReading]:
+    """Compare each operational objective with its reading.
+
+    A ``None`` reading means there was nothing to measure (no traffic yet, no
+    call made). That is reported as unavailable rather than as zero, because a
+    zero would read as a passing objective.
+    """
+
+    return [
+        SignalReading(
+            signal=signal,
+            value=readings.get(signal.key),
+            available=readings.get(signal.key) is not None,
+            breached=(value := readings.get(signal.key)) is not None
+            and value > signal.max_value,
+        )
+        for signal in catalogue
+    ]
 
 
 def evaluate(

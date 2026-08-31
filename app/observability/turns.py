@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -170,13 +171,7 @@ def session_ref_for(session_id: str) -> str:
     return _digest(session_id)
 
 
-def counts(window_minutes: int) -> dict[str, int]:
-    """Turn counts within the window, keyed for the SLO catalogue.
-
-    ``turns`` is the denominator; ``reason:<code>`` and ``status:<status>`` are
-    the numerators, so a new ``ReasonCode`` needs no change here.
-    """
-
+def _recent_rows(window_minutes: int) -> list[ConversationTurnRow]:
     cutoff = datetime.now(UTC) - timedelta(minutes=window_minutes)
     with get_sessionmaker()() as session:
         rows = session.scalars(
@@ -184,8 +179,37 @@ def counts(window_minutes: int) -> dict[str, int]:
             .order_by(ConversationTurnRow.id.desc())
             .limit(_WINDOW_SCAN_LIMIT)
         ).all()
+    return [row for row in rows if _aware(row.timestamp) >= cutoff]
 
-    recent = [row for row in rows if _aware(row.timestamp) >= cutoff]
+
+def latency_percentile(window_minutes: int, percentile: float = 95.0) -> float | None:
+    """The percentile of turn latency in the window, or ``None`` with no traffic.
+
+    Measured over turns rather than over HTTP requests: what a customer waits for
+    is a reply, and a slow operations query or a metrics scrape says nothing about
+    that. Turns with no recorded latency are left out instead of counted as zero.
+    """
+
+    samples = sorted(
+        row.latency_ms for row in _recent_rows(window_minutes) if row.latency_ms
+    )
+    if not samples:
+        return None
+    # Nearest-rank: the smallest sample at or above the requested share, which
+    # never reports a latency no turn actually took.
+    rank = math.ceil(percentile / 100.0 * len(samples))
+    index = min(max(rank, 1), len(samples)) - 1
+    return round(samples[index], 3)
+
+
+def counts(window_minutes: int) -> dict[str, int]:
+    """Turn counts within the window, keyed for the SLO catalogue.
+
+    ``turns`` is the denominator; ``reason:<code>`` and ``status:<status>`` are
+    the numerators, so a new ``ReasonCode`` needs no change here.
+    """
+
+    recent = _recent_rows(window_minutes)
     tally: Counter[str] = Counter({"turns": len(recent)})
     for row in recent:
         tally[f"status:{row.status}"] += 1
