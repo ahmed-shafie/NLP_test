@@ -36,13 +36,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_DATA_FILES: tuple[str, ...] = (
     "app/nlu/data/topic_head.npz",
     "app/nlu/data/example_corpus.jsonl",
-    "app/nlu/data/semantic_vectors.npy",
     "app/data/sadad_billers.csv",
     "app/data/names.csv",
     "app/data/blocklist.csv",
     "app/eval/nlu_gold.jsonl",
     "app/eval/hard_negatives.jsonl",
 )
+
+# Caches derived from the files above and rebuilt when absent, so a tree without
+# them is still releasable — but a *changed* one is drift like any other, so
+# they are pinned whenever they are present.
+DERIVED_DATA_FILES: tuple[str, ...] = ("app/nlu/data/semantic_vectors.npy",)
 
 # Every setting the routing decision is calibrated on. Recorded by name so a
 # release can be compared with the one before it field by field.
@@ -88,10 +92,14 @@ def _metrics(report: Report, breaches: int) -> Metrics:
 
 
 def shipped_files(root: Path = REPO_ROOT) -> list[FileDigest]:
-    """Digest every runtime data file that exists."""
+    """Digest every pinned data file: the required ones, and the caches present.
+
+    A missing *required* file is reported by ``build_candidate`` as a violation,
+    not silently dropped from the pin list.
+    """
 
     digests: list[FileDigest] = []
-    for relative in RUNTIME_DATA_FILES:
+    for relative in RUNTIME_DATA_FILES + DERIVED_DATA_FILES:
         path = root / relative
         if not path.exists():
             continue
@@ -105,10 +113,22 @@ def shipped_files(root: Path = REPO_ROOT) -> list[FileDigest]:
     return digests
 
 
-def gate_violations(report: Report, breaches: list[str]) -> list[str]:
+def missing_required_files(root: Path = REPO_ROOT) -> list[str]:
+    """Required data files absent from the tree being released."""
+
+    return [
+        f"MISSING {relative}"
+        for relative in RUNTIME_DATA_FILES
+        if not (root / relative).exists()
+    ]
+
+
+def gate_violations(
+    report: Report, breaches: list[str], root: Path = REPO_ROOT
+) -> list[str]:
     """Everything that must be empty before a candidate may be promoted."""
 
-    return check_thresholds(report) + breaches
+    return check_thresholds(report) + breaches + missing_required_files(root)
 
 
 def build_candidate(
@@ -147,4 +167,4 @@ def build_candidate(
         profile=profile,
         hard_negative_count=len(negatives),
     )
-    return manifest, gate_violations(test_report, breaches)
+    return manifest, gate_violations(test_report, breaches, root)

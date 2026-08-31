@@ -24,9 +24,11 @@ from app.eval.splits import (
 )
 from app.release import registry
 from app.release.build import (
+    DERIVED_DATA_FILES,
     RUNTIME_DATA_FILES,
     THRESHOLD_FIELDS,
     build_candidate,
+    missing_required_files,
     shipped_files,
     thresholds_snapshot,
 )
@@ -177,11 +179,20 @@ def test_drift_is_reported_when_a_pinned_file_changes(tmp_path: Path) -> None:
     assert drifted_files(manifest, tmp_path) == ["MISSING app/nlu/data/topic_head.npz"]
 
 
-def test_every_runtime_data_file_the_release_pins_exists_in_the_tree() -> None:
-    # A pin that silently drops a file pins nothing: the corpus, the vectors and
-    # the trained head all change answers without changing code.
+def test_every_required_data_file_is_present_and_pinned() -> None:
+    # A pin that silently drops a file pins nothing: the corpus, the gazetteers
+    # and the trained head all change answers without changing code.
     pinned = {digest.path for digest in shipped_files()}
-    assert pinned == set(RUNTIME_DATA_FILES)
+    assert set(RUNTIME_DATA_FILES) <= pinned
+    assert missing_required_files() == []
+    # Derived caches are pinned only when the tree has them.
+    assert pinned <= set(RUNTIME_DATA_FILES) | set(DERIVED_DATA_FILES)
+
+
+def test_a_missing_required_data_file_fails_the_gate(tmp_path: Path) -> None:
+    assert missing_required_files(tmp_path) == [
+        f"MISSING {relative}" for relative in RUNTIME_DATA_FILES
+    ]
 
 
 # ---- promote / rollback ---------------------------------------------------
