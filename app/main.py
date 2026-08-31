@@ -16,7 +16,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from app import __version__
+from app import __version__, warmup
 from app.active_learning.daemon import start_daemon, stop_daemon
 from app.active_learning.router import router as active_learning_router
 from app.active_learning.store import get_store as get_active_learning_store
@@ -26,20 +26,16 @@ from app.admin.router import router as admin_router
 from app.admin.store import get_engine
 from app.config import settings
 from app.conversation.router import router as conversation_router
-from app.db.beneficiary import get_beneficiary_repository
-from app.embeddings import get_embedder
 from app.errors import register_exception_handlers
-from app.llm import get_llm_handler
 from app.logging_config import configure_logging
 from app.memory.router import router as memory_router
 from app.memory.store import get_memory_store
 from app.metrics import MetricsMiddleware, metrics_response
 from app.middleware import BodySizeLimitMiddleware
-from app.nlu import arabic, english, pipeline
+from app.nlu import pipeline
 from app.nlu.semantic_intents import get_semantic_classifier
 from app.observability.router import router as observability_router
 from app.observability.store import get_engine as get_turn_store_engine
-from app.orchestration import get_nlu_pipeline
 from app.request_context import RequestContextMiddleware
 from app.schemas import (
     NLUResponse,
@@ -56,7 +52,7 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Optionally warm the NLP models so the first request is fast."""
+    """Open the stores, then warm the models off-thread so liveness stays fast."""
 
     # Ensure the admin store (connections + audit log) tables exist.
     get_engine()
@@ -74,14 +70,10 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     if settings.active_learning_enabled:
         get_active_learning_store()
         start_daemon()
-    if settings.preload_models:
-        english._load_model()
-        arabic._load_model()
-        get_embedder()
-        get_semantic_classifier()
-        get_nlu_pipeline()
-        get_llm_handler()
-        get_beneficiary_repository()
+    # Load the models and build the example index before serving: the first turn in
+    # a cold process otherwise pays for it. This runs on a background thread so the
+    # liveness probe answers straight away; /health/ready gates traffic instead.
+    warmup.start(enabled=settings.preload_models)
     try:
         yield
     finally:
@@ -167,7 +159,13 @@ def health() -> dict[str, str]:
 
 @app.get("/health/ready")
 def readiness() -> JSONResponse:
-    """Readiness probe: report dependency health and gate on the audit/config store."""
+    """Readiness probe: gate on the audit/config store and on warm-up finishing.
+
+    Warm-up gates readiness because a process that has not built the example index
+    yet answers its first turn in minutes; reporting it ready would route a real
+    customer into that wait. A *failed* warm-up does not gate: the lazy loaders
+    still work, so it degrades to a slow first turn rather than an outage.
+    """
 
     checks: dict[str, str] = {}
     try:
@@ -176,11 +174,20 @@ def readiness() -> JSONResponse:
         checks["store"] = "ok"
     except Exception:  # noqa: BLE001 - readiness must report, not raise
         checks["store"] = "error"
-    # Informational only: the service degrades gracefully without the embedder.
-    checks["embedder"] = "ok" if get_embedder() is not None else "unavailable"
+    warm = warmup.state()
+    checks["warmup"] = warm.status
+    if warm.step:
+        checks["warmup_step"] = warm.step
 
-    ready = checks["store"] == "ok"
-    body = {"status": "ready" if ready else "not_ready", "checks": checks}
+    ready = checks["store"] == "ok" and warm.status != warmup.RUNNING
+    body: dict[str, object] = {
+        "status": "ready" if ready else "not_ready",
+        "checks": checks,
+    }
+    if warm.duration_s is not None:
+        body["warmup_seconds"] = round(warm.duration_s, 2)
+    if warm.error:
+        body["warmup_error"] = warm.error
     return JSONResponse(body, status_code=200 if ready else 503)
 
 

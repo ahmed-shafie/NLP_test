@@ -20,8 +20,10 @@ class Settings(BaseSettings):
     # Stanza Arabic pipeline language code.
     stanza_lang: str = "ar"
 
-    # Eagerly load NLP models on startup. When False, models load lazily on first use.
-    preload_models: bool = False
+    # Load the NLP models and build the example index on startup, on a background
+    # thread, and hold /health/ready at not_ready until it finishes. When False,
+    # they load lazily and the first turn of a cold process pays for all of it.
+    preload_models: bool = True
 
     # Minimum confidence for an intent to be considered non-fallback.
     intent_threshold: float = 0.4
