@@ -15,11 +15,14 @@ import threading
 from collections import defaultdict
 from dataclasses import dataclass
 
+import numpy as np
+
 from app.config import settings
 from app.embeddings import get_embedder
 from app.nlu.corpus import CorpusExample, load_corpus_examples
 from app.nlu.examples import INTENT_EXAMPLES
 from app.nlu.topic_head import Prediction, get_topic_head
+from app.nlu.vector_cache import encode_cached
 from app.schemas import Intent
 from app.vectorstore import FaissVectorStore
 
@@ -67,16 +70,24 @@ class SemanticIntentClassifier:
         )
 
         corpus = load_corpus_examples()
-        examples = (
-            [CorpusExample(text, intent) for text, intent in INTENT_EXAMPLES]
-            + list(corpus)
-            + [CorpusExample(text, intent) for text, intent in extra_examples or []]
+        # The base examples never change within a release, so their vectors come
+        # off disk when available; only the learned rows are encoded here. That
+        # keeps an active-learning rebuild proportional to what was approved.
+        base = [CorpusExample(text, intent) for text, intent in INTENT_EXAMPLES] + list(
+            corpus
         )
+        learned = [CorpusExample(text, intent) for text, intent in extra_examples or []]
         self.base_count = len(INTENT_EXAMPLES)
         self.corpus_count = len(corpus)
-        self.extra_count = len(extra_examples or [])
-        texts = [example.text for example in examples]
-        vectors = embedder.encode(texts)
+        self.extra_count = len(learned)
+
+        base_vectors = encode_cached(embedder, [example.text for example in base])
+        if learned:
+            learned_vectors = embedder.encode([example.text for example in learned])
+            vectors = np.concatenate([base_vectors, learned_vectors])
+        else:
+            vectors = base_vectors
+        examples = base + learned
         self._store.add(vectors, examples)
         logger.info(
             "Indexed %d intent examples (%d base + %d corpus + %d learned).",

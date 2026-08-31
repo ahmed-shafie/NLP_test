@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     # customer-service questions instead of opening a transfer on them.
     example_corpus_enabled: bool = True
 
+    # Read the embedded example corpus from disk instead of encoding it in every
+    # process that builds the index (each worker, each test session, each
+    # active-learning rebuild). The cache is keyed by the example texts, the
+    # model name and its dimension, so an edit or a model swap re-encodes.
+    semantic_vector_cache_enabled: bool = True
+    semantic_vector_cache_path: str = "app/nlu/data/semantic_vectors.npy"
+    # Populate the cache after encoding. Turn off for read-only deployments that
+    # bake the file into the image (see scripts/build_semantic_vectors.py).
+    semantic_vector_cache_write: bool = True
+
     # Cosine-similarity floor for accepting a semantic intent match.
     semantic_intent_threshold: float = 0.45
 

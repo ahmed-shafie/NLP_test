@@ -206,6 +206,26 @@ python -m scripts.build_example_corpus --csv path/to/banking_nlu_vector_db_v08_f
 > demonstration only. Confirm terms with SinaLab before any commercial use.
 > `research/vector_db_v08/README.md` documents the cleaning and the measurements.
 
+### Precomputed example vectors
+
+Embedding those 31,893 examples takes ~170s of CPU and happens in every process
+that builds the index — each worker, each test session, each active-learning
+rebuild. The vectors are written once to `app/nlu/data/semantic_vectors.npy`
+(49 MB, git-ignored) and read back on later builds, which takes milliseconds.
+The cache is keyed by the example texts, the model name and its dimension, so a
+corpus edit or an encoder swap re-encodes instead of serving stale vectors, and
+an unreadable file degrades to encoding. Build it ahead of time (e.g. as a
+Docker build step, after the embedding model is baked in):
+
+```bash
+python -m scripts.build_semantic_vectors
+```
+
+`NLU_SEMANTIC_VECTOR_CACHE_ENABLED=false` disables it;
+`NLU_SEMANTIC_VECTOR_CACHE_WRITE=false` reads a baked file without writing
+(read-only filesystems). An active-learning rebuild now only encodes the rows
+that were approved, not the whole corpus.
+
 ### Answering a refused question in its own context
 
 Every corpus row carries the *subject* it was collected under ("charged twice",

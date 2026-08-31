@@ -34,5 +34,9 @@ stanza_resources/
 .idea/
 .DS_Store
 
+# Embedded example corpus (regenerated: python -m scripts.build_semantic_vectors)
+app/nlu/data/semantic_vectors.npy
+app/nlu/data/semantic_vectors.npy.json
+
 # Research cache: retrieved neighbours of the held-out slice (regenerated)
 research/vector_db_v08/topic_evidence.jsonl
