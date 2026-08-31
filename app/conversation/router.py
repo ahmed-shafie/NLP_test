@@ -29,6 +29,8 @@ def _to_response(result: ConversationResult) -> ConversationResponse:
         pending_slot=state.pending_slot,
         complete=state.status is ConversationStatus.COMPLETED,
         slots=state.slots,
+        slot_provenance=state.slot_provenance,
+        reason_code=result.reason,
         transfer=result.transfer,
         bill=result.bill,
         flagged_terms=result.flagged_terms,
