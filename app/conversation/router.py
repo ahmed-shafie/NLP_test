@@ -6,6 +6,7 @@ import time
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.active_learning.service import record_turn_outcome
 from app.config import settings
 from app.conversation import templates
 from app.conversation.engine import ConversationResult, get_engine
@@ -74,9 +75,14 @@ def conversation_text(request: ConversationRequest) -> ConversationResponse:
         request.language,
         request.user_id,
     )
+    reason_code = result.reason.value if result.reason else None
+    # Before the row for this turn is written: re-scoring asks what the *previous*
+    # turn was waiting on, and this turn's own row would answer that question with
+    # itself.
+    record_turn_outcome(result.state, reason_code)
     record_turn(
         result.state,
-        reason_code=result.reason.value if result.reason else None,
+        reason_code=reason_code,
         latency_ms=round((time.perf_counter() - started) * 1000, 2),
     )
     return _to_response(result)

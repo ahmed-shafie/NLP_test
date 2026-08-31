@@ -126,6 +126,31 @@ def record_turn(
         logger.warning("Failed to record conversation turn: %s", exc)
 
 
+def previous_pending_slot(state: ConversationState) -> str | None:
+    """The slot the session's last recorded turn was waiting on, if any.
+
+    Read (not written) by review prioritisation: a slot still pending after the
+    customer answered means their answer was not understood. Returns ``None``
+    when the store is off or the session has no earlier turn — an absent signal,
+    which the caller must not read as "did not happen".
+    """
+
+    if not settings.turn_observability_enabled:
+        return None
+    try:
+        with get_sessionmaker()() as session:
+            row = session.execute(
+                select(ConversationTurnRow)
+                .where(ConversationTurnRow.session_ref == _digest(state.session_id))
+                .order_by(ConversationTurnRow.id.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            return row.pending_slot if row is not None else None
+    except Exception as exc:  # noqa: BLE001 - a read for a dashboard, never fatal
+        logger.warning("Failed to read the previous pending slot: %s", exc)
+        return None
+
+
 def _to_record(row: ConversationTurnRow) -> TurnRecord:
     try:
         slots = json.loads(row.slots_masked or "{}")
