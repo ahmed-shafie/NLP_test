@@ -40,6 +40,7 @@ from app.nlu.semantic_intents import get_semantic_classifier
 from app.observability.router import router as observability_router
 from app.observability.store import get_engine as get_turn_store_engine
 from app.orchestration import get_nlu_pipeline
+from app.release.router import router as release_router
 from app.request_context import RequestContextMiddleware
 from app.schemas import (
     NLUResponse,
@@ -280,3 +281,4 @@ app.include_router(active_learning_router)
 app.include_router(active_learning_router, prefix="/v1")
 # Operational, not public: served once, behind the operations key.
 app.include_router(observability_router)
+app.include_router(release_router)

@@ -1,0 +1,36 @@
+{"text": "apply a loan", "language": "en", "reason": "unsupported product request, not a payment"}
+{"text": "قدم على قرض", "language": "ar", "reason": "unsupported product request, not a payment"}
+{"text": "اطلب بطاقة ايتمانية", "language": "ar", "reason": "card request, not a payment"}
+{"text": "افتح محفظة استثمارية", "language": "ar", "reason": "investment request, not a payment"}
+{"text": "activate a beneficiary", "language": "en", "reason": "beneficiary admin, not a payment"}
+{"text": "activate beneficiary", "language": "en", "reason": "beneficiary admin, not a payment"}
+{"text": "do i have a car", "language": "en", "reason": "off-topic question, mentions no money"}
+{"text": "what year is it", "language": "en", "reason": "off-topic question, mentions no money"}
+{"text": "where are you?", "language": "en", "reason": "off-topic question, mentions no money"}
+{"text": "who built you", "language": "en", "reason": "question about the assistant"}
+{"text": "how many languages you can talk", "language": "en", "reason": "question about the assistant"}
+{"text": "do you work at anb", "language": "en", "reason": "question about the assistant"}
+{"text": "is the data shared with others", "language": "en", "reason": "privacy question, not a payment"}
+{"text": "كم درجة الحرارة", "language": "ar", "reason": "off-topic question, mentions no money"}
+{"text": "كم تاريخ اليوم", "language": "ar", "reason": "off-topic question, mentions no money"}
+{"text": "سعر الذهب", "language": "ar", "reason": "market question, not a payment"}
+{"text": "ايفون ولا اندرويد", "language": "ar", "reason": "off-topic chatter"}
+{"text": "كم سرعتك بالرد", "language": "ar", "reason": "question about the assistant"}
+{"text": "وش اللغات اللي تتكلم", "language": "ar", "reason": "question about the assistant"}
+{"text": "هل بياناتي محفوظة عندكم", "language": "ar", "reason": "privacy question, not a payment"}
+{"text": "متى مستحق سداد البطاقة", "language": "ar", "reason": "asks a card due date, does not ask to pay it"}
+{"text": "كم رصيد بطاقتي", "language": "ar", "reason": "asks a card balance, does not ask to pay it"}
+{"text": "how do i open an account", "language": "en", "reason": "account opening, not a payment"}
+{"text": "ابغى افتح حساب جديد", "language": "ar", "reason": "account opening, not a payment"}
+{"text": "i want to complain about a charge", "language": "en", "reason": "complaint, not an instruction to pay"}
+{"text": "ابغى اشتكي على رسوم", "language": "ar", "reason": "complaint, not an instruction to pay"}
+{"text": "what is the fee for an international transfer", "language": "en", "reason": "asks about a fee, does not instruct a transfer"}
+{"text": "كم رسوم التحويل الدولي", "language": "ar", "reason": "asks about a fee, does not instruct a transfer"}
+{"text": "هل تم دفع فاتوره", "language": "ar", "reason": "asks whether a bill was paid, does not ask to pay one"}
+{"text": "كم دفعت انا بالفاتوره؟", "language": "ar", "reason": "asks a past amount, does not ask to pay"}
+{"text": "can i cancel a transfer after sending", "language": "en", "reason": "asks about cancelling, does not instruct a transfer"}
+{"text": "هل اقدر الغي التحويل بعد ارساله", "language": "ar", "reason": "asks about cancelling, does not instruct a transfer"}
+{"text": "يىكرىكيءرىيمئنرىيمنءى", "language": "ar", "reason": "gibberish must not open a flow"}
+{"text": "ايتيمتلللنمءىة", "language": "ar", "reason": "gibberish must not open a flow"}
+{"text": "انت ماتفهم", "language": "ar", "reason": "frustration, not an instruction"}
+{"text": "thanks that is all", "language": "en", "reason": "closing pleasantry, not an instruction"}

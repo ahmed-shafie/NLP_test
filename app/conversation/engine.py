@@ -521,6 +521,100 @@ def _is_currency_conversion(text: str) -> bool:
     )
 
 
+# Openers that make the turn a question rather than an instruction. Only the
+# *first* token is checked: "can I cancel a transfer" asks, "transfer 500 to
+# Sara, can you" instructs. Interrogative words elsewhere in the sentence are
+# handled by ``_QUESTION_WORDS`` above.
+_INTERROGATIVE_OPENERS = {
+    normalize(w)
+    for w in (
+        "what",
+        "which",
+        "who",
+        "whose",
+        "whom",
+        "can",
+        "could",
+        "do",
+        "does",
+        "did",
+        "is",
+        "are",
+        "will",
+        "would",
+        "should",
+        "كم",
+        "وش",
+        "مين",
+        "منو",
+        "أي",
+        "اي",
+    )
+}
+
+
+def _asks_a_question(text: str) -> bool:
+    """Question form: a question mark, a question word, or an opening interrogative."""
+
+    if "?" in text or "؟" in text:
+        return True
+    if {normalize(t) for t in _tokens(text)} & _QUESTION_WORDS:
+        return True
+    words = text.split()
+    if not words:
+        return False
+    return normalize(words[0].strip(".,!؟،").lower()) in _INTERROGATIVE_OPENERS
+
+
+def _carries_money_object(text: str, lang: Language) -> bool:
+    """True when the turn names something a money flow could act on.
+
+    An amount, a person to pay, a biller or a reference. "Transfer 500 to Sara"
+    carries one; "what is the fee for an international transfer" does not — it
+    names the *subject* transfers, not a transfer to make.
+    """
+
+    if entities.extract_amount(text) is not None:
+        return True
+    if entities.extract_recipient(text, lang) is not None:
+        return True
+    bills = entities.extract_bill_entities(text, lang)
+    return bills.biller is not None or bills.reference_number is not None
+
+
+def _pays_something(text: str, bills: entities.BillEntities) -> bool:
+    """Deterministic evidence that a *bill payment* is what the turn asks for.
+
+    The classifier answers with a topic, and "ابغى اشتكي على رسوم" (I want to
+    complain about a fee) is topically about paying. Left alone it opens a
+    payment flow for a complaint. A pay verb, a reference or an amount is the
+    least evidence a bill flow may open on; the bill *word* and a biller with a
+    pay verb are checked by the caller. A resolved biller alone is deliberately
+    not enough here — the biller extractor matches "رسوم" too.
+    """
+
+    return (
+        _has_verb(text, _PAY_VERBS)
+        or bills.reference_number is not None
+        or entities.extract_amount(text) is not None
+    )
+
+
+def _is_about_money_rather_than_moving_it(text: str, lang: Language) -> bool:
+    """Veto: a question that names no object of its own may not open a flow.
+
+    The classifier is trained on topic, so "how much is the international
+    transfer fee" and "can I cancel a transfer after sending" land on
+    ``transfer_money`` — the subject really is transfers. Opening the flow there
+    asks the customer for an amount they never mentioned. This is the fresh-turn
+    half of the turn-role veto: form (a question) plus evidence (no amount, no
+    person, no biller, no reference) sends the turn to the answering path
+    instead, and it can only ever *withhold* a money flow.
+    """
+
+    return _asks_a_question(text) and not _carries_money_object(text, lang)
+
+
 def decide_action(
     text: str,
     lang: Language,
@@ -543,9 +637,11 @@ def decide_action(
 
     if _is_currency_conversion(text):
         return None
+    if _is_about_money_rather_than_moving_it(text, lang):
+        return None
     bills = entities.extract_bill_entities(text, lang)
     if (
-        parsed_intent is Intent.PAY_BILL
+        (parsed_intent is Intent.PAY_BILL and _pays_something(text, bills))
         or entities.has_bill_word(text)
         or (bills.biller is not None and _has_verb(text, _PAY_VERBS))
     ):

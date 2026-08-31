@@ -285,9 +285,14 @@ class Settings(BaseSettings):
     # Life of a turn row, applied by POST /ops/observability/retention/purge.
     turn_retention_days: int = 90
 
-    # Key required by the /ops/observability/* endpoints (``x-ops-key``). Unset
-    # means the endpoints answer 503: they are never served unauthenticated.
+    # Key required by the /ops/observability/* and /ops/release endpoints
+    # (``x-ops-key``). Unset means they answer 503: never served unauthenticated.
     ops_api_key: str | None = None
+
+    # ---- Measured releases ----
+    # Where release manifests, the live pointer and the promote/rollback log are
+    # kept. One directory per version; nothing in it is ever rewritten.
+    release_dir: str = "var/releases"
 
     # ---- Content moderation (abusive / ribald input) ----
     # Detect profanity/abuse and reply with a calm, professional redirect instead
