@@ -39,6 +39,16 @@ class ReviewCase(BaseModel):
     reviewer: str | None = None
     reviewed_at: datetime | None = None
     source: str = Field(description="Where the case originated, e.g. 'nlu.parse'.")
+    priority: float = Field(
+        default=0.0,
+        description=(
+            "Review urgency, 0.0 (routine) to 1.0 (review first). The queue is "
+            "ordered by it; see app.active_learning.priority."
+        ),
+    )
+    trace_id: str | None = Field(
+        default=None, description="The turn that produced this case."
+    )
 
     @property
     def effective_intent(self) -> Intent:

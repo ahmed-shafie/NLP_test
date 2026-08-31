@@ -21,7 +21,11 @@ from sqlalchemy import (
     Text,
     create_engine,
     func,
+    inspect,
     select,
+)
+from sqlalchemy import (
+    text as sql_text,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -70,6 +74,14 @@ class ReviewCaseRow(Base):
     reviewer: Mapped[str | None] = mapped_column(String(128), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     source: Mapped[str] = mapped_column(String(32), default="nlu.parse")
+    # Review urgency (see :mod:`app.active_learning.priority`). Indexed because
+    # the queue is ordered by it on every read.
+    priority: Mapped[float] = mapped_column(
+        Float, default=0.0, index=True, nullable=False
+    )
+    # Correlates the case with the turn that produced it, so the conversation
+    # outcome (a failed dialogue, a re-asked slot) can re-score it afterwards.
+    trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 @lru_cache(maxsize=1)
@@ -80,7 +92,33 @@ def get_engine() -> Engine:
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
     engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
     return engine
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    """Add columns this version needs to a table an older version created.
+
+    ``create_all`` only creates missing *tables*, so a queue written before
+    priority scoring existed would make every read fail on an unknown column.
+    Each statement is additive and defaulted, so it is safe on a populated store;
+    a failure is logged rather than raised, because the review queue must not be
+    able to stop the service from starting.
+    """
+
+    table = ReviewCaseRow.__tablename__
+    existing = {column["name"] for column in inspect(engine).get_columns(table)}
+    additions = {"priority": "FLOAT NOT NULL DEFAULT 0", "trace_id": "VARCHAR(64)"}
+    for name, ddl in additions.items():
+        if name in existing:
+            continue
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    sql_text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+                )
+        except Exception:  # noqa: BLE001 - startup must not hinge on this
+            logger.warning("Could not add column %s to %s", name, table, exc_info=True)
 
 
 @lru_cache(maxsize=1)
@@ -106,6 +144,8 @@ def _to_case(row: ReviewCaseRow) -> ReviewCase:
         reviewer=row.reviewer,
         reviewed_at=row.reviewed_at,
         source=row.source,
+        priority=row.priority,
+        trace_id=row.trace_id,
     )
 
 
@@ -129,6 +169,8 @@ class ActiveLearningStore:
         clarification: str | None,
         status: CaseStatus,
         source: str,
+        priority: float = 0.0,
+        trace_id: str | None = None,
     ) -> ReviewCase:
         """Insert a new case and return it."""
 
@@ -143,6 +185,8 @@ class ActiveLearningStore:
                 clarification=clarification,
                 status=status.value,
                 source=source,
+                priority=priority,
+                trace_id=trace_id,
             )
             session.add(row)
             session.commit()
@@ -169,14 +213,46 @@ class ActiveLearningStore:
             session.commit()
             return _to_case(row)
 
+    def raise_priority(self, trace_id: str, priority: float) -> int:
+        """Raise the priority of the case(s) logged under ``trace_id``.
+
+        Only ever raises. The turn outcome adds signals to what parsing already
+        knew, so it must not be able to bury a case that scored high on its own.
+        Returns how many rows moved.
+        """
+
+        moved = 0
+        with self._sessionmaker() as session:
+            rows = (
+                session.execute(
+                    select(ReviewCaseRow).where(ReviewCaseRow.trace_id == trace_id)
+                )
+                .scalars()
+                .all()
+            )
+            for row in rows:
+                if priority > row.priority:
+                    row.priority = priority
+                    moved += 1
+            if moved:
+                session.commit()
+        return moved
+
     # ------------------------------- reads -------------------------------- #
 
     def list_cases(
         self, status: CaseStatus | None = None, limit: int = 100
     ) -> list[ReviewCase]:
-        """Return cases (newest first), optionally filtered by status."""
+        """Return cases worst-first: highest priority, newest breaking ties.
 
-        stmt = select(ReviewCaseRow).order_by(ReviewCaseRow.created_at.desc())
+        Chronological order put a misread greeting ahead of a transfer the layer
+        could not understand. Reviewer attention is the scarce resource, so the
+        riskiest case is read first.
+        """
+
+        stmt = select(ReviewCaseRow).order_by(
+            ReviewCaseRow.priority.desc(), ReviewCaseRow.created_at.desc()
+        )
         if status is not None:
             stmt = stmt.where(ReviewCaseRow.status == status.value)
         stmt = stmt.limit(limit)
