@@ -267,6 +267,28 @@ class Settings(BaseSettings):
     # Expose Prometheus metrics at GET /metrics.
     metrics_enabled: bool = True
 
+    # ---- Conversation-turn observability (durable per-turn decision record) ----
+    # Persist one row per customer turn: the flow, the pending slot, the
+    # ``ReasonCode`` the engine attached, and which slots are filled and from
+    # where. Never the customer's words, the amount, the account or the payee.
+    turn_observability_enabled: bool = True
+
+    # SQLAlchemy URL for that store. Empty -> reuse ``admin_store_url``; a real
+    # deployment points this at a retained database of its own.
+    turn_store_url: str = ""
+
+    # Salt for the session/customer digests written to the store. Change it and
+    # older rows can no longer be correlated with new ones — which is the point:
+    # the digest is a correlation key, not a stable customer identifier.
+    turn_store_salt: str = "nlu-turn-observability"
+
+    # Life of a turn row, applied by POST /ops/observability/retention/purge.
+    turn_retention_days: int = 90
+
+    # Key required by the /ops/observability/* endpoints (``x-ops-key``). Unset
+    # means the endpoints answer 503: they are never served unauthenticated.
+    ops_api_key: str | None = None
+
     # ---- Content moderation (abusive / ribald input) ----
     # Detect profanity/abuse and reply with a calm, professional redirect instead
     # of processing the turn (and never let abusive text leak into a slot).

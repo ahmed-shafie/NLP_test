@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.config import settings
@@ -13,6 +15,7 @@ from app.conversation.schemas import (
     OpeningResponse,
 )
 from app.conversation.state import ConversationStatus
+from app.observability.turns import record_turn
 from app.schemas import Language
 
 router = APIRouter(tags=["conversation"])
@@ -64,10 +67,16 @@ def conversation_text(request: ConversationRequest) -> ConversationResponse:
     """Advance a multi-turn transfer dialogue with a single text message."""
 
     _require_conversation()
+    started = time.perf_counter()
     result = get_engine().handle(
         request.text,
         request.session_id,
         request.language,
         request.user_id,
+    )
+    record_turn(
+        result.state,
+        reason_code=result.reason.value if result.reason else None,
+        latency_ms=round((time.perf_counter() - started) * 1000, 2),
     )
     return _to_response(result)
