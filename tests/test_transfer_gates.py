@@ -17,6 +17,7 @@ from app import banking_core_client
 from app.banking_core_client import AccountInfo
 from app.conversation.engine import ConversationEngine
 from app.conversation.state import ConversationStatus
+from app.nlu import entities
 from app.schemas import Language
 
 CURRENT = AccountInfo(
@@ -213,3 +214,24 @@ def test_no_account_list_asks_neither_gate(
     state = engine._store.load("gates-no-core")
     assert state is not None
     assert state.status is ConversationStatus.CONFIRMING
+
+
+@pytest.mark.parametrize(
+    ("text", "recipient"),
+    [
+        ("حوّل ٤٣٢ لعمر إيجار", "عمر"),
+        ("حوّل ٤٣٢ لعمر ايجار", "عمر"),
+        ("حوّل ٥٠٠ لسارة تعليم", "سارة"),
+        ("حوّل ٥٠٠ لعبدالله راتب", "عبدالله"),
+    ],
+)
+def test_a_purpose_word_is_not_part_of_the_payees_name(
+    text: str, recipient: str
+) -> None:
+    # "حوّل ٤٣٢ لعمر إيجار" used to name a payee "عمر أجار" — the speller turned
+    # the purpose noun into a given name — and offered to save that person.
+    assert entities.extract_recipient(text, Language.AR) == recipient
+
+
+def test_a_purpose_word_alone_is_not_a_payee() -> None:
+    assert entities.extract_recipient("حوّل ٤٣٢ لإيجار", Language.AR) is None

@@ -121,6 +121,28 @@ _AR_NOT_A_NAME = frozenset(
         "ماعرف",
     }
 )
+# Transfer-purpose nouns. Typed inside the request ("حوّل ٤٣٢ لعمر إيجار") the
+# purpose used to be glued onto the payee, and the speller then turned "إيجار"
+# into the given name "أجار" — so the customer was offered to save a beneficiary
+# named after their own purpose word. The purpose is asked from its list instead.
+_AR_PURPOSE_WORDS = frozenset(
+    {
+        "شخصي",
+        "عائلي",
+        "عائلة",
+        "راتب",
+        "إيجار",
+        "ايجار",
+        "تعليم",
+        "دراسة",
+        "طبي",
+        "علاج",
+        "شراء",
+        "دفع",
+        "استثمار",
+        "قرض",
+    }
+)
 _AR_PREFIXES = ("لل", "ال", "بال", "و")
 
 # --- lowercase English names -------------------------------------------------
@@ -607,6 +629,17 @@ def _is_ar_person_name(candidate: str) -> bool:
     )
 
 
+def _strip_trailing_purpose(candidate: str) -> str:
+    """Drop a purpose noun trailing the name, never the name itself."""
+
+    words = [w for w in re.split(r"\s+", candidate) if w]
+    while len(words) > 1 and (
+        words[-1] in _AR_PURPOSE_WORDS or _ar_word_stem(words[-1]) in _AR_PURPOSE_WORDS
+    ):
+        words.pop()
+    return " ".join(words)
+
+
 def extract_recipient(text: str, language: Language) -> str | None:
     """Return the beneficiary name via language-specific surface patterns.
 
@@ -625,8 +658,10 @@ def extract_recipient(text: str, language: Language) -> str | None:
     candidate = match.group(1).strip(" ,،.")
     if not candidate:
         return None
-    if language is Language.AR and not _is_ar_person_name(candidate):
-        return None
+    if language is Language.AR:
+        candidate = _strip_trailing_purpose(candidate)
+        if not _is_ar_person_name(candidate) or candidate in _AR_PURPOSE_WORDS:
+            return None
     return canonicalize_recipient(candidate)
 
 
