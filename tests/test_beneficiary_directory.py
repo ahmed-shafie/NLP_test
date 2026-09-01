@@ -77,6 +77,28 @@ def _seed_directory(db_path: Path) -> str:
                 0,
             ),
             (
+                "B4",
+                "demo",
+                "Layla Omar",
+                "ليلى عمر",
+                "SA1122330000006464",
+                "Al Rajhi",
+                "SAR",
+                "active",
+                0,
+            ),
+            (
+                "B5",
+                "demo",
+                "Omar Saleh",
+                "عمر صالح",
+                "SA1122330000005554",
+                "SNB",
+                "SAR",
+                "active",
+                0,
+            ),
+            (
                 "B6",
                 "demo",
                 "Mona Ali",
@@ -193,6 +215,17 @@ def test_shared_first_name_triggers_disambiguation(engine, directory_db, fake_co
     assert result.state.disambiguation_kind == "beneficiary"
     assert len(result.state.beneficiary_options) == 3
     assert "which one" in result.reply.lower()
+
+
+def test_the_question_quotes_the_name_the_customer_typed(
+    engine, directory_db, fake_core
+):
+    """A surname match must not put a stranger's first name in the question."""
+
+    result = engine.handle("حول 500 ريال لعمر", "b-dis-omar")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert "عمر" in result.reply
+    assert 'باسم "ليلى"' not in result.reply
 
 
 def test_disambiguation_by_number(engine, directory_db, fake_core):
@@ -496,7 +529,7 @@ def test_fx_note_without_blocking(engine, directory_db, monkeypatch):
 def test_list_all_returns_favorites_first(directory_db):
     d = directory.get_beneficiary_directory()
     hits = d.list_all("demo")
-    assert hits is not None and len(hits) == 4
+    assert hits is not None and len(hits) == 6
     # Ahmed Hassan is the only favorite (is_favorite=1) -> sorted first.
     assert hits[0].name == "Ahmed Hassan"
 
