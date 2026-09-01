@@ -73,6 +73,20 @@ class BeneficiaryOption(BaseModel):
     name_ar: str | None = None
 
 
+class AccountOption(BaseModel):
+    """One debit account offered as a transfer source.
+
+    Every field is the Banking Core's, held for the turns the chooser spans so
+    the number the customer saw resolves to the same account they picked.
+    """
+
+    account_id: str
+    account_type: str
+    masked: str
+    balance: str
+    currency: str
+
+
 class ConversationSlots(BaseModel):
     """Slots gathered across turns (covers both transfers and bill payments)."""
 
@@ -85,6 +99,7 @@ class ConversationSlots(BaseModel):
     biller_category: str | None = None
     biller_code: str | None = None
     reference_number: str | None = None
+    transfer_purpose: str | None = None
     note: str | None = None
 
     def first_missing_required(
@@ -127,6 +142,11 @@ class ConversationState(BaseModel):
     # they did, so the write is traceable to their explicit override.
     pending_unchecked_account: str | None = None
     account_checksum_overridden: bool = False
+    # The debit accounts offered as transfer sources, and whether the customer
+    # has picked one. Recipient resolution is not authorization: with several
+    # accounts the source is chosen explicitly, never inherited silently.
+    account_options: list[AccountOption] = Field(default_factory=list)
+    source_account_selected: bool = False
     # Advisory pre-flight notes (FX) shown at confirmation; these never block.
     preflight_warnings: list[str] = Field(default_factory=list)
     # Pre-flight refusals from the Banking Core (insufficient funds, inactive
@@ -185,3 +205,5 @@ class ConversationState(BaseModel):
         self.preflight_warnings = []
         self.preflight_blocking = []
         self.offered_amount = None
+        self.account_options = []
+        self.source_account_selected = False

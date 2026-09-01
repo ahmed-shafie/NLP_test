@@ -12,6 +12,8 @@ from banking_core.config import settings
 from banking_core.db import init_db
 from banking_core.schemas import (
     AccountOut,
+    AccountsOut,
+    AccountsRequest,
     AddBeneficiaryRequest,
     AddBeneficiaryResult,
     BalanceRequest,
@@ -59,6 +61,13 @@ def accounts_balance(
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found.")
     return account
+
+
+@app.post("/accounts/list", response_model=AccountsOut)
+def accounts_list(
+    req: AccountsRequest, _: None = Depends(require_api_key)
+) -> AccountsOut:
+    return service.list_accounts(req.owner_user)
 
 
 @app.post("/preflight/transfer", response_model=PreflightResult)

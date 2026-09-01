@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from banking_core.db import Account, Beneficiary, session_scope
 from banking_core.schemas import (
     AccountOut,
+    AccountsOut,
     AddBeneficiaryRequest,
     AddBeneficiaryResult,
     BeneficiaryOut,
@@ -73,6 +74,26 @@ def get_balance(
     with session_scope() as session:
         row = _resolve_account(session, owner_user, account, account_type)
         return _to_account_out(row) if row is not None else None
+
+
+def list_accounts(owner_user: str) -> AccountsOut:
+    """List the customer's active accounts, the current account first.
+
+    The order is what the customer sees numbered in the chooser, so it is fixed
+    here rather than left to the database: a saved "1" must mean the same
+    account on the next turn.
+    """
+
+    with session_scope() as session:
+        rows = session.scalars(
+            select(Account)
+            .where(Account.owner_user == owner_user, Account.status == "active")
+            .order_by(Account.account_id)
+        ).all()
+        ordered = [r for r in rows if r.account_type == "current"] + [
+            r for r in rows if r.account_type != "current"
+        ]
+        return AccountsOut(accounts=[_to_account_out(r) for r in ordered])
 
 
 def _funds_and_fx(

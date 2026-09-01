@@ -62,6 +62,10 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         "biller_not_found",
         "choose_beneficiary",
         "choose_biller",
+        # Prints the Core's balances and the numbered list a pick resolves
+        # against: re-ordering or re-wording a row would move the money.
+        "choose_source_account",
+        "choose_transfer_purpose",
         "completed",
         "confirm_add_beneficiary",
         "confirm_add_then_transfer",

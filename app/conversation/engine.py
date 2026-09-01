@@ -15,6 +15,7 @@ from app.conversation.moderation import ModerationResult
 from app.conversation.reasons import ReasonCode
 from app.conversation.state import (
     BILL_REQUIRED_SLOTS,
+    AccountOption,
     BeneficiaryOption,
     BillerOption,
     ConversationState,
@@ -207,6 +208,27 @@ _ACCOUNT_TYPES: dict[str, str] = {
     "راتب": "salary",
     "الراتب": "salary",
 }
+
+
+# The purposes a transfer can carry, as (key, Arabic label, English label). A
+# fixed list rather than free text: the key travels with the payment
+# instruction, so it can only ever be one the customer picked from the list.
+_PURPOSE_ROWS: tuple[tuple[str, str, str], ...] = (
+    ("personal", "شخصي", "Personal"),
+    ("family", "دعم عائلي", "Family support"),
+    ("salary", "راتب", "Salary"),
+    ("rent", "إيجار", "Rent"),
+    ("education", "تعليم", "Education"),
+    ("medical", "طبي", "Medical"),
+    ("purchase", "شراء / دفع", "Purchase / payment"),
+    ("investment", "استثمار", "Investment"),
+    ("loan", "سداد قرض", "Loan repayment"),
+    ("other", "أخرى", "Other"),
+)
+
+# Prompts whose reply is a pick from a list the assistant just printed, so the
+# turn is read as that choice instead of being re-parsed as a fresh request.
+_GATE_SLOTS = ("source_account", "transfer_purpose")
 
 
 def _account_type(text: str) -> str | None:
@@ -978,6 +1000,14 @@ class ConversationEngine:
             with tracer.block("orchestrator") as span:
                 span.annotate("balance_aside")
                 result = self._answer_balance_aside(state, text, lang)
+        elif (
+            state.intent is Intent.TRANSFER_MONEY and state.pending_slot in _GATE_SLOTS
+        ):
+            # The reply to a printed list is that pick, not a new request: a
+            # bare "1" at the account chooser must never read as an amount.
+            with tracer.block("orchestrator") as span:
+                span.annotate(f"gate:{state.pending_slot}")
+                result = self._answer_transfer_gate(state, text, lang)
         elif state.status is ConversationStatus.CONFIRMING:
             result = self._handle_confirmation(state, text, lang, tracer)
         elif state.status is ConversationStatus.DISAMBIGUATING:
@@ -1737,6 +1767,7 @@ class ConversationEngine:
             currency=slots.currency,
             recipient=slots.recipient,
             source_account=slots.source_account,
+            purpose=slots.transfer_purpose,
             note=slots.note,
         )
         if not result.valid or result.transfer is None:
@@ -2141,9 +2172,12 @@ class ConversationEngine:
                 state,
                 templates.beneficiary_add_completed(name, _mask_account(account), lang),
             )
-        # Mid-transfer: the single "yes" covered both, so send it straight through.
+        # Mid-transfer: the single "yes" covered both, so send it straight
+        # through — unless a gate is still owed (which account, what for), since
+        # saving a payee authorizes nothing on its own.
         state.intent = Intent.TRANSFER_MONEY
-        result = self._complete(state, lang, tracer)
+        gate = self._transfer_gate(state, lang)
+        result = gate if gate is not None else self._complete(state, lang, tracer)
         result.reply = f"{templates.beneficiary_added(name, lang)} {result.reply}"
         return result
 
@@ -2316,11 +2350,195 @@ class ConversationEngine:
         rows = self._option_rows(hits, lang)
         return self._finish(state, templates.list_beneficiaries(rows, lang))
 
+    # ----------------------- transfer safety gates ------------------------ #
+
+    def _transfer_gate(
+        self, state: ConversationState, lang: Language
+    ) -> ConversationResult | None:
+        """Ask for the source account and the purpose before any confirmation.
+
+        Resolving the recipient is not authorization: when several debit
+        accounts exist the customer says which one the money leaves, and then
+        what the transfer is for. Returns the prompt still owed, or ``None``
+        when both are settled and confirmation may be shown.
+
+        Both gates hang off the Banking Core's account list. With no list there
+        is no debit account to choose between and no instruction to label — the
+        Core's pre-flight is then the only thing standing between the customer
+        and the debit, exactly as before.
+        """
+
+        if state.intent is not Intent.TRANSFER_MONEY or state.pending_add_account:
+            return None
+        options = self._account_options(state)
+        if not options:
+            return None
+        if not state.source_account_selected:
+            prompt = self._ensure_source_account(state, options, lang)
+            if prompt is not None:
+                return prompt
+        if not state.slots.transfer_purpose:
+            return self._transfer_purpose_prompt(state, lang)
+        return None
+
+    def _ensure_source_account(
+        self,
+        state: ConversationState,
+        options: list[AccountOption],
+        lang: Language,
+    ) -> ConversationResult | None:
+        """Settle the debit account, asking the customer when there's a choice."""
+
+        # An account the customer named themselves ("من الجاري") counts as their
+        # pick; one carried over from a remembered habit does not.
+        provenance = state.slot_provenance.get("source_account")
+        typed = provenance == SlotSource.USER_TEXT.value
+        named = (
+            self._match_account_option(options, state.slots.source_account or "")
+            if typed
+            else None
+        )
+        chosen = named or (options[0] if len(options) == 1 else None)
+        if chosen is None:
+            return self._source_account_prompt(state, options, lang)
+        self._lock_source_account(state, chosen)
+        return None
+
+    def _account_options(self, state: ConversationState) -> list[AccountOption]:
+        """The customer's debit accounts, as the Banking Core reports them."""
+
+        if state.account_options:
+            return state.account_options
+        state.account_options = [
+            AccountOption(
+                account_id=account.account_id,
+                account_type=account.account_type,
+                masked=_mask_account(account.number),
+                balance=f"{account.balance:.2f}",
+                currency=account.currency,
+            )
+            for account in banking_core_client.list_accounts(self._owner(state))
+        ]
+        return state.account_options
+
+    def _source_account_prompt(
+        self,
+        state: ConversationState,
+        options: list[AccountOption],
+        lang: Language,
+        reason: ReasonCode | None = None,
+    ) -> ConversationResult:
+        state.pending_slot = "source_account"
+        state.status = ConversationStatus.COLLECTING
+        rows = [
+            (option.account_type, option.masked, option.balance, option.currency)
+            for option in options
+        ]
+        return self._finish(
+            state, templates.choose_source_account(rows, lang), reason=reason
+        )
+
+    def _lock_source_account(
+        self, state: ConversationState, option: AccountOption
+    ) -> None:
+        """Fix the debit account to the Core's own identifier for this account."""
+
+        with state.slots_from(SlotSource.BANKING_CORE) as slots:
+            slots.source_account = option.account_id
+        state.source_account_selected = True
+
+    def _match_account_option(
+        self, options: list[AccountOption], text: str
+    ) -> AccountOption | None:
+        """Read an account answer: the displayed number, a type word, last 4 digits."""
+
+        answer = normalize(text).strip()
+        if not answer:
+            return None
+        digits = "".join(ch for ch in normalize_digits(answer) if ch.isdigit())
+        if digits == normalize_digits(answer).strip():
+            index = int(digits)
+            if 1 <= index <= len(options):
+                return options[index - 1]
+            tail = [o for o in options if o.masked.endswith(digits)]
+            if len(tail) == 1:
+                return tail[0]
+            return None
+        wanted = _ACCOUNT_TYPES.get(answer) or _account_type(answer)
+        if wanted is None:
+            return None
+        hits = [o for o in options if o.account_type == wanted]
+        return hits[0] if len(hits) == 1 else None
+
+    def _transfer_purpose_prompt(
+        self,
+        state: ConversationState,
+        lang: Language,
+        reason: ReasonCode | None = None,
+    ) -> ConversationResult:
+        state.pending_slot = "transfer_purpose"
+        state.status = ConversationStatus.COLLECTING
+        labels = [ar if lang is Language.AR else en for _, ar, en in _PURPOSE_ROWS]
+        return self._finish(
+            state,
+            templates.choose_transfer_purpose(
+                labels, lang, (state.slots.recipient or "").strip()
+            ),
+            reason=reason,
+        )
+
+    @staticmethod
+    def _match_purpose(text: str) -> str | None:
+        """Read a purpose answer: a displayed number or a displayed label.
+
+        Selection only — a purpose is never inferred from the transfer sentence,
+        so what the instruction reports is what the customer chose.
+        """
+
+        answer = normalize(text).strip()
+        digits = "".join(ch for ch in normalize_digits(answer) if ch.isdigit())
+        if digits and digits == normalize_digits(answer).strip():
+            index = int(digits)
+            if 1 <= index <= len(_PURPOSE_ROWS):
+                return _PURPOSE_ROWS[index - 1][0]
+            return None
+        for key, ar, en in _PURPOSE_ROWS:
+            if answer in {normalize(ar), normalize(en)}:
+                return key
+        return None
+
+    def _answer_transfer_gate(
+        self, state: ConversationState, text: str, lang: Language
+    ) -> ConversationResult:
+        """Read the pick at a source-account or purpose prompt, or re-ask it."""
+
+        if state.pending_slot == "source_account":
+            options = self._account_options(state)
+            chosen = self._match_account_option(options, text)
+            if chosen is None:
+                return self._source_account_prompt(
+                    state, options, lang, reason=ReasonCode.CHOICE_NOT_RECOGNISED
+                )
+            self._lock_source_account(state, chosen)
+        else:
+            purpose = self._match_purpose(text)
+            if purpose is None:
+                return self._transfer_purpose_prompt(
+                    state, lang, reason=ReasonCode.CHOICE_NOT_RECOGNISED
+                )
+            with state.slots_from(SlotSource.USER_TEXT) as slots:
+                slots.transfer_purpose = purpose
+        state.pending_slot = None
+        return self._enter_confirmation(state, lang)
+
     def _enter_confirmation(
         self, state: ConversationState, lang: Language
     ) -> ConversationResult:
-        """Run pre-flight (advisory), then move to CONFIRMING with the review text."""
+        """Run the transfer gates, then pre-flight, then move to CONFIRMING."""
 
+        gate = self._transfer_gate(state, lang)
+        if gate is not None:
+            return gate
         state.pending_slot = None
         state.status = ConversationStatus.CONFIRMING
         self._run_preflight(state)

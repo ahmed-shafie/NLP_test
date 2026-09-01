@@ -834,6 +834,53 @@ _RESUME_NOTE: dict[Language, tuple[str, ...]] = {
 }
 
 
+def _account_label(account_type: str, language: Language) -> str:
+    if language is Language.AR:
+        return f"حساب {_ACCOUNT_TYPE_AR.get(account_type, account_type)}"
+    return f"{account_type.capitalize()} Account"
+
+
+def choose_source_account(
+    accounts: list[tuple[str, str, str, str]], language: Language
+) -> str:
+    """Ask which account the money leaves from.
+
+    ``accounts`` is a list of ``(account_type, masked_number, balance,
+    currency)`` tuples, every value straight from the Banking Core: the
+    assistant numbers them and prints nothing of its own.
+    """
+
+    lines = [
+        f"{i}. {_account_label(account_type, language)} {masked} — {balance} {currency}"
+        for i, (account_type, masked, balance, currency) in enumerate(accounts, start=1)
+    ]
+    listing = "\n".join(lines)
+    if language is Language.AR:
+        return f"من أي حساب تبي تحوّل؟\n{listing}"
+    return f"Which account should the money come from?\n{listing}"
+
+
+def choose_transfer_purpose(
+    purposes: list[str], language: Language, recipient: str = ""
+) -> str:
+    """Ask what the transfer is for, as a pick from the numbered list."""
+
+    listing = "\n".join(f"{i}. {label}" for i, label in enumerate(purposes, start=1))
+    if language is Language.AR:
+        title = (
+            f"وش غرض التحويل لـ {recipient}؟ اختر من القائمة:"
+            if recipient
+            else "وش غرض التحويل؟ اختر من القائمة:"
+        )
+        return f"{title}\n{listing}"
+    title = (
+        f"What's this transfer to {recipient} for? Pick from the list:"
+        if recipient
+        else "What's this transfer for? Pick from the list:"
+    )
+    return f"{title}\n{listing}"
+
+
 def balance_unavailable(language: Language) -> str:
     return phrasing.varied("balance_unavailable", _BALANCE_UNAVAILABLE, language)
 

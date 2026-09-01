@@ -184,6 +184,9 @@ class TransferRequest(BaseModel):
         ..., min_length=1, description="Beneficiary name or contact."
     )
     source_account: str | None = None
+    # The purpose the customer picked from the list, as its stable key
+    # ("family", "rent"); banks report it with the payment instruction.
+    purpose: str | None = None
     note: str | None = None
 
     @field_validator("currency")

@@ -62,6 +62,7 @@ def validate_transfer(
     currency: str | None,
     recipient: str | None,
     source_account: str | None = None,
+    purpose: str | None = None,
     note: str | None = None,
 ) -> ValidationResult:
     """Validate gathered slots into a :class:`TransferRequest`.
@@ -87,6 +88,7 @@ def validate_transfer(
             currency=currency,  # type: ignore[arg-type]
             recipient=recipient,  # type: ignore[arg-type]
             source_account=source_account,
+            purpose=purpose,
             note=note,
         )
     except ValidationError as exc:
