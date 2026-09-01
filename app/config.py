@@ -110,6 +110,16 @@ class Settings(BaseSettings):
     # goes 19.1% -> 28.9% answered at 0.3% -> 0.8% wrong, and the English test
     # split 39.4% -> 50.3% at 1.0% -> 0.9%. Dropping the probability to 0.99
     # reaches 37.7% in Arabic but at 2.3% wrong, so it stays here.
+    #
+    # Re-swept for Arabic alone in ``research/vector_db_v08/topic_head_arabic.py``,
+    # because one probability for both languages was fixed by the English slice.
+    # Neither of the other two levers buys back the error a lower probability
+    # costs: requiring a *share* of the neighbours to back the head (0.3-0.7,
+    # with and without a margin over the runner-up) and raising the similarity
+    # floor (to 0.90) both lose coverage at least as fast as they lose error. No
+    # candidate reaches more than 28.9% of the Saudi split at 0.78% wrong or
+    # less, so this point stays: Arabic coverage here is encoder-bound, not
+    # threshold-bound.
     topic_head_threshold: float = 0.999
     topic_head_score_floor: float = 0.80
 
