@@ -805,12 +805,16 @@ def _is_name_like(candidate: str) -> bool:
 
     The recipient prompt takes the whole message as the answer, so this is the
     only thing standing between "100" (or "no") and a slot that names a payee.
+    Pure chit-chat is rejected for the same reason: "صباح الخير" is a greeting,
+    and confirming a transfer to it would name a person who does not exist.
     """
 
     stripped = candidate.strip(" .,،؟?")
     if not stripped or _ACCOUNT_SHAPED.match(stripped):
         return False
     if not re.search(r"[^\W\d_]", stripped, re.UNICODE):
+        return False
+    if templates.is_small_talk(stripped):
         return False
     words = normalize(stripped).split()
     return bool(words) and not set(words) & _NOT_A_NAME
