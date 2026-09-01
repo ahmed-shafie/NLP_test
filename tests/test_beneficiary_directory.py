@@ -414,6 +414,35 @@ def test_insufficient_funds_blocks_and_offers_the_balance(
     assert result.state.offered_amount == Decimal("5000.00")
 
 
+def test_a_refusal_that_is_not_about_funds_does_not_reopen_the_amount(
+    engine, directory_db, monkeypatch
+):
+    """An account-level refusal is not the customer typing the wrong figure."""
+
+    monkeypatch.setattr(
+        bcc,
+        "preflight_transfer",
+        lambda **k: bcc.PreflightResult(ok=False, blocking=["account_not_found"]),
+    )
+    result = engine.handle("send 900 SAR to Mona", "b-funds-3")
+    assert result.state.status is ConversationStatus.FAILED
+    assert result.state.pending_slot is None
+    assert result.state.offered_amount is None
+
+
+def test_a_refusal_does_not_survive_into_the_next_pre_flight(
+    engine, directory_db, monkeypatch
+):
+    """Each confirmation is judged by that attempt's Core answer, not the last."""
+
+    _short_of_funds(monkeypatch)
+    engine.handle("send 9000 SAR to Mona", "b-funds-5")
+    monkeypatch.setattr(bcc, "preflight_transfer", lambda **k: None)
+    result = engine.handle("500", "b-funds-5")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.preflight_blocking == []
+
+
 def test_accepting_the_offer_confirms_that_amount_not_the_original(
     engine, directory_db, monkeypatch
 ):

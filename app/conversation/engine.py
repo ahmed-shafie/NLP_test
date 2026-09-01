@@ -2327,6 +2327,7 @@ class ConversationEngine:
         """Call the Banking Core pre-flight API; store advisory warnings on state."""
 
         state.preflight_warnings = []
+        state.preflight_blocking = []
         slots = state.slots
         if slots.amount is None or not slots.currency:
             return
@@ -2367,23 +2368,29 @@ class ConversationEngine:
         Short of funds, the spendable balance is offered instead of the amount
         asked for — the customer never sees a confirmation screen for money the
         account cannot pay. Both figures are the Core's, printed verbatim.
+
+        Only a shortfall reopens the amount: any other refusal is about the
+        account, not the figure, so the turn fails instead of asking for an
+        amount that would be refused again.
         """
 
         blocking = state.preflight_blocking
         if not blocking:
             return None
-        state.status = ConversationStatus.COLLECTING
-        state.pending_slot = "amount"
         shortfall = next(
             (b for b in blocking if b.startswith("insufficient_funds")), None
         )
         if shortfall is None:
             state.offered_amount = None
+            state.pending_slot = None
+            state.status = ConversationStatus.FAILED
             return self._finish(
                 state,
                 templates.preflight_blocked(lang),
                 reason=ReasonCode.PREFLIGHT_BLOCKED,
             )
+        state.status = ConversationStatus.COLLECTING
+        state.pending_slot = "amount"
         available = _available_amount(shortfall)
         if available is None:
             state.offered_amount = None
