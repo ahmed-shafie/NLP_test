@@ -265,6 +265,16 @@ def test_a_fee_question_is_declined_rather_than_answered() -> None:
     )
 
     assert result.reply == templates.out_of_scope(Language.EN)
+    assert "customer service" in result.reply.lower()
+
+
+@pytest.mark.parametrize("language", list(Language))
+def test_every_decline_points_at_customer_service(language: Language) -> None:
+    """We hold no answer, so the customer must be told who does."""
+
+    wanted = "خدمة العملاء" if language is Language.AR else "customer service"
+    for _ in range(10):
+        assert wanted in templates.out_of_scope(language).lower()
 
 
 @pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")

@@ -118,23 +118,28 @@ _CHOOSE_ACTION: dict[Language, tuple[str, ...]] = {
 }
 
 # A question about a service the assistant does not carry. It must not invent
-# the answer (fees, policies) — it says so, and names what it can actually do.
+# the answer (fees, policies) — it says so, points the customer at customer
+# service for the information, and names what it can actually do.
 _OUT_OF_SCOPE: dict[Language, tuple[str, ...]] = {
     Language.EN: (
-        "That's not a service I can help with \U0001f642 — I can send money, pay "
-        "bills, check your balance, and manage your beneficiaries.",
-        "I don't handle that one \U0001f642 — what I can do is transfers, bill "
-        "payments, your balance, and your beneficiaries.",
-        "That's outside what I do \U0001f642 — I'm here for transfers, bills, "
-        "balances, and beneficiaries.",
+        "I don't have that information \U0001f642 — customer service can help you "
+        "with it. I can send money, pay bills, check your balance, and manage "
+        "your beneficiaries.",
+        "That one isn't with me \U0001f642 — please ask customer service about it. "
+        "What I can do is transfers, bill payments, your balance, and your "
+        "beneficiaries.",
+        "I can't answer that one \U0001f642 — customer service is the place for it. "
+        "I'm here for transfers, bills, balances, and beneficiaries.",
     ),
     Language.AR: (
-        "الخدمة دي مو عندي \U0001f642 — أقدر أساعدك في التحويل، سداد "
-        "الفواتير، الرصيد، والمستفيدين.",
-        "هالطلب مو من خدماتي \U0001f642 — اللي أقدر عليه: تحويل فلوس، "
-        "سداد فواتير، الرصيد، والمستفيدين.",
-        "ما عندي الخدمة دي \U0001f642 — أنا هنا للتحويل، الفواتير، الرصيد، "
+        "المعلومة دي مو عندي \U0001f642 — كلّم خدمة العملاء يفيدونك فيها، "
+        "وأنا أقدر أساعدك في التحويل، سداد الفواتير، الرصيد، "
         "والمستفيدين.",
+        "هالموضوع مو من خدماتي \U0001f642 — تراجع خدمة العملاء للاستفسار، "
+        "واللي أقدر عليه: تحويل فلوس، سداد فواتير، الرصيد، "
+        "والمستفيدين.",
+        "ما عندي إجابة لهالسؤال \U0001f642 — خدمة العملاء هم الأقدر عليه، "
+        "وأنا هنا للتحويل، الفواتير، الرصيد، والمستفيدين.",
     ),
 }
 
