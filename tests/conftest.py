@@ -29,6 +29,16 @@ def _disable_live_llm(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_startup_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep startup warm-up off: the suite loads what it needs, when it needs it.
+
+    Tests that exercise warm-up enable it explicitly.
+    """
+
+    monkeypatch.setattr(settings, "preload_models", False)
+
+
+@pytest.fixture(autouse=True)
 def _deterministic_replies(monkeypatch: pytest.MonkeyPatch) -> None:
     """Render one fixed phrasing per reply unless a test opts into variation."""
 

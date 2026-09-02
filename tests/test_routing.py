@@ -67,6 +67,7 @@ def test_chit_chat_gets_a_chit_chat_reply(text: str) -> None:
         ("can you help me", "I can send money"),
         ("من أنت", "أقدر أحوّل فلوس"),
         ("وش تقدر تسوي", "أقدر أحوّل فلوس"),
+        ("انت بتعمل ايه", "أقدر أحوّل فلوس"),
     ],
 )
 def test_capability_questions_list_what_the_assistant_does(

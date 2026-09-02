@@ -20,6 +20,7 @@ from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 
 from app.config import settings
+from app.observability import signals
 from app.schemas import TransferEntities
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,20 @@ _REPHRASE_SYSTEM_PROMPT = (
     "never add a number, an account or a promise that is not there; at most two "
     "short sentences; ask at most one question; no financial advice; plain text "
     "only, no preamble and no quotes around the reply."
+)
+
+
+_DECLINE_SYSTEM_PROMPT = (
+    "You are a bilingual (English/Arabic) Saudi banking assistant. The customer "
+    "asked for something you do NOT handle. Write ONE short reply in the SAME "
+    "language and colloquial register as the customer, in three beats: (1) a brief "
+    "human line acknowledging their situation — e.g. for an accident or illness "
+    'wish them well ("يارب ما تشوف شر"); (2) say plainly that you do not have '
+    "this information and customer service can help them with it; (3) name what you "
+    "DO handle: transfers, bill payments, balance, beneficiaries. Rules: never state "
+    "a fee, rate, policy, phone number, date or ANY number or code — not even an "
+    "approximate one; never promise to do it or to pass the request on; no financial "
+    "advice; at most three short sentences; plain text only, no preamble, no quotes."
 )
 
 
@@ -140,8 +155,10 @@ class LLMExceptionHandler:
             data = _parse_json_object(content)
         except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
             logger.warning("LLM exception handler failed: %s", exc)
+            signals.record_call(signals.LLM, ok=False)
             return None
 
+        signals.record_call(signals.LLM, ok=True)
         intent = data.get("intent")
         currency = data.get("currency")
         recipient = data.get("recipient")
@@ -195,9 +212,45 @@ class LLMExceptionHandler:
             content = response["choices"][0]["message"]["content"] or ""
         except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
             logger.warning("LLM beneficiary delegation failed: %s", exc)
+            signals.record_call(signals.LLM, ok=False)
             return None
+        signals.record_call(signals.LLM, ok=True)
         content = content.strip()
         return content or None
+
+    def decline(self, text: str, language: str, timeout: float) -> str | None:
+        """Word a decline for a request the assistant does not handle.
+
+        Unlike :meth:`rephrase` this writes the reply from the customer's own turn,
+        so it can open with a line that fits what they said. It carries no money
+        fact by construction, and the caller's guard drops any candidate that
+        states a number, a code or the wrong script.
+        """
+
+        import litellm
+
+        try:
+            response = litellm.completion(
+                model=self.model,
+                api_base=self.api_base,
+                timeout=timeout,
+                temperature=0.7,
+                max_tokens=160,
+                messages=[
+                    {"role": "system", "content": _DECLINE_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"language={language}\ncustomer={text}",
+                    },
+                ],
+            )
+            content = response["choices"][0]["message"]["content"] or ""
+        except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
+            logger.warning("LLM decline failed: %s", exc)
+            signals.record_call(signals.LLM, ok=False)
+            return None
+        signals.record_call(signals.LLM, ok=True)
+        return content.strip() or None
 
     def rephrase(self, text: str, language: str, timeout: float) -> str | None:
         """Re-word an already-written reply, keeping its meaning and every value.
@@ -227,7 +280,11 @@ class LLMExceptionHandler:
             content = response["choices"][0]["message"]["content"] or ""
         except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
             logger.warning("LLM rephrase failed: %s", exc)
+            signals.record_call(signals.LLM, ok=False)
             return None
+        # A rewrite the guard later rejects is a normal outcome and not counted
+        # here: this records whether the model answered at all.
+        signals.record_call(signals.LLM, ok=True)
         return content.strip() or None
 
 

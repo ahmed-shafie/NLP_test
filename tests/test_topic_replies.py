@@ -224,14 +224,108 @@ def test_a_topical_answer_never_starts_a_money_flow() -> None:
 
 
 @pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
-def test_switching_the_feature_off_restores_the_generic_prompt(
+def test_switching_the_feature_off_declines_instead_of_answering(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "topic_replies_enabled", False)
     result = ConversationEngine().handle(
         text="ليش انخصم مني مرتين؟", session_id="topic-3", user_id="demo"
     )
-    assert result.reply == templates.choose_action(Language.AR)
+    # Still not an executable request, and still not answered: with no topical
+    # answer the honest reply says so rather than offering the menu.
+    assert result.reply == templates.out_of_scope(Language.AR)
+
+
+# ------------------------------------------- a question we have no answer for
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+@pytest.mark.parametrize(
+    "question",
+    ["ممكن تفتحلي حساب استثمار؟", "can you open a brokerage account for me?"],
+)
+def test_a_service_we_do_not_carry_is_declined_not_menued(question: str) -> None:
+    """The menu answers nothing; naming what we do is the answer."""
+
+    language = Language.EN if question.isascii() else Language.AR
+    result = ConversationEngine().handle(
+        text=question, session_id=f"oos-{hash(question)}", user_id="demo"
+    )
+
+    assert result.state.intent is None
+    assert result.reply == templates.out_of_scope(language)
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+def test_a_fee_question_is_declined_rather_than_answered() -> None:
+    """We hold no fee schedule, so no figure may be stated."""
+
+    result = ConversationEngine().handle(
+        text="what are the transfer fees?", session_id="oos-fees", user_id="demo"
+    )
+
+    assert result.reply == templates.out_of_scope(Language.EN)
+    assert "customer service" in result.reply.lower()
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+@pytest.mark.parametrize("request_text", ["قدم ع قرض", "I want a mortgage"])
+def test_a_request_for_a_product_we_do_not_carry_is_declined(request_text: str) -> None:
+    """A request, not only a question: the menu offers something else entirely."""
+
+    language = Language.EN if request_text.isascii() else Language.AR
+    result = ConversationEngine().handle(
+        text=request_text, session_id=f"oos-req-{hash(request_text)}", user_id="demo"
+    )
+
+    assert result.state.intent is None
+    assert result.reply == templates.out_of_scope(language)
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+def test_settling_an_instalment_is_not_declined() -> None:
+    """Paying towards a loan is a payment we can take; only applying is not."""
+
+    result = ConversationEngine().handle(
+        text="ابغى اسدد قرض", session_id="oos-settle", user_id="demo"
+    )
+
+    assert result.reply != templates.out_of_scope(Language.AR)
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+@pytest.mark.parametrize("text", ["كم", "مين", "how much", "ايه"])
+def test_a_half_typed_question_is_clarified_not_declined(text: str) -> None:
+    """A lone interrogative asks about nothing, so there is nothing to decline."""
+
+    language = Language.EN if text.isascii() else Language.AR
+    result = ConversationEngine().handle(
+        text=text, session_id=f"bare-{hash(text)}", user_id="demo"
+    )
+
+    assert result.state.intent is None
+    assert result.reply != templates.out_of_scope(language)
+
+
+@pytest.mark.parametrize("language", list(Language))
+def test_every_decline_points_at_customer_service(language: Language) -> None:
+    """We hold no answer, so the customer must be told who does."""
+
+    wanted = "خدمة العملاء" if language is Language.AR else "customer service"
+    for _ in range(10):
+        assert wanted in templates.out_of_scope(language).lower()
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+def test_asking_how_to_transfer_is_explained_by_example() -> None:
+    """This service we do carry, so declining it would be wrong."""
+
+    result = ConversationEngine().handle(
+        text="كيف نحول فلوس؟", session_id="oos-how", user_id="demo"
+    )
+
+    assert result.state.intent is None  # explaining is not starting
+    assert result.reply == templates.how_to_transact(Language.AR)
 
 
 # ------------------------------------------------- the gate an English question meets

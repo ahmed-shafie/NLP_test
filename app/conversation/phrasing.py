@@ -62,11 +62,19 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         "biller_not_found",
         "choose_beneficiary",
         "choose_biller",
+        # Prints the Core's balances and the numbered list a pick resolves
+        # against: re-ordering or re-wording a row would move the money.
+        "choose_source_account",
+        "choose_transfer_purpose",
         "completed",
+        # Names a person the customer did not type, so it must read exactly.
+        "confirm_beneficiary_match",
         "confirm_add_beneficiary",
         "confirm_add_then_transfer",
         "confirm_prompt",
         "list_beneficiaries",
+        # Reads the payees back by name before any of them is paid.
+        "one_payee_at_a_time",
         "warnings_note",
         # Carries the balance and the amount refused: both are Banking Core
         # figures and must reach the customer unchanged.
@@ -100,9 +108,11 @@ CONVERSATIONAL_REPLIES: frozenset[str] = frozenset(
         "choose_action",
         "fallback",
         "greeting",
+        "how_to_transact",
         "inappropriate",
         "no_beneficiaries",
         "opening",
+        "out_of_scope",
         "resume_note",
         "slot_prompt",
         "small_talk",
@@ -177,6 +187,35 @@ def guard(template: str, candidate: str, language: Language) -> str | None:
     return text
 
 
+# A decline must keep pointing the customer at the people who can answer.
+_SERVICE_DESK: dict[Language, str] = {
+    Language.EN: "customer service",
+    Language.AR: "خدمة العملاء",
+}
+
+
+def guard_decline(candidate: str, language: Language) -> str | None:
+    """Return ``candidate`` when it is a safe decline, else ``None``.
+
+    Stricter than :func:`guard`, because this text is written from the customer's
+    turn rather than from a template: a decline carries no figure at all, so any
+    digit or code in it is an invented fee, rate or phone number.
+    """
+
+    text = candidate.strip()
+    if not text or len(text) > 320:
+        return None
+    if "{" in text or "}" in text:
+        return None
+    if _DIGIT_RUN.search(text) or _CODE.search(text):
+        return None  # a fee, a rate or a phone number we do not hold
+    if (language is Language.AR) is not bool(_ARABIC.search(text)):
+        return None
+    if _SERVICE_DESK[language] not in text:
+        return None  # dropped the one thing the customer can act on
+    return text
+
+
 # ------------------------------------------------------------------- rewrite
 
 # Rewrites are cached: conversational replies repeat constantly, and a cache hit
@@ -213,6 +252,32 @@ def rewrite(key: str, text: str, language: Language) -> str:
     if len(_CACHE) >= _CACHE_MAX:
         _CACHE.clear()
     _CACHE[(key, text, language)] = safe
+    return safe
+
+
+def declined(key: str, turn: str, template: str, language: Language) -> str:
+    """Word a decline from the customer's own turn, falling back to ``template``.
+
+    The model may open on what the customer said ("يارب ما تشوف شر") before saying
+    the information is not ours; :func:`guard_decline` drops anything that states
+    a figure or forgets customer service.
+    """
+
+    if tier_of(key) is Tier.CRITICAL:
+        raise ValueError(f"{key!r} is money-critical and must never be rewritten")
+    if not settings.reply_rewrite_enabled:
+        return template
+
+    from app.llm import get_llm_handler
+
+    handler = get_llm_handler()
+    if handler is None:
+        return template
+    candidate = handler.decline(turn, language.value, settings.reply_rewrite_timeout)
+    safe = guard_decline(candidate, language) if candidate else None
+    if safe is None:
+        logger.info("decline rewrite rejected for %s", key)
+        return template
     return safe
 
 

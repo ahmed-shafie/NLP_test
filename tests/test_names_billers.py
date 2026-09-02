@@ -143,6 +143,27 @@ def test_numeric_token_resolves_to_sadad_code():
     assert resolve_biller_by_code("999") is None  # not a real code
 
 
+def test_a_misspelt_utility_word_still_reaches_the_utility():
+    """ "قهرباء"/"كرباء" is "كهرباء": one slipped letter must not lose the bill."""
+
+    for typo in ("قهرباء", "كرباء", "ادفع فتوره قهرباء", "electricty"):
+        codes = [
+            rec.biller_code
+            for rec in resolve_biller_candidates(typo, allow_semantic=True)
+        ]
+        assert codes == ["002", "004"], typo
+
+
+def test_a_misspelt_generic_word_keeps_asking_which_biller():
+    cands = resolve_biller_candidates("قهرباء", allow_semantic=True)
+    assert len(cands) > 1
+
+
+def test_a_bill_verb_alone_resolves_nothing():
+    assert resolve_biller_candidates("ادفع", allow_semantic=True) == []
+    assert resolve_biller_candidates("فاتورة", allow_semantic=True) == []
+
+
 def test_fuzzy_typo_matches_biller_name():
     assert resolve_biller_fuzzy("egar").name_en == "Ejar"  # single-letter typo
     assert resolve_biller_fuzzy("mobiley").name_en == "Mobily"

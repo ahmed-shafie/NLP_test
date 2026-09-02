@@ -22,7 +22,7 @@ from app.llm import LLMResult, get_llm_handler
 from app.nlu import arabic, english
 from app.nlu import entities as entities_mod
 from app.nlu.contacts import get_default_matcher
-from app.nlu.intents import classify_intent
+from app.nlu.intents import WRITE_INTENTS, classify_intent, has_money_cue
 from app.nlu.lang import detect_language
 from app.nlu.normalize import normalize_digits
 from app.nlu.semantic_intents import get_semantic_classifier
@@ -83,6 +83,11 @@ class IntentClassifier:
             if classifier is not None:
                 intent, confidence = classifier.classify(text)
                 source = "semantic"
+                if intent in WRITE_INTENTS and not has_money_cue(text):
+                    # Neighbours alone are not enough to open a money flow: the
+                    # turn has to say so itself (an action word or an amount).
+                    span.annotate(f"no_money_cue:{intent.value}")
+                    intent = Intent.FALLBACK
             else:
                 intent, confidence = classify_intent(text, lang)
                 if confidence < settings.intent_threshold:

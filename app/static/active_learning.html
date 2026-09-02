@@ -24,6 +24,10 @@
     .badge.auto_approved { background: rgba(37,99,235,.12); color: var(--brand); border: 1px solid rgba(37,99,235,.35); }
     .badge.approved { background: rgba(5,150,105,.12); color: var(--good); border: 1px solid rgba(5,150,105,.35); }
     .badge.rejected { background: rgba(225,29,72,.12); color: var(--danger); border: 1px solid rgba(225,29,72,.35); }
+    .item .badges { display: flex; gap: 6px; align-items: center; }
+    .badge.risk-high { background: rgba(225,29,72,.12); color: var(--danger); border: 1px solid rgba(225,29,72,.35); }
+    .badge.risk-medium { background: rgba(217,119,6,.12); color: var(--warn); border: 1px solid rgba(217,119,6,.35); }
+    .badge.risk-low { background: rgba(100,116,139,.12); color: var(--muted); border: 1px solid rgba(100,116,139,.3); }
     .note { color: var(--muted); font-size: 13px; }
   </style>
 </head>
@@ -130,6 +134,10 @@
 
     function caseItem(c) {
       const llm = c.llm_assisted ? '<span class="badge llm">LLM assisted</span>' : "";
+      // The queue is served worst-first, so the badge explains the order.
+      const p = c.priority || 0;
+      const band = p >= 0.75 ? "high" : p >= 0.45 ? "medium" : "low";
+      const risk = `<span class="badge risk-${band}" title="Review priority (1.00 = review first)">risk ${p.toFixed(2)}</span>`;
       const decided = c.status === "approved" || c.status === "rejected" || c.status === "auto_approved";
       const actions = decided
         ? `<span class="note">${c.reviewer ? "by " + esc(c.reviewer) + " · " : ""}${fmtTime(c.reviewed_at)}</span>`
@@ -139,7 +147,7 @@
       return `<div class="item" id="case-${c.id}">
           <div class="top">
             <span class="utt" dir="auto">${esc(c.text)}</span>
-            <span class="badge ${c.status}">${c.status}</span>
+            <span class="badges">${risk}<span class="badge ${c.status}">${c.status}</span></span>
           </div>
           <div class="meta">
             <span>#${c.id}</span>

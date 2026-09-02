@@ -13,6 +13,10 @@ class BalanceRequest(BaseModel):
     account_type: str | None = None
 
 
+class AccountsRequest(BaseModel):
+    owner_user: str = Field(..., min_length=1)
+
+
 class AccountOut(BaseModel):
     account_id: str
     account_type: str
@@ -20,6 +24,10 @@ class AccountOut(BaseModel):
     currency: str
     balance: Decimal
     status: str
+
+
+class AccountsOut(BaseModel):
+    accounts: list[AccountOut] = Field(default_factory=list)
 
 
 class BeneficiaryOut(BaseModel):

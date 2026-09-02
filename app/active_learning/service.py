@@ -12,9 +12,13 @@ from __future__ import annotations
 
 import logging
 
+from app.active_learning.priority import TurnSignals, score
 from app.active_learning.schemas import CaseStatus, ReviewCase
 from app.active_learning.store import get_store
 from app.config import settings
+from app.conversation.state import ConversationState
+from app.observability.turns import previous_pending_slot
+from app.request_context import get_request_id
 from app.schemas import Intent, NLUResponse
 
 logger = logging.getLogger(__name__)
@@ -51,6 +55,15 @@ def record_case(response: NLUResponse, source: str) -> ReviewCase | None:
     status = _classify(response)
     if status is None:
         return None
+    # What is known at parse time: how risky this intent is, and how unsure the
+    # layer was. The dialogue-level signals arrive at the end of the turn.
+    priority = score(
+        TurnSignals(
+            intent=response.intent,
+            confidence=response.confidence,
+            llm_assisted=response.llm_assisted,
+        )
+    )
     try:
         return get_store().log_case(
             text=response.text,
@@ -62,7 +75,56 @@ def record_case(response: NLUResponse, source: str) -> ReviewCase | None:
             clarification=response.clarification,
             status=status,
             source=source,
+            priority=priority,
+            trace_id=get_request_id(),
         )
     except Exception:  # noqa: BLE001 - active learning must never break a request
         logger.warning("Failed to log active-learning case", exc_info=True)
         return None
+
+
+def _repeated_prompt(state: ConversationState) -> bool | None:
+    """Is this turn still waiting on the slot the previous turn already asked for?
+
+    ``None`` when the turn store is off: the previous prompt is then unknown, and
+    unknown is not the same as "no".
+    """
+
+    if not settings.turn_observability_enabled:
+        return None
+    pending = state.pending_slot
+    if pending is None:
+        return False
+    return previous_pending_slot(state) == pending
+
+
+def record_turn_outcome(state: ConversationState, reason_code: str | None) -> None:
+    """Re-score this turn's case now that the dialogue outcome is known.
+
+    Parsing sees one utterance; the queue order needs what happened next — the
+    bank refused the action, the customer walked away mid-flow, the same slot had
+    to be asked twice. Those only exist once the turn has run, so the case logged
+    during parsing is scored again here and only ever moves up.
+
+    Never raises: re-ordering a review queue is not worth failing a payment for.
+    """
+
+    if not settings.active_learning_enabled:
+        return
+    trace_id = get_request_id()
+    if not trace_id:
+        return
+    try:
+        priority = score(
+            TurnSignals(
+                intent=state.intent,
+                # Confidence belongs to the parse; this pass only adds signals.
+                confidence=1.0,
+                reason_code=reason_code,
+                status=state.status,
+                repeated_prompt=_repeated_prompt(state),
+            )
+        )
+        get_store().raise_priority(trace_id, priority)
+    except Exception:  # noqa: BLE001 - active learning must never break a turn
+        logger.warning("Failed to re-score active-learning case", exc_info=True)

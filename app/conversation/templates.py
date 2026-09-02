@@ -117,6 +117,46 @@ _CHOOSE_ACTION: dict[Language, tuple[str, ...]] = {
     ),
 }
 
+# A question about a service the assistant does not carry. It must not invent
+# the answer (fees, policies) — it says so, points the customer at customer
+# service for the information, and names what it can actually do.
+_OUT_OF_SCOPE: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "I don't have that information \U0001f642 — customer service can help you "
+        "with it. I can send money, pay bills, check your balance, and manage "
+        "your beneficiaries.",
+        "That one isn't with me \U0001f642 — please ask customer service about it. "
+        "What I can do is transfers, bill payments, your balance, and your "
+        "beneficiaries.",
+        "I can't answer that one \U0001f642 — customer service is the place for it. "
+        "I'm here for transfers, bills, balances, and beneficiaries.",
+    ),
+    Language.AR: (
+        "المعلومة دي مو عندي \U0001f642 — كلّم خدمة العملاء يفيدونك فيها، "
+        "وأنا أقدر أساعدك في التحويل، سداد الفواتير، الرصيد، "
+        "والمستفيدين.",
+        "هالموضوع مو من خدماتي \U0001f642 — تراجع خدمة العملاء للاستفسار، "
+        "واللي أقدر عليه: تحويل فلوس، سداد فواتير، الرصيد، "
+        "والمستفيدين.",
+        "ما عندي إجابة لهالسؤال \U0001f642 — خدمة العملاء هم الأقدر عليه، "
+        "وأنا هنا للتحويل، الفواتير، الرصيد، والمستفيدين.",
+    ),
+}
+
+# A "how do I …" question about something the assistant *does* carry: explain
+# the flow by example instead of claiming the service is missing.
+_HOW_TO: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "I can do that for you right here \U0001f642 — just tell me the amount "
+        "and who it's for, e.g. \"send 500 to Omar\", and I'll take it from "
+        "there.",
+    ),
+    Language.AR: (
+        "أقدر أسويها لك من هنا \U0001f642 — قل لي المبلغ واسم اللي تحول له، "
+        'مثلاً "حول ٥٠٠ لعمر"، وأنا أكمل معك البقية.',
+    ),
+}
+
 _GREETING: dict[Language, tuple[str, ...]] = {
     Language.EN: (
         "Of course — let's get your transfer sorted.",
@@ -287,6 +327,8 @@ _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
                 "تقدر",
                 "تسوي",
                 "تسويها",
+                "تعمل",
+                "بتعمل",
                 "تساعدني",
                 "تعاوني",
                 "الاشياء",
@@ -335,6 +377,8 @@ _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
                 "هاي",
                 "صباح",
                 "مساء",
+                "حياك",
+                "حياكم",
             }
         ),
     ),
@@ -430,15 +474,20 @@ def _option_lines(options: list[tuple[str, str, str, str]]) -> str:
 
 
 def choose_beneficiary(
-    options: list[tuple[str, str, str, str]], language: Language
+    options: list[tuple[str, str, str, str]],
+    language: Language,
+    asked: str = "",
 ) -> str:
-    """Ask which beneficiary is meant when a first name matches several people.
+    """Ask which beneficiary is meant when a name matches several people.
 
     ``options`` is a list of ``(name, bank, masked_account, currency)`` tuples.
+    ``asked`` is the name the customer typed: quoting a candidate instead would
+    name a person they never mentioned, since a match can be on any part of a
+    saved name.
     """
 
     listing = _option_lines(options)
-    first = options[0][0].split()[0] if options else ""
+    first = asked.strip() or (options[0][0].split()[0] if options else "")
     if language is Language.AR:
         return (
             f'لقيت أكثر من شخص باسم "{first}" 🙂 — أي واحد تقصد؟\n'
@@ -452,22 +501,51 @@ def choose_beneficiary(
     )
 
 
+def confirm_beneficiary_match(
+    options: list[tuple[str, str, str, str]],
+    language: Language,
+    asked: str = "",
+) -> str:
+    """Ask whether the one match — matched deeper in its name — is the person.
+
+    Nobody is saved under the word the customer typed; it turned up inside
+    somebody else's name. Naming that person and waiting is the only safe move:
+    silently confirming a transfer to them would put a name in the confirmation
+    the customer never asked for.
+    """
+
+    listing = _option_lines(options)
+    if language is Language.AR:
+        return (
+            f'ما عندي أحد محفوظ باسم "{asked}" بالضبط — أقرب واحد عندي:\n'
+            f"{listing}\n"
+            "هو المقصود؟ قل لي الرقم (١)، أو اكتب الاسم الصحيح."
+        )
+    return (
+        f'Nobody is saved as "{asked}" exactly — the closest I have is:\n'
+        f"{listing}\n"
+        "Is that who you meant? Reply with the number (1), or type the right name."
+    )
+
+
 _BENEFICIARY_NOT_FOUND: dict[Language, tuple[str, ...]] = {
     Language.EN: (
-        'Hmm, I don\'t have anyone saved as "{name}" yet 🤔 — want me to add '
-        'them? Just send their account/IBAN, or say "no" to skip.',
-        'I can\'t find "{name}" in your beneficiaries 🤔 — shall I add them? '
-        'Send their account/IBAN, or reply "no" to skip.',
-        '"{name}" isn\'t saved with me yet 🤔 — happy to add them: send the '
-        'account/IBAN, or say "no" to leave it.',
+        'Hmm, I don\'t have anyone saved as "{name}" yet 🤔 — send their '
+        "account/IBAN to add them, type another beneficiary name, or say "
+        '"cancel".',
+        'I can\'t find "{name}" in your beneficiaries 🤔 — you can send the '
+        "account/IBAN, give me a different beneficiary name, or cancel this "
+        "transfer.",
+        '"{name}" isn\'t saved yet 🤔 — send the account/IBAN to add them, '
+        'enter another beneficiary, or say "cancel".',
     ),
     Language.AR: (
-        'ما لقيت أحد محفوظ باسم "{name}" 🤔 — تحب أضيفه؟ '
-        'أرسل لي رقم الحساب/الآيبان، أو اكتب "لا" إذا تبي تتركها.',
-        'ما لقيت "{name}" في مستفيدينك 🤔 — أضيفه؟ عطني رقم الحساب/'
-        'الآيبان، أو اكتب "لا" للتجاوز.',
-        '"{name}" ما هو محفوظ لدي للحين 🤔 — تبي أضيفه؟ أرسل رقم الحساب '
-        'أو الآيبان، أو اكتب "لا".',
+        'ما لقيت أحد محفوظ باسم "{name}" 🤔 — إذا تبي تضيفه أرسل رقم الحساب/'
+        'الآيبان، أو اكتب اسم مستفيد ثاني، أو قل "إلغاء".',
+        'ما لقيت "{name}" في مستفيدينك 🤔 — عطني رقم الحساب/الآيبان لإضافته، '
+        'أو اكتب اسم مستفيد ثاني، أو قل "إلغاء".',
+        '"{name}" مو محفوظ عندك للحين 🤔 — أرسل رقم الحساب أو الآيبان لإضافته، '
+        'أو اكتب اسم ثاني، أو قل "إلغاء".',
     ),
 }
 
@@ -827,6 +905,57 @@ _RESUME_NOTE: dict[Language, tuple[str, ...]] = {
 }
 
 
+def _account_label(account_type: str) -> str:
+    """The account's display name, in English in both languages.
+
+    A display name identifies the account on the customer's statements, so it
+    is printed as the bank writes it rather than translated per turn.
+    """
+
+    return f"{account_type.capitalize()} Account"
+
+
+def choose_source_account(
+    accounts: list[tuple[str, str, str, str]], language: Language
+) -> str:
+    """Ask which account the money leaves from.
+
+    ``accounts`` is a list of ``(account_type, masked_number, balance,
+    currency)`` tuples, every value straight from the Banking Core: the
+    assistant numbers them and prints nothing of its own.
+    """
+
+    lines = [
+        f"{i}. {_account_label(account_type)} {masked} — {balance} {currency}"
+        for i, (account_type, masked, balance, currency) in enumerate(accounts, start=1)
+    ]
+    listing = "\n".join(lines)
+    if language is Language.AR:
+        return f"من أي حساب تبي تحول؟\n{listing}"
+    return f"Which account do you want to transfer from?\n{listing}"
+
+
+def choose_transfer_purpose(
+    purposes: list[str], language: Language, recipient: str = ""
+) -> str:
+    """Ask what the transfer is for, as a pick from the numbered list."""
+
+    listing = "\n".join(f"{i}. {label}" for i, label in enumerate(purposes, start=1))
+    if language is Language.AR:
+        title = (
+            f"وش غرض التحويل لـ {recipient}؟ اختر من القائمة:"
+            if recipient
+            else "وش غرض التحويل؟ اختر من القائمة:"
+        )
+        return f"{title}\n{listing}"
+    title = (
+        f"What's the transfer purpose for {recipient}? Choose from the list:"
+        if recipient
+        else "What's the transfer purpose? Choose from the list:"
+    )
+    return f"{title}\n{listing}"
+
+
 def balance_unavailable(language: Language) -> str:
     return phrasing.varied("balance_unavailable", _BALANCE_UNAVAILABLE, language)
 
@@ -895,6 +1024,26 @@ def opening(language: Language) -> str:
 
 def fallback(language: Language) -> str:
     return phrasing.varied("fallback", _FALLBACK, language)
+
+
+def how_to_transact(language: Language) -> str:
+    """Explain how to start a flow the assistant does carry."""
+
+    return phrasing.varied("how_to_transact", _HOW_TO, language)
+
+
+def out_of_scope(language: Language, turn: str | None = None) -> str:
+    """Answer a question about a service the assistant does not carry.
+
+    With the customer's ``turn`` the LLM writes the decline itself, so it can
+    open on what they said before saying the information is not ours; without it
+    (or with the LLM off) the fixed wording is sent.
+    """
+
+    template = phrasing.pick("out_of_scope", _OUT_OF_SCOPE[language])
+    if turn is None:
+        return phrasing.rewrite("out_of_scope", template, language)
+    return phrasing.declined("out_of_scope", turn, template, language)
 
 
 def cancelled(language: Language) -> str:
@@ -1075,33 +1224,48 @@ def small_talk(text: str, language: Language) -> str:
     return phrasing.varied(f"small_talk:{kind}", _SMALL_TALK[kind], language)
 
 
+def one_payee_at_a_time(names: list[str], language: Language) -> str:
+    """Ask which of the payees the sentence listed to send to now.
+
+    Which amount belongs to which name is the customer's to state, so the names
+    are read back exactly as typed and nothing is assumed about the amounts.
+    """
+
+    if language is Language.AR:
+        listing = " ولا ".join(names)
+        return (
+            f"أقدر أنفّذ تحويل واحد في كل مرة. لمين نبدأ — {listing}؟ "
+            "والباقي نسويه بطلب ثاني."
+        )
+    listing = " or ".join(names)
+    return (
+        f"I can make one transfer at a time. Who should this one go to — {listing}? "
+        "We'll do the rest in a separate request."
+    )
+
+
 def confirm_prompt(
     amount: str, currency: str, recipient: str, language: Language
 ) -> str:
     if language is Language.AR:
-        return f"للتأكيد — أحوّل {amount} {currency} إلى {recipient}؟ (نعم/لا)"
+        return f"تأكيد بس — أحوّل {amount} {currency} لـ {recipient}؟ (إيه/لا)"
     return f"Just to confirm — send {amount} {currency} to {recipient}? (yes/no)"
 
 
-_COMPLETED: dict[Language, tuple[str, ...]] = {
+# One wording per language: the executed action is what the customer's history,
+# the logs and the tests all quote, so it is never varied or paraphrased.
+_COMPLETED: dict[Language, str] = {
     Language.EN: (
-        "All set! ✅ Your transfer of {amount} {currency} to {recipient} is ready "
-        "to go.",
-        "Done! ✅ I've prepared your transfer of {amount} {currency} to {recipient}.",
-        "Perfect — {amount} {currency} to {recipient} is ready to go. ✅",
+        "All set! {amount} {currency} was transferred to {recipient} successfully."
     ),
-    Language.AR: (
-        "تمّ ✅ — جهّزت تحويل {amount} {currency} إلى {recipient}.",
-        "تمام! ✅ حوّلت {amount} {currency} إلى {recipient} وكل شي جاهز.",
-        "خلاص، جهّزت {amount} {currency} إلى {recipient} ✅",
-    ),
+    Language.AR: "تم التحويل بنجاح ✅ حوّلت {amount} {currency} إلى {recipient}.",
 }
 
 
 def completed(amount: str, currency: str, recipient: str, language: Language) -> str:
-    variants = _COMPLETED[language]
-    template = variants[_pick_variant(len(variants), None)]
-    return template.format(amount=amount, currency=currency, recipient=recipient)
+    return _COMPLETED[language].format(
+        amount=amount, currency=currency, recipient=recipient
+    )
 
 
 def bill_confirm_prompt(
@@ -1109,8 +1273,8 @@ def bill_confirm_prompt(
 ) -> str:
     if language is Language.AR:
         return (
-            f"للتأكيد — أدفع {amount} {currency} لفاتورة {biller} "
-            f"(مرجع {reference})؟ (نعم/لا)"
+            f"تأكيد بس — أسدّد {amount} {currency} لفاتورة {biller} "
+            f"(مرجع {reference})؟ (إيه/لا)"
         )
     return (
         f"Just to confirm — pay {amount} {currency} to {biller} "
@@ -1123,12 +1287,12 @@ def bill_completed(
 ) -> str:
     if language is Language.AR:
         return (
-            f"تمّ ✅ — جهّزت دفع فاتورة {biller} بمبلغ {amount} {currency} "
+            f"تم سداد فاتورة {biller} بنجاح ✅ بمبلغ {amount} {currency} "
             f"(مرجع {reference})."
         )
     return (
-        f"All set! ✅ Your {biller} bill payment of {amount} {currency} "
-        f"(ref {reference}) is ready to go."
+        f"Bill paid successfully ✅ {amount} {currency} was paid to {biller} "
+        f"(ref {reference})."
     )
 
 

@@ -254,3 +254,60 @@ def test_variation_off_pins_the_first_phrasing() -> None:
         templates.slot_prompt("amount", Language.EN)
         == templates._SLOT_PROMPTS["amount"][Language.EN][0]
     )
+
+
+# ------------------------------------------------------------- the decline
+
+
+def test_a_decline_is_written_from_the_customers_own_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The model may open on what happened before saying it is not ours."""
+
+    monkeypatch.setattr(settings, "reply_rewrite_enabled", True)
+    written = "يارب ما تشوف شر 🙂 — المعلومة دي مو عندي، كلّم خدمة العملاء."
+
+    class Handler:
+        def decline(self, text: str, language: str, timeout: float) -> str:
+            assert "تأمين" in text  # the customer's turn, not a template
+            return written
+
+    monkeypatch.setattr("app.llm.get_llm_handler", lambda: Handler())
+    assert templates.out_of_scope(Language.AR, turn="عملت حادثة وعايز تأمين") == written
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        # A fee, a rate and a phone number are all facts we do not hold.
+        "Transfers are free 🙂 — customer service can confirm; call 8001234567.",
+        "It's 15 SAR 🙂 — customer service can help you with it.",
+        # Forgot the one thing the customer can act on.
+        "I don't have that information 🙂 — I can send money and pay bills.",
+        # Answered in the wrong script.
+        "لا أعرف — كلّم خدمة العملاء.",
+    ],
+)
+def test_an_unsafe_decline_falls_back_to_the_fixed_wording(
+    monkeypatch: pytest.MonkeyPatch, candidate: str
+) -> None:
+    monkeypatch.setattr(settings, "reply_rewrite_enabled", True)
+
+    class Handler:
+        def decline(self, text: str, language: str, timeout: float) -> str:
+            return candidate
+
+    monkeypatch.setattr("app.llm.get_llm_handler", lambda: Handler())
+    assert (
+        templates.out_of_scope(Language.EN, turn="what are the fees?")
+        == (templates._OUT_OF_SCOPE[Language.EN][0])
+    )
+
+
+def test_a_decline_needs_no_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "reply_rewrite_enabled", True)
+    monkeypatch.setattr("app.llm.get_llm_handler", lambda: None)
+    assert (
+        templates.out_of_scope(Language.AR, turn="عايز تأمين")
+        == (templates._OUT_OF_SCOPE[Language.AR][0])
+    )

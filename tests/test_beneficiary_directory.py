@@ -77,6 +77,28 @@ def _seed_directory(db_path: Path) -> str:
                 0,
             ),
             (
+                "B4",
+                "demo",
+                "Layla Omar",
+                "ليلى عمر",
+                "SA1122330000006464",
+                "Al Rajhi",
+                "SAR",
+                "active",
+                0,
+            ),
+            (
+                "B5",
+                "demo",
+                "Omar Saleh",
+                "عمر صالح",
+                "SA1122330000005554",
+                "SNB",
+                "SAR",
+                "active",
+                0,
+            ),
+            (
                 "B6",
                 "demo",
                 "Mona Ali",
@@ -195,6 +217,17 @@ def test_shared_first_name_triggers_disambiguation(engine, directory_db, fake_co
     assert "which one" in result.reply.lower()
 
 
+def test_the_question_quotes_the_name_the_customer_typed(
+    engine, directory_db, fake_core
+):
+    """A surname match must not put a stranger's first name in the question."""
+
+    result = engine.handle("حول 500 ريال لعمر", "b-dis-omar")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert "عمر" in result.reply
+    assert 'باسم "ليلى"' not in result.reply
+
+
 def test_disambiguation_by_number(engine, directory_db, fake_core):
     engine.handle("send 500 SAR to Ahmed", "b-dis-2")
     result = engine.handle("2", "b-dis-2")
@@ -220,6 +253,126 @@ def test_single_match_locks_and_confirms(engine, directory_db, fake_core):
     result = engine.handle("send 500 SAR to Mona", "b-one-1")
     assert result.state.status is ConversationStatus.CONFIRMING
     assert result.state.slots.recipient == "Mona Ali"
+
+
+def test_a_first_person_transfer_request_asks_for_the_amount(
+    engine, directory_db, fake_core
+):
+    """ "ممكن نحول لعمر" is a transfer request, not a question about the account."""
+
+    result = engine.handle("ممكن نحول لعمر", "b-nihawwil")
+    assert result.state.intent is Intent.TRANSFER_MONEY
+    assert result.state.pending_slot == "amount"
+
+
+def test_two_payees_are_asked_about_before_the_directory_resolves_one(
+    engine, directory_db, fake_core
+):
+    """The directory must not settle on one payee while the other is dropped."""
+
+    result = engine.handle("send 500 to Ahmed and 300 to Mona", "b-two-payees")
+    assert result.state.status is ConversationStatus.COLLECTING
+    assert result.state.disambiguation_kind is None
+    assert result.state.slots.recipient is None
+    assert result.state.slots.amount is None
+    assert "Ahmed" in result.reply and "Mona" in result.reply
+
+
+def test_a_family_name_match_is_asked_about_not_bound(engine, directory_db, fake_core):
+    """ "Hassan" matches only "Ahmed Hassan" — a different person to the customer.
+
+    Locking it would put a name in the confirmation the customer never typed.
+    """
+
+    result = engine.handle("send 500 SAR to Hassan", "b-family-1")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.slots.recipient == "Hassan"
+    assert result.state.slots.account_number is None
+    assert "Hassan" in result.reply and "Ahmed Hassan" in result.reply
+    assert "confirm" not in result.reply.lower()
+
+    picked = engine.handle("1", "b-family-1")
+    assert picked.state.status is ConversationStatus.CONFIRMING
+    assert picked.state.slots.recipient == "Ahmed Hassan"
+
+
+def test_a_first_name_match_still_locks(engine, directory_db, fake_core):
+    """A name that is how the person is addressed stands in for them."""
+
+    result = engine.handle("send 500 SAR to Mona", "b-family-2")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.recipient == "Mona Ali"
+
+
+def test_a_corrected_name_at_the_choice_prompt_is_looked_up(
+    engine, directory_db, fake_core
+):
+    """ "لا محمد أحمد" answers with a third person, not with one of the options.
+
+    Reprinting the same list says nothing about the name they just typed.
+    """
+
+    engine.handle("حول 500 لعمر", "b-correct-1")
+    result = engine.handle("لا عمر خالد", "b-correct-1")
+
+    assert result.state.status is ConversationStatus.COLLECTING
+    assert result.state.pending_slot == "beneficiary_account"
+    assert result.state.slots.recipient == "عمر خالد"
+    assert result.state.slots.account_number is None
+    assert "عمر خالد" in result.reply
+
+
+def test_another_name_at_the_not_found_prompt_is_looked_up(
+    engine, directory_db, fake_core
+):
+    """The prompt offers "type another beneficiary name", so a name must work.
+
+    Read as an account number it would come back as a malformed IBAN.
+    """
+
+    engine.handle("حول 500 لعمر", "b-correct-4")
+    engine.handle("لا عمر خالد", "b-correct-4")
+    result = engine.handle("منى", "b-correct-4")
+
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.recipient == "منى علي"
+    assert result.state.slots.amount == Decimal("500")
+    assert result.state.pending_add_name is None
+
+
+def test_a_non_name_at_the_not_found_prompt_is_still_an_account(
+    engine, directory_db, fake_core
+):
+    """Only a recognisable name replaces the recipient; "abcd" is a bad account."""
+
+    engine.handle("حول 500 لعمر", "b-correct-5")
+    engine.handle("لا عمر خالد", "b-correct-5")
+    result = engine.handle("abcd", "b-correct-5")
+
+    assert result.state.pending_add_name == "عمر خالد"
+    assert result.state.pending_slot == "beneficiary_account"
+
+
+def test_a_bare_no_at_the_choice_prompt_keeps_asking(engine, directory_db, fake_core):
+    """On its own the word refuses the options; it names nobody."""
+
+    first = engine.handle("حول 500 لعمر", "b-correct-2")
+    result = engine.handle("لا", "b-correct-2")
+
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.slots.recipient == "عمر"
+    assert result.reply == first.reply
+
+
+def test_the_asked_name_repeated_picks_nobody(engine, directory_db, fake_core):
+    """ "Ahmed" fits all three options, so it cannot select the first one."""
+
+    engine.handle("send 500 SAR to Ahmed", "b-correct-3")
+    result = engine.handle("Ahmed", "b-correct-3")
+
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.slots.recipient == "Ahmed"
+    assert result.state.slots.account_number is None
 
 
 def test_recipient_answer_strips_arabic_verb(engine, directory_db, fake_core):
@@ -414,6 +567,35 @@ def test_insufficient_funds_blocks_and_offers_the_balance(
     assert result.state.offered_amount == Decimal("5000.00")
 
 
+def test_a_refusal_that_is_not_about_funds_does_not_reopen_the_amount(
+    engine, directory_db, monkeypatch
+):
+    """An account-level refusal is not the customer typing the wrong figure."""
+
+    monkeypatch.setattr(
+        bcc,
+        "preflight_transfer",
+        lambda **k: bcc.PreflightResult(ok=False, blocking=["account_not_found"]),
+    )
+    result = engine.handle("send 900 SAR to Mona", "b-funds-3")
+    assert result.state.status is ConversationStatus.FAILED
+    assert result.state.pending_slot is None
+    assert result.state.offered_amount is None
+
+
+def test_a_refusal_does_not_survive_into_the_next_pre_flight(
+    engine, directory_db, monkeypatch
+):
+    """Each confirmation is judged by that attempt's Core answer, not the last."""
+
+    _short_of_funds(monkeypatch)
+    engine.handle("send 9000 SAR to Mona", "b-funds-5")
+    monkeypatch.setattr(bcc, "preflight_transfer", lambda **k: None)
+    result = engine.handle("500", "b-funds-5")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.preflight_blocking == []
+
+
 def test_accepting_the_offer_confirms_that_amount_not_the_original(
     engine, directory_db, monkeypatch
 ):
@@ -467,7 +649,7 @@ def test_fx_note_without_blocking(engine, directory_db, monkeypatch):
 def test_list_all_returns_favorites_first(directory_db):
     d = directory.get_beneficiary_directory()
     hits = d.list_all("demo")
-    assert hits is not None and len(hits) == 4
+    assert hits is not None and len(hits) == 6
     # Ahmed Hassan is the only favorite (is_favorite=1) -> sorted first.
     assert hits[0].name == "Ahmed Hassan"
 
@@ -509,6 +691,15 @@ def test_list_beneficiaries_arabic_misspelled(engine, directory_db):
         "وش المستفيدين اللي عندي",
         "ابغى اشوف المستفيدين",  # colloquial "let me see"
         "شوف المستفيدين",
+        # A count is a read of the same list, not a question we cannot answer.
+        "كم مستفيد",
+        "كم مستفيد عندي",
+        "عدد المستفيدين",
+        "how many beneficiaries",
+        "how many beneficiaries do I have",
+        "كم عدد المستفيدين",
+        "مستفيديني",  # one colloquial word, "my beneficiaries"
+        "list my beneficiary",
     ],
 )
 def test_list_phrasings_all_list(engine, directory_db, phrase):

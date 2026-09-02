@@ -20,8 +20,10 @@ class Settings(BaseSettings):
     # Stanza Arabic pipeline language code.
     stanza_lang: str = "ar"
 
-    # Eagerly load NLP models on startup. When False, models load lazily on first use.
-    preload_models: bool = False
+    # Load the NLP models and build the example index on startup, on a background
+    # thread, and hold /health/ready at not_ready until it finishes. When False,
+    # they load lazily and the first turn of a cold process pays for all of it.
+    preload_models: bool = True
 
     # Minimum confidence for an intent to be considered non-fallback.
     intent_threshold: float = 0.4
@@ -108,6 +110,16 @@ class Settings(BaseSettings):
     # goes 19.1% -> 28.9% answered at 0.3% -> 0.8% wrong, and the English test
     # split 39.4% -> 50.3% at 1.0% -> 0.9%. Dropping the probability to 0.99
     # reaches 37.7% in Arabic but at 2.3% wrong, so it stays here.
+    #
+    # Re-swept for Arabic alone in ``research/vector_db_v08/topic_head_arabic.py``,
+    # because one probability for both languages was fixed by the English slice.
+    # Neither of the other two levers buys back the error a lower probability
+    # costs: requiring a *share* of the neighbours to back the head (0.3-0.7,
+    # with and without a margin over the runner-up) and raising the similarity
+    # floor (to 0.90) both lose coverage at least as fast as they lose error. No
+    # candidate reaches more than 28.9% of the Saudi split at 0.78% wrong or
+    # less, so this point stays: Arabic coverage here is encoder-bound, not
+    # threshold-bound.
     topic_head_threshold: float = 0.999
     topic_head_score_floor: float = 0.80
 
@@ -266,6 +278,28 @@ class Settings(BaseSettings):
 
     # Expose Prometheus metrics at GET /metrics.
     metrics_enabled: bool = True
+
+    # ---- Conversation-turn observability (durable per-turn decision record) ----
+    # Persist one row per customer turn: the flow, the pending slot, the
+    # ``ReasonCode`` the engine attached, and which slots are filled and from
+    # where. Never the customer's words, the amount, the account or the payee.
+    turn_observability_enabled: bool = True
+
+    # SQLAlchemy URL for that store. Empty -> reuse ``admin_store_url``; a real
+    # deployment points this at a retained database of its own.
+    turn_store_url: str = ""
+
+    # Salt for the session/customer digests written to the store. Change it and
+    # older rows can no longer be correlated with new ones — which is the point:
+    # the digest is a correlation key, not a stable customer identifier.
+    turn_store_salt: str = "nlu-turn-observability"
+
+    # Life of a turn row, applied by POST /ops/observability/retention/purge.
+    turn_retention_days: int = 90
+
+    # Key required by the /ops/observability/* endpoints (``x-ops-key``). Unset
+    # means the endpoints answer 503: they are never served unauthenticated.
+    ops_api_key: str | None = None
 
     # ---- Content moderation (abusive / ribald input) ----
     # Detect profanity/abuse and reply with a calm, professional redirect instead

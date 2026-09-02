@@ -15,6 +15,8 @@ from decimal import Decimal
 import httpx
 
 from app.config import settings
+from app.observability import signals
+from app.request_context import outbound_traceparent
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +40,15 @@ class PreflightResult:
 
 
 def _headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
     if settings.banking_core_api_key:
-        return {"x-api-key": settings.banking_core_api_key}
-    return {}
+        headers["x-api-key"] = settings.banking_core_api_key
+    # Continue the caller's trace into the Core so one request is followable
+    # across both services.
+    traceparent = outbound_traceparent()
+    if traceparent:
+        headers["traceparent"] = traceparent
+    return headers
 
 
 def _post(path: str, payload: dict) -> dict | None:
@@ -53,7 +61,11 @@ def _post(path: str, payload: dict) -> dict | None:
         )
     except Exception as exc:  # noqa: BLE001 - service optional; never break a turn
         logger.warning("Banking Core call to %s failed: %s", path, exc)
+        signals.record_call(signals.BANKING_CORE, ok=False)
         return None
+    # A 4xx is the Core answering — an unknown account is an answer, not an
+    # outage — so only a 5xx or an unreachable service counts against health.
+    signals.record_call(signals.BANKING_CORE, ok=resp.status_code < 500)
     if resp.status_code == 404:
         return None
     if resp.status_code >= 400:
@@ -70,7 +82,9 @@ def health() -> bool:
         resp = httpx.get(url, timeout=settings.banking_core_timeout)
     except Exception as exc:  # noqa: BLE001 - report unreachable, never raise
         logger.warning("Banking Core health check failed: %s", exc)
+        signals.record_call(signals.BANKING_CORE, ok=False)
         return False
+    signals.record_call(signals.BANKING_CORE, ok=resp.status_code == 200)
     return resp.status_code == 200
 
 
@@ -95,6 +109,21 @@ def get_balance(
         {"owner_user": owner_user, "account": account, "account_type": account_type},
     )
     return _to_account(data)
+
+
+def list_accounts(owner_user: str) -> list[AccountInfo]:
+    """List the customer's accounts, in the order the Core returns them.
+
+    An empty list means "no accounts to choose from" — either the Core is
+    disabled/unreachable or the customer has none — so the caller must not read
+    it as "the customer has no money".
+    """
+
+    data = _post("/accounts/list", {"owner_user": owner_user})
+    if not data:
+        return []
+    accounts = [_to_account(row) for row in data.get("accounts") or []]
+    return [a for a in accounts if a is not None]
 
 
 def _to_preflight(data: dict | None) -> PreflightResult | None:

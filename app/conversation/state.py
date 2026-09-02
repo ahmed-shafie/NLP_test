@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from enum import Enum
 
@@ -34,6 +36,23 @@ class ConversationStatus(str, Enum):
     FAILED = "failed"
 
 
+class SlotSource(str, Enum):
+    """Where a slot's value came from.
+
+    Recorded per slot so a confirmed transfer can be read back afterwards: an
+    amount is only ever ``USER_TEXT``, ``MEMORY_SHORTCUT`` or ``BANKING_CORE``,
+    and a recipient that reached the Core must say ``DIRECTORY`` — a name still
+    marked ``USER_TEXT`` at confirmation means identity was never resolved.
+    """
+
+    USER_TEXT = "user_text"
+    MEMORY_SHORTCUT = "memory_shortcut"
+    DIRECTORY = "directory"
+    BILLER_CATALOGUE = "biller_catalogue"
+    BANKING_CORE = "banking_core"
+    DEFAULT = "default"
+
+
 class BillerOption(BaseModel):
     """A candidate biller offered when a generic term is ambiguous."""
 
@@ -54,6 +73,20 @@ class BeneficiaryOption(BaseModel):
     name_ar: str | None = None
 
 
+class AccountOption(BaseModel):
+    """One debit account offered as a transfer source.
+
+    Every field is the Banking Core's, held for the turns the chooser spans so
+    the number the customer saw resolves to the same account they picked.
+    """
+
+    account_id: str
+    account_type: str
+    masked: str
+    balance: str
+    currency: str
+
+
 class ConversationSlots(BaseModel):
     """Slots gathered across turns (covers both transfers and bill payments)."""
 
@@ -66,6 +99,7 @@ class ConversationSlots(BaseModel):
     biller_category: str | None = None
     biller_code: str | None = None
     reference_number: str | None = None
+    transfer_purpose: str | None = None
     note: str | None = None
 
     def first_missing_required(
@@ -92,6 +126,9 @@ class ConversationState(BaseModel):
     # Beneficiary disambiguation (transfer): candidates + which flow is disambiguating.
     beneficiary_options: list[BeneficiaryOption] = Field(default_factory=list)
     disambiguation_kind: str | None = None  # "biller" | "beneficiary"
+    # The name the customer actually typed, so "which one?" quotes their word
+    # rather than a name taken from one of the candidates.
+    beneficiary_query: str | None = None
     # Whether the transfer recipient has been resolved to a directory beneficiary.
     beneficiary_resolved: bool = False
     # In-progress "add beneficiary" flow: the name we are collecting an account
@@ -105,6 +142,11 @@ class ConversationState(BaseModel):
     # they did, so the write is traceable to their explicit override.
     pending_unchecked_account: str | None = None
     account_checksum_overridden: bool = False
+    # The debit accounts offered as transfer sources, and whether the customer
+    # has picked one. Recipient resolution is not authorization: with several
+    # accounts the source is chosen explicitly, never inherited silently.
+    account_options: list[AccountOption] = Field(default_factory=list)
+    source_account_selected: bool = False
     # Advisory pre-flight notes (FX) shown at confirmation; these never block.
     preflight_warnings: list[str] = Field(default_factory=list)
     # Pre-flight refusals from the Banking Core (insufficient funds, inactive
@@ -120,6 +162,27 @@ class ConversationState(BaseModel):
     # Last picked index per varied-reply group, so a reply isn't repeated
     # back-to-back. Keyed e.g. "inappropriate:mild:en".
     last_variant: dict[str, int] = Field(default_factory=dict)
+    # Which source filled each slot (slot name -> ``SlotSource`` value), kept in
+    # step with ``slots`` by ``slots_from``.
+    slot_provenance: dict[str, str] = Field(default_factory=dict)
+
+    @contextmanager
+    def slots_from(self, source: SlotSource) -> Iterator[ConversationSlots]:
+        """Attribute every slot the block fills to ``source``.
+
+        Compares the slots before and after, so the caller states the source
+        once instead of at each assignment and cannot forget one.
+        """
+
+        before = self.slots.model_dump()
+        try:
+            yield self.slots
+        finally:
+            for slot, value in self.slots.model_dump().items():
+                if value is None or value == "":
+                    self.slot_provenance.pop(slot, None)
+                elif before.get(slot) != value:
+                    self.slot_provenance[slot] = source.value
 
     def reset(self) -> None:
         """Clear transfer progress to begin a fresh dialogue (keeps language)."""
@@ -127,10 +190,12 @@ class ConversationState(BaseModel):
         self.intent = None
         self.status = ConversationStatus.COLLECTING
         self.slots = ConversationSlots()
+        self.slot_provenance = {}
         self.pending_slot = None
         self.biller_options = []
         self.beneficiary_options = []
         self.disambiguation_kind = None
+        self.beneficiary_query = None
         self.beneficiary_resolved = False
         self.pending_add_name = None
         self.pending_add_account = None
@@ -140,3 +205,5 @@ class ConversationState(BaseModel):
         self.preflight_warnings = []
         self.preflight_blocking = []
         self.offered_amount = None
+        self.account_options = []
+        self.source_account_selected = False
