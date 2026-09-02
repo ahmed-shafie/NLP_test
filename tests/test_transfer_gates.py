@@ -235,3 +235,40 @@ def test_a_purpose_word_is_not_part_of_the_payees_name(
 
 def test_a_purpose_word_alone_is_not_a_payee() -> None:
     assert entities.extract_recipient("حوّل ٤٣٢ لإيجار", Language.AR) is None
+
+
+def test_the_confirmation_is_worded_as_the_shipped_build_words_it(
+    engine: ConversationEngine, one_account: None
+) -> None:
+    engine.handle("حوّل ٤٣٢ لعمر", "gates-wording")
+
+    confirm = engine.handle("1", "gates-wording")
+
+    assert confirm.reply.startswith("تأكيد بس — أحوّل 432 SAR لـ")
+    assert "(إيه/لا)" in confirm.reply
+
+
+def test_the_gulf_yes_the_prompt_offers_is_accepted(
+    engine: ConversationEngine, one_account: None
+) -> None:
+    engine.handle("حوّل ٤٣٢ لعمر", "gates-yes")
+    engine.handle("1", "gates-yes")
+
+    done = engine.handle("إيه", "gates-yes")
+
+    assert "تم التحويل بنجاح" in done.reply
+    assert "432 SAR" in done.reply
+
+
+def test_the_same_word_as_a_question_does_not_confirm(
+    engine: ConversationEngine, one_account: None
+) -> None:
+    engine.handle("حوّل ٤٣٢ لعمر", "gates-huh")
+    confirm = engine.handle("1", "gates-huh")
+
+    again = engine.handle("ايه؟", "gates-huh")
+
+    assert again.reply == confirm.reply
+    state = engine._store.load("gates-huh")
+    assert state is not None
+    assert state.status is ConversationStatus.CONFIRMING

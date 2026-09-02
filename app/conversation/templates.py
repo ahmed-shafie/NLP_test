@@ -1157,29 +1157,24 @@ def confirm_prompt(
     amount: str, currency: str, recipient: str, language: Language
 ) -> str:
     if language is Language.AR:
-        return f"للتأكيد — أحوّل {amount} {currency} إلى {recipient}؟ (نعم/لا)"
+        return f"تأكيد بس — أحوّل {amount} {currency} لـ {recipient}؟ (إيه/لا)"
     return f"Just to confirm — send {amount} {currency} to {recipient}? (yes/no)"
 
 
-_COMPLETED: dict[Language, tuple[str, ...]] = {
+# One wording per language: the executed action is what the customer's history,
+# the logs and the tests all quote, so it is never varied or paraphrased.
+_COMPLETED: dict[Language, str] = {
     Language.EN: (
-        "All set! ✅ Your transfer of {amount} {currency} to {recipient} is ready "
-        "to go.",
-        "Done! ✅ I've prepared your transfer of {amount} {currency} to {recipient}.",
-        "Perfect — {amount} {currency} to {recipient} is ready to go. ✅",
+        "All set! {amount} {currency} was transferred to {recipient} successfully."
     ),
-    Language.AR: (
-        "تمّ ✅ — جهّزت تحويل {amount} {currency} إلى {recipient}.",
-        "تمام! ✅ حوّلت {amount} {currency} إلى {recipient} وكل شي جاهز.",
-        "خلاص، جهّزت {amount} {currency} إلى {recipient} ✅",
-    ),
+    Language.AR: "تم التحويل بنجاح ✅ حوّلت {amount} {currency} إلى {recipient}.",
 }
 
 
 def completed(amount: str, currency: str, recipient: str, language: Language) -> str:
-    variants = _COMPLETED[language]
-    template = variants[_pick_variant(len(variants), None)]
-    return template.format(amount=amount, currency=currency, recipient=recipient)
+    return _COMPLETED[language].format(
+        amount=amount, currency=currency, recipient=recipient
+    )
 
 
 def bill_confirm_prompt(
@@ -1187,8 +1182,8 @@ def bill_confirm_prompt(
 ) -> str:
     if language is Language.AR:
         return (
-            f"للتأكيد — أدفع {amount} {currency} لفاتورة {biller} "
-            f"(مرجع {reference})؟ (نعم/لا)"
+            f"تأكيد بس — أسدّد {amount} {currency} لفاتورة {biller} "
+            f"(مرجع {reference})؟ (إيه/لا)"
         )
     return (
         f"Just to confirm — pay {amount} {currency} to {biller} "
@@ -1201,12 +1196,12 @@ def bill_completed(
 ) -> str:
     if language is Language.AR:
         return (
-            f"تمّ ✅ — جهّزت دفع فاتورة {biller} بمبلغ {amount} {currency} "
+            f"تم سداد فاتورة {biller} بنجاح ✅ بمبلغ {amount} {currency} "
             f"(مرجع {reference})."
         )
     return (
-        f"All set! ✅ Your {biller} bill payment of {amount} {currency} "
-        f"(ref {reference}) is ready to go."
+        f"Bill paid successfully ✅ {amount} {currency} was paid to {biller} "
+        f"(ref {reference})."
     )
 
 

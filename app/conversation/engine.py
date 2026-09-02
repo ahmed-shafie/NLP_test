@@ -72,6 +72,7 @@ _AFFIRM = {
     "صح",
     "اوك",
 }
+_AFFIRM_AT_CONFIRMATION = {"ايه", "إيه", "أيه", "ايوا"}
 _NEGATIVE = {
     "no",
     "n",
@@ -703,6 +704,21 @@ def _matches(text: str, vocabulary: set[str]) -> bool:
     return bool(_tokens(text) & vocabulary)
 
 
+def _confirms(text: str) -> bool:
+    """A yes at the confirmation prompt, which also offers the Gulf "إيه".
+
+    That word is a question ("what?") in other dialects, so it only counts as a
+    yes when it is the whole reply to the prompt that offered it and is not
+    asking anything.
+    """
+
+    if _matches(text, _AFFIRM):
+        return True
+    if "؟" in text or "?" in text:
+        return False
+    return text.strip(" .,!؟،") in _AFFIRM_AT_CONFIRMATION
+
+
 def _insists(text: str) -> bool:
     """True when the customer stands by an IBAN we flagged as mistyped."""
 
@@ -1069,7 +1085,7 @@ class ConversationEngine:
                     templates.cancelled(lang),
                     reason=ReasonCode.CANCELLED_BY_CUSTOMER,
                 )
-            if _matches(text, _AFFIRM):
+            if _confirms(text):
                 if state.pending_add_account:
                     return self._commit_add_beneficiary(state, lang, tracer)
                 return self._complete(state, lang, tracer)
