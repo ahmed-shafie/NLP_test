@@ -77,6 +77,28 @@ def _seed_directory(db_path: Path) -> str:
                 0,
             ),
             (
+                "B4",
+                "demo",
+                "Layla Omar",
+                "ليلى عمر",
+                "SA1122330000006464",
+                "Al Rajhi",
+                "SAR",
+                "active",
+                0,
+            ),
+            (
+                "B5",
+                "demo",
+                "Omar Saleh",
+                "عمر صالح",
+                "SA1122330000005554",
+                "SNB",
+                "SAR",
+                "active",
+                0,
+            ),
+            (
                 "B6",
                 "demo",
                 "Mona Ali",
@@ -193,6 +215,17 @@ def test_shared_first_name_triggers_disambiguation(engine, directory_db, fake_co
     assert result.state.disambiguation_kind == "beneficiary"
     assert len(result.state.beneficiary_options) == 3
     assert "which one" in result.reply.lower()
+
+
+def test_the_question_quotes_the_name_the_customer_typed(
+    engine, directory_db, fake_core
+):
+    """A surname match must not put a stranger's first name in the question."""
+
+    result = engine.handle("حول 500 ريال لعمر", "b-dis-omar")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert "عمر" in result.reply
+    assert 'باسم "ليلى"' not in result.reply
 
 
 def test_disambiguation_by_number(engine, directory_db, fake_core):
@@ -414,6 +447,35 @@ def test_insufficient_funds_blocks_and_offers_the_balance(
     assert result.state.offered_amount == Decimal("5000.00")
 
 
+def test_a_refusal_that_is_not_about_funds_does_not_reopen_the_amount(
+    engine, directory_db, monkeypatch
+):
+    """An account-level refusal is not the customer typing the wrong figure."""
+
+    monkeypatch.setattr(
+        bcc,
+        "preflight_transfer",
+        lambda **k: bcc.PreflightResult(ok=False, blocking=["account_not_found"]),
+    )
+    result = engine.handle("send 900 SAR to Mona", "b-funds-3")
+    assert result.state.status is ConversationStatus.FAILED
+    assert result.state.pending_slot is None
+    assert result.state.offered_amount is None
+
+
+def test_a_refusal_does_not_survive_into_the_next_pre_flight(
+    engine, directory_db, monkeypatch
+):
+    """Each confirmation is judged by that attempt's Core answer, not the last."""
+
+    _short_of_funds(monkeypatch)
+    engine.handle("send 9000 SAR to Mona", "b-funds-5")
+    monkeypatch.setattr(bcc, "preflight_transfer", lambda **k: None)
+    result = engine.handle("500", "b-funds-5")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.preflight_blocking == []
+
+
 def test_accepting_the_offer_confirms_that_amount_not_the_original(
     engine, directory_db, monkeypatch
 ):
@@ -467,7 +529,7 @@ def test_fx_note_without_blocking(engine, directory_db, monkeypatch):
 def test_list_all_returns_favorites_first(directory_db):
     d = directory.get_beneficiary_directory()
     hits = d.list_all("demo")
-    assert hits is not None and len(hits) == 4
+    assert hits is not None and len(hits) == 6
     # Ahmed Hassan is the only favorite (is_favorite=1) -> sorted first.
     assert hits[0].name == "Ahmed Hassan"
 
