@@ -571,6 +571,11 @@ _ASKING_WORDS = _QUESTION_WORDS | {
 
 _HOW_WORDS = {normalize(w) for w in ("how", "كيف", "كيفاش", "ازاي", "إزاي")}
 
+# Words that carry no subject of their own, so "how much" is as bare as "كم".
+_INTERROGATIVE_FILLERS = {
+    normalize(w) for w in ("much", "many", "is", "it", "دا", "ذا")
+}
+
 
 def _asks_how(text: str) -> bool:
     """True for "how do I transfer?" — a procedure question, not a fee one."""
@@ -631,6 +636,19 @@ def _is_a_question(text: str) -> bool:
         return True
     tokens = _tokens_in_order(text)
     return bool(tokens) and normalize(tokens[0]) in _ASKING_WORDS
+
+
+def _is_bare_interrogative(text: str) -> bool:
+    """True when the turn is an interrogative and nothing else ("كم", "how much").
+
+    There is no subject to decline about: the customer left the question half
+    typed, so the honest reply asks what they mean.
+    """
+
+    tokens = {normalize(t) for t in _tokens(text)}
+    if not tokens or not tokens <= (_ASKING_WORDS | _INTERROGATIVE_FILLERS):
+        return False
+    return bool(tokens & _ASKING_WORDS)
 
 
 def _asks_to_act(text: str, verbs: set[str]) -> bool:
@@ -1494,6 +1512,14 @@ class ConversationEngine:
                     answer = self._topic_answer(text, lang, tracer)
                     if answer is not None:
                         return self._finish(state, answer)
+                    if _is_bare_interrogative(text):
+                        # "كم" on its own asks about nothing: declining would
+                        # answer a question the customer has not finished.
+                        return self._finish(
+                            state,
+                            templates.fallback(lang),
+                            reason=ReasonCode.INTENT_UNCLEAR,
+                        )
                     if _is_a_question(text) or _asks_unsupported_service(text):
                         # A question we have no answer for is not an unclear
                         # action: "transfer or bill?" answers nothing. Either

@@ -49,6 +49,15 @@ def test_leetspeak_and_arabic_variants_flagged():
     assert moderation.detect("just shut up").flagged is True
 
 
+def test_inflected_arabic_abuse_flagged():
+    # The same insult in the feminine or the plural is the same insult.
+    for text in ("انتي حماره", "يا حمير", "انتي كلبة", "يا فاشله"):
+        assert moderation.detect(text).flagged is True, text
+    # Words a letter away from an insult are ordinary Arabic and stay clean.
+    for text in ("خمار", "عمار", "حمام", "كتاب"):
+        assert moderation.detect(text).flagged is False, text
+
+
 def test_detect_surfaces_original_terms():
     result = moderation.detect("You IDIOT")
     assert result.terms == ("IDIOT",)

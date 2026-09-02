@@ -293,6 +293,20 @@ def test_settling_an_instalment_is_not_declined() -> None:
     assert result.reply != templates.out_of_scope(Language.AR)
 
 
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+@pytest.mark.parametrize("text", ["كم", "مين", "how much", "ايه"])
+def test_a_half_typed_question_is_clarified_not_declined(text: str) -> None:
+    """A lone interrogative asks about nothing, so there is nothing to decline."""
+
+    language = Language.EN if text.isascii() else Language.AR
+    result = ConversationEngine().handle(
+        text=text, session_id=f"bare-{hash(text)}", user_id="demo"
+    )
+
+    assert result.state.intent is None
+    assert result.reply != templates.out_of_scope(language)
+
+
 @pytest.mark.parametrize("language", list(Language))
 def test_every_decline_points_at_customer_service(language: Language) -> None:
     """We hold no answer, so the customer must be told who does."""
