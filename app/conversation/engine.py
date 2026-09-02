@@ -28,6 +28,7 @@ from app.data_loader import (
     BillerRecord,
     biller_categories,
     canonicalize_recipient,
+    lookup_name,
     resolve_biller_by_code,
     resolve_biller_candidates,
 )
@@ -41,7 +42,7 @@ from app.memory.service import get_memory_brain
 from app.nlu import accounts, entities, pipeline
 from app.nlu.intents import has_money_cue
 from app.nlu.lang import detect_language
-from app.nlu.normalize import normalize, normalize_digits
+from app.nlu.normalize import normalize, normalize_digits, normalize_tokens
 from app.nlu.semantic_intents import get_semantic_classifier
 from app.schemas import (
     BillPaymentRequest,
@@ -863,6 +864,11 @@ _NOT_A_NAME = {
 }
 
 
+# A negation that opens an answer and is followed by a name is a correction of
+# the name, not a refusal of the question.
+_CORRECTS_THE_NAME = {normalize(word) for word in ("no", "not", "nope", "لا", "مو")}
+
+
 def _is_name_like(candidate: str) -> bool:
     """False for answers a person's name can never be: numbers, IBANs, yes/no.
 
@@ -883,9 +889,29 @@ def _is_name_like(candidate: str) -> bool:
     return bool(words) and not set(words) & _NOT_A_NAME
 
 
+def _is_known_name(text: str) -> bool:
+    """True when the gazetteer recognises one of these tokens as a given name."""
+
+    return any(lookup_name(token) is not None for token in normalize_tokens(text))
+
+
+def _strip_leading_correction(text: str) -> str:
+    """Drop a leading "no" that introduces a name: "لا محمد أحمد" names محمد أحمد.
+
+    On its own the word is a refusal, so only a word that is followed by
+    something else is dropped.
+    """
+
+    tokens = text.strip(" .,،؟?").split()
+    if len(tokens) > 1 and normalize(tokens[0]) in _CORRECTS_THE_NAME:
+        return " ".join(tokens[1:])
+    return text
+
+
 def _recipient_from_answer(text: str, lang: Language) -> str | None:
     """Best-effort recipient from a slot answer: surface pattern, else cleanup."""
 
+    text = _strip_leading_correction(text)
     if not _is_name_like(text):
         return None
     candidate = entities.extract_recipient(text, lang) or _clean_recipient_answer(text)
@@ -2045,6 +2071,22 @@ class ConversationEngine:
     ) -> ConversationResult:
         choice = self._match_beneficiary_option(state.beneficiary_options, text)
         if choice is None:
+            named = _recipient_from_answer(text, lang)
+            if named is not None and not _is_same_name(named, state.beneficiary_query):
+                # The answer names somebody who is not on the list ("لا محمد أحمد"):
+                # that person is the recipient now, so look them up instead of
+                # printing the same options again.
+                with state.slots_from(SlotSource.USER_TEXT) as slots:
+                    slots.recipient = named
+                    slots.account_number = None
+                state.beneficiary_resolved = False
+                state.beneficiary_options = []
+                state.disambiguation_kind = None
+                state.beneficiary_query = None
+                paused = self._resolve_beneficiary(state, lang)
+                if paused is not None:
+                    return paused
+                return self._enter_confirmation(state, lang)
             rows = self._option_rows(state.beneficiary_options, lang)
             return self._finish(
                 state,
@@ -2074,14 +2116,14 @@ class ConversationEngine:
             index = int(digits)
             if 1 <= index <= len(options):
                 return options[index - 1]
+        # A word that fits several of the options ("محمد" against "محمد نور" and
+        # "محمد سعد") picks nobody: it is the question being repeated back.
+        matched: list[BeneficiaryOption] = []
         for option in options:
-            for candidate in (option.name, option.name_ar):
-                if not candidate:
-                    continue
-                name = normalize(candidate)
-                if name and (name in normalized or normalized in name):
-                    return option
-        return None
+            names = [normalize(c) for c in (option.name, option.name_ar) if c]
+            if any(n and (n in normalized or normalized in n) for n in names):
+                matched.append(option)
+        return matched[0] if len(matched) == 1 else None
 
     def _start_add_beneficiary(
         self, state: ConversationState, text: str, lang: Language
@@ -2100,6 +2142,35 @@ class ConversationEngine:
         self, state: ConversationState, text: str, lang: Language
     ) -> ConversationResult:
         """Fill the name or the account slot from this turn, then move forward."""
+
+        if state.add_resumes_transfer and state.pending_slot == "beneficiary_account":
+            # The prompt offers a third way out: name somebody else. A name is
+            # not a malformed account number, so look that person up instead.
+            replacement = _recipient_from_answer(text, lang)
+            raw_answer = text.strip(" .,،؟?")
+            if (
+                replacement is not None
+                and _is_known_name(replacement)
+                and not _ACCOUNT_SHAPED.match(raw_answer)
+            ):
+                state.pending_add_name = None
+                state.pending_add_account = None
+                state.pending_unchecked_account = None
+                state.add_resumes_transfer = False
+                state.intent = Intent.TRANSFER_MONEY
+                with state.slots_from(SlotSource.USER_TEXT) as slots:
+                    slots.recipient = replacement
+                    slots.account_number = None
+                state.beneficiary_resolved = False
+                state.beneficiary_options = []
+                state.disambiguation_kind = None
+                state.beneficiary_query = None
+                state.pending_slot = None
+                state.status = ConversationStatus.COLLECTING
+                paused = self._resolve_beneficiary(state, lang)
+                if paused is not None:
+                    return paused
+                return self._enter_confirmation(state, lang)
 
         if _matches(text, _NEGATIVE):
             state.pending_unchecked_account = None

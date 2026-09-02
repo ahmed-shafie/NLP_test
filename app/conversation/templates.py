@@ -488,20 +488,22 @@ def confirm_beneficiary_match(
 
 _BENEFICIARY_NOT_FOUND: dict[Language, tuple[str, ...]] = {
     Language.EN: (
-        'Hmm, I don\'t have anyone saved as "{name}" yet 🤔 — want me to add '
-        'them? Just send their account/IBAN, or say "no" to skip.',
-        'I can\'t find "{name}" in your beneficiaries 🤔 — shall I add them? '
-        'Send their account/IBAN, or reply "no" to skip.',
-        '"{name}" isn\'t saved with me yet 🤔 — happy to add them: send the '
-        'account/IBAN, or say "no" to leave it.',
+        'Hmm, I don\'t have anyone saved as "{name}" yet 🤔 — send their '
+        "account/IBAN to add them, type another beneficiary name, or say "
+        '"cancel".',
+        'I can\'t find "{name}" in your beneficiaries 🤔 — you can send the '
+        "account/IBAN, give me a different beneficiary name, or cancel this "
+        "transfer.",
+        '"{name}" isn\'t saved yet 🤔 — send the account/IBAN to add them, '
+        'enter another beneficiary, or say "cancel".',
     ),
     Language.AR: (
-        'ما لقيت أحد محفوظ باسم "{name}" 🤔 — تحب أضيفه؟ '
-        'أرسل لي رقم الحساب/الآيبان، أو اكتب "لا" إذا تبي تتركها.',
-        'ما لقيت "{name}" في مستفيدينك 🤔 — أضيفه؟ عطني رقم الحساب/'
-        'الآيبان، أو اكتب "لا" للتجاوز.',
-        '"{name}" ما هو محفوظ لدي للحين 🤔 — تبي أضيفه؟ أرسل رقم الحساب '
-        'أو الآيبان، أو اكتب "لا".',
+        'ما لقيت أحد محفوظ باسم "{name}" 🤔 — إذا تبي تضيفه أرسل رقم الحساب/'
+        'الآيبان، أو اكتب اسم مستفيد ثاني، أو قل "إلغاء".',
+        'ما لقيت "{name}" في مستفيدينك 🤔 — عطني رقم الحساب/الآيبان لإضافته، '
+        'أو اكتب اسم مستفيد ثاني، أو قل "إلغاء".',
+        '"{name}" مو محفوظ عندك للحين 🤔 — أرسل رقم الحساب أو الآيبان لإضافته، '
+        'أو اكتب اسم ثاني، أو قل "إلغاء".',
     ),
 }
 
