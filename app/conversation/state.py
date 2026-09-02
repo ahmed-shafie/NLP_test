@@ -111,6 +111,9 @@ class ConversationState(BaseModel):
     # Beneficiary disambiguation (transfer): candidates + which flow is disambiguating.
     beneficiary_options: list[BeneficiaryOption] = Field(default_factory=list)
     disambiguation_kind: str | None = None  # "biller" | "beneficiary"
+    # The name the customer actually typed, so "which one?" quotes their word
+    # rather than a name taken from one of the candidates.
+    beneficiary_query: str | None = None
     # Whether the transfer recipient has been resolved to a directory beneficiary.
     beneficiary_resolved: bool = False
     # In-progress "add beneficiary" flow: the name we are collecting an account
@@ -172,6 +175,7 @@ class ConversationState(BaseModel):
         self.biller_options = []
         self.beneficiary_options = []
         self.disambiguation_kind = None
+        self.beneficiary_query = None
         self.beneficiary_resolved = False
         self.pending_add_name = None
         self.pending_add_account = None

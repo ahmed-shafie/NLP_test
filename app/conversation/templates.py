@@ -430,15 +430,20 @@ def _option_lines(options: list[tuple[str, str, str, str]]) -> str:
 
 
 def choose_beneficiary(
-    options: list[tuple[str, str, str, str]], language: Language
+    options: list[tuple[str, str, str, str]],
+    language: Language,
+    asked: str = "",
 ) -> str:
-    """Ask which beneficiary is meant when a first name matches several people.
+    """Ask which beneficiary is meant when a name matches several people.
 
     ``options`` is a list of ``(name, bank, masked_account, currency)`` tuples.
+    ``asked`` is the name the customer typed: quoting a candidate instead would
+    name a person they never mentioned, since a match can be on any part of a
+    saved name.
     """
 
     listing = _option_lines(options)
-    first = options[0][0].split()[0] if options else ""
+    first = asked.strip() or (options[0][0].split()[0] if options else "")
     if language is Language.AR:
         return (
             f'لقيت أكثر من شخص باسم "{first}" 🙂 — أي واحد تقصد؟\n'

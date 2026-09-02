@@ -1891,11 +1891,14 @@ class ConversationEngine:
             for h in hits
         ]
         state.disambiguation_kind = "beneficiary"
+        state.beneficiary_query = name
         state.pending_slot = "recipient"
         state.status = ConversationStatus.DISAMBIGUATING
         return self._finish(
             state,
-            templates.choose_beneficiary(self._option_rows(hits, lang), lang),
+            templates.choose_beneficiary(
+                self._option_rows(hits, lang), lang, state.beneficiary_query or ""
+            ),
             reason=ReasonCode.AMBIGUOUS_BENEFICIARY,
         )
 
@@ -1923,6 +1926,7 @@ class ConversationEngine:
         state.beneficiary_resolved = True
         state.beneficiary_options = []
         state.disambiguation_kind = None
+        state.beneficiary_query = None
         state.pending_slot = None
 
     def _handle_beneficiary_choice(
@@ -1933,7 +1937,7 @@ class ConversationEngine:
             rows = self._option_rows(state.beneficiary_options, lang)
             return self._finish(
                 state,
-                templates.choose_beneficiary(rows, lang),
+                templates.choose_beneficiary(rows, lang, state.beneficiary_query or ""),
                 reason=ReasonCode.CHOICE_NOT_RECOGNISED,
             )
         self._lock_beneficiary(
@@ -2198,7 +2202,9 @@ class ConversationEngine:
                     (o.name, o.bank or "", _mask_account(o.account), o.currency)
                     for o in state.beneficiary_options
                 ]
-                return templates.choose_beneficiary(options, lang)
+                return templates.choose_beneficiary(
+                    options, lang, state.beneficiary_query or ""
+                )
             return templates.choose_biller(
                 [opt.name for opt in state.biller_options], lang
             )
