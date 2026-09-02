@@ -58,6 +58,19 @@ def test_two_payees_are_asked_about_instead_of_confirmed(
     assert "محمد" in result.reply and "عمر" in result.reply
 
 
+def test_arabic_digits_and_a_spaced_conjunction_are_asked_about_too(
+    engine: ConversationEngine,
+) -> None:
+    """Arabic-Indic digits, "الى", and "و ٤٠٠ لـ": the same request, spelt freely."""
+
+    result = engine.handle("حول ٥٠٠ ريال الى عمر و ٤٠٠ لمحمد", "payees-ar-digits")
+
+    assert result.state.pending_slot == "recipient"
+    assert result.state.slots.recipient is None
+    assert result.state.slots.amount is None
+    assert "عمر" in result.reply and "محمد" in result.reply
+
+
 def test_naming_one_of_them_continues_that_transfer_alone(
     engine: ConversationEngine,
 ) -> None:

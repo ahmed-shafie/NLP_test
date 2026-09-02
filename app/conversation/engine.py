@@ -31,10 +31,15 @@ from app.data_loader import (
     resolve_biller_by_code,
     resolve_biller_candidates,
 )
-from app.db.directory import BeneficiaryHit, get_beneficiary_directory
+from app.db.directory import (
+    BeneficiaryHit,
+    get_beneficiary_directory,
+    matches_leading_name,
+)
 from app.memory.schemas import Shortcut
 from app.memory.service import get_memory_brain
 from app.nlu import accounts, entities, pipeline
+from app.nlu.intents import has_money_cue
 from app.nlu.lang import detect_language
 from app.nlu.normalize import normalize, normalize_digits
 from app.nlu.semantic_intents import get_semantic_classifier
@@ -445,6 +450,12 @@ _PAY_VERBS = {
         "اسدد",
         "تسديد",
         "أسدد",
+        # "ممكن ندفع" / "تبي تسدد" — the same request in the plural or
+        # addressed back at us.
+        "ندفع",
+        "نسدد",
+        "تدفع",
+        "تسدد",
     )
 }
 _TRANSFER_VERBS = {
@@ -466,6 +477,11 @@ _TRANSFER_VERBS = {
         "أرسل",
         "ابعت",
         "ابعث",
+        # "ممكن نحول لعمر" / "تبي تحول" — a request phrased in the plural or
+        # addressed back at us is still a request to transfer.
+        "نحول",
+        "تحول",
+        "نرسل",
     )
 }
 
@@ -484,6 +500,8 @@ _MONEY_ONLY_TRANSFER_VERBS = {
         "أحول",
         "احول",
         "تحويل",
+        "نحول",
+        "تحول",
     )
 }
 
@@ -1230,6 +1248,23 @@ class ConversationEngine:
                 span.annotate("balance_inquiry")
                 return self._handle_balance_inquiry(state, text, lang)
 
+        # Two payees in one request, asked before anything may fill a slot from
+        # this turn: a learned shortcut or a directory match would otherwise
+        # settle on one of the names and the other payee would be dropped.
+        if state.intent is None and state.pending_slot is None:
+            named = entities.extract_recipients(text, lang)
+            if len(named) > 1 and has_money_cue(text):
+                with tracer.block("orchestrator") as span:
+                    span.annotate("one_payee_at_a_time")
+                    state.intent = Intent.TRANSFER_MONEY
+                    state.pending_slot = "recipient"
+                    state.status = ConversationStatus.COLLECTING
+                    return self._finish(
+                        state,
+                        templates.one_payee_at_a_time(named, lang),
+                        reason=ReasonCode.SLOT_REQUIRED,
+                    )
+
         # "Show my beneficiaries" (read-only) when starting fresh — deterministic
         # cue check beats the semantic classifier, which otherwise reads the word
         # "beneficiary" as a transfer and wrongly asks for an amount.
@@ -1943,13 +1978,16 @@ class ConversationEngine:
                 templates.beneficiary_not_found(name, lang),
                 reason=ReasonCode.BENEFICIARY_NOT_FOUND,
             )
-        if len(hits) == 1:
+        if len(hits) == 1 and matches_leading_name(name, hits[0]):
             self._lock_beneficiary(
                 state,
                 _display_name(hits[0].name, hits[0].name_ar, lang),
                 hits[0].account,
             )
             return None
+        # The only match carries the typed word further inside its name ("عمر"
+        # matched "ليلى عمر"): show who that is and let the customer say so,
+        # rather than confirming a transfer to a name they never typed.
         state.beneficiary_options = [
             BeneficiaryOption(
                 id=h.id,
@@ -1966,13 +2004,14 @@ class ConversationEngine:
         state.beneficiary_query = name
         state.pending_slot = "recipient"
         state.status = ConversationStatus.DISAMBIGUATING
-        return self._finish(
-            state,
-            templates.choose_beneficiary(
-                self._option_rows(hits, lang), lang, state.beneficiary_query or ""
-            ),
-            reason=ReasonCode.AMBIGUOUS_BENEFICIARY,
+        rows = self._option_rows(hits, lang)
+        asked = state.beneficiary_query or ""
+        prompt = (
+            templates.confirm_beneficiary_match(rows, lang, asked)
+            if len(hits) == 1
+            else templates.choose_beneficiary(rows, lang, asked)
         )
+        return self._finish(state, prompt, reason=ReasonCode.AMBIGUOUS_BENEFICIARY)
 
     @staticmethod
     def _option_rows(

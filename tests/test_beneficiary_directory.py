@@ -255,6 +255,55 @@ def test_single_match_locks_and_confirms(engine, directory_db, fake_core):
     assert result.state.slots.recipient == "Mona Ali"
 
 
+def test_a_first_person_transfer_request_asks_for_the_amount(
+    engine, directory_db, fake_core
+):
+    """ "ممكن نحول لعمر" is a transfer request, not a question about the account."""
+
+    result = engine.handle("ممكن نحول لعمر", "b-nihawwil")
+    assert result.state.intent is Intent.TRANSFER_MONEY
+    assert result.state.pending_slot == "amount"
+
+
+def test_two_payees_are_asked_about_before_the_directory_resolves_one(
+    engine, directory_db, fake_core
+):
+    """The directory must not settle on one payee while the other is dropped."""
+
+    result = engine.handle("send 500 to Ahmed and 300 to Mona", "b-two-payees")
+    assert result.state.status is ConversationStatus.COLLECTING
+    assert result.state.disambiguation_kind is None
+    assert result.state.slots.recipient is None
+    assert result.state.slots.amount is None
+    assert "Ahmed" in result.reply and "Mona" in result.reply
+
+
+def test_a_family_name_match_is_asked_about_not_bound(engine, directory_db, fake_core):
+    """ "Hassan" matches only "Ahmed Hassan" — a different person to the customer.
+
+    Locking it would put a name in the confirmation the customer never typed.
+    """
+
+    result = engine.handle("send 500 SAR to Hassan", "b-family-1")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.slots.recipient == "Hassan"
+    assert result.state.slots.account_number is None
+    assert "Hassan" in result.reply and "Ahmed Hassan" in result.reply
+    assert "confirm" not in result.reply.lower()
+
+    picked = engine.handle("1", "b-family-1")
+    assert picked.state.status is ConversationStatus.CONFIRMING
+    assert picked.state.slots.recipient == "Ahmed Hassan"
+
+
+def test_a_first_name_match_still_locks(engine, directory_db, fake_core):
+    """A name that is how the person is addressed stands in for them."""
+
+    result = engine.handle("send 500 SAR to Mona", "b-family-2")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.recipient == "Mona Ali"
+
+
 def test_recipient_answer_strips_arabic_verb(engine, directory_db, fake_core):
     """A colloquial recipient answer ("ابغي احمد") resolves, verb stripped."""
 

@@ -459,6 +459,33 @@ def choose_beneficiary(
     )
 
 
+def confirm_beneficiary_match(
+    options: list[tuple[str, str, str, str]],
+    language: Language,
+    asked: str = "",
+) -> str:
+    """Ask whether the one match — matched deeper in its name — is the person.
+
+    Nobody is saved under the word the customer typed; it turned up inside
+    somebody else's name. Naming that person and waiting is the only safe move:
+    silently confirming a transfer to them would put a name in the confirmation
+    the customer never asked for.
+    """
+
+    listing = _option_lines(options)
+    if language is Language.AR:
+        return (
+            f'ما عندي أحد محفوظ باسم "{asked}" بالضبط — أقرب واحد عندي:\n'
+            f"{listing}\n"
+            "هو المقصود؟ قل لي الرقم (١)، أو اكتب الاسم الصحيح."
+        )
+    return (
+        f'Nobody is saved as "{asked}" exactly — the closest I have is:\n'
+        f"{listing}\n"
+        "Is that who you meant? Reply with the number (1), or type the right name."
+    )
+
+
 _BENEFICIARY_NOT_FOUND: dict[Language, tuple[str, ...]] = {
     Language.EN: (
         'Hmm, I don\'t have anyone saved as "{name}" yet 🤔 — want me to add '

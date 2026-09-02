@@ -67,6 +67,8 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         "choose_source_account",
         "choose_transfer_purpose",
         "completed",
+        # Names a person the customer did not type, so it must read exactly.
+        "confirm_beneficiary_match",
         "confirm_add_beneficiary",
         "confirm_add_then_transfer",
         "confirm_prompt",

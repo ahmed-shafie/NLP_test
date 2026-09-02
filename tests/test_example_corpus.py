@@ -80,6 +80,10 @@ def test_disabled_by_setting(tmp_path, monkeypatch):
         ("حوّل ٥٠٠ ريال لدولار", Language.AR, None),
         # "send" alone sends things that are not money.
         ("send me my account statement", Language.EN, None),
+        # "نحول" / "تحول" are how the request is spoken, not only "حول".
+        ("ممكن نحول لعمر", Language.AR, Intent.TRANSFER_MONEY),
+        # ... but a question about how it is done is still not a request.
+        ("كيف نحول فلوس؟", Language.AR, None),
     ],
 )
 def test_underspecified_requests_route_deterministically(text, lang, expected):
