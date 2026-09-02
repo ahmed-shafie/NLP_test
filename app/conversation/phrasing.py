@@ -71,6 +71,8 @@ CRITICAL_REPLIES: frozenset[str] = frozenset(
         "confirm_add_then_transfer",
         "confirm_prompt",
         "list_beneficiaries",
+        # Reads the payees back by name before any of them is paid.
+        "one_payee_at_a_time",
         "warnings_note",
         # Carries the balance and the amount refused: both are Banking Core
         # figures and must reach the customer unchanged.

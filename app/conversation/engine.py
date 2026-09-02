@@ -1309,6 +1309,20 @@ class ConversationEngine:
     ) -> ConversationResult:
         slots = state.slots
 
+        if slots.recipient is None:
+            named = entities.extract_recipients(text, lang)
+            if len(named) > 1:
+                # Two payees in one sentence: which amount is whose is the
+                # customer's to say, so nothing is filled from this turn.
+                state.intent = Intent.TRANSFER_MONEY
+                state.pending_slot = "recipient"
+                state.status = ConversationStatus.COLLECTING
+                return self._finish(
+                    state,
+                    templates.one_payee_at_a_time(named, lang),
+                    reason=ReasonCode.SLOT_REQUIRED,
+                )
+
         # Merge newly extracted slots (never overwrite an already-filled slot).
         # The pipeline only extracts when its own classifier says "transfer", so
         # when the chooser overruled it ("حولي الي سارة 500" reads as a listing

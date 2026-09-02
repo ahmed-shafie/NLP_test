@@ -1133,6 +1133,26 @@ def small_talk(text: str, language: Language) -> str:
     return phrasing.varied(f"small_talk:{kind}", _SMALL_TALK[kind], language)
 
 
+def one_payee_at_a_time(names: list[str], language: Language) -> str:
+    """Ask which of the payees the sentence listed to send to now.
+
+    Which amount belongs to which name is the customer's to state, so the names
+    are read back exactly as typed and nothing is assumed about the amounts.
+    """
+
+    if language is Language.AR:
+        listing = " ولا ".join(names)
+        return (
+            f"أقدر أنفّذ تحويل واحد في كل مرة. لمين نبدأ — {listing}؟ "
+            "والباقي نسويه بطلب ثاني."
+        )
+    listing = " or ".join(names)
+    return (
+        f"I can make one transfer at a time. Who should this one go to — {listing}? "
+        "We'll do the rest in a separate request."
+    )
+
+
 def confirm_prompt(
     amount: str, currency: str, recipient: str, language: Language
 ) -> str:
