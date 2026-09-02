@@ -118,3 +118,39 @@ def test_add_beneficiary_and_duplicate(client):
 
     dup = client.post("/beneficiary/add", json=payload)
     assert dup.json()["ok"] is False
+
+
+def test_accounts_list_returns_the_customers_active_accounts(client):
+    resp = client.post("/accounts/list", json={"owner_user": "demo"})
+    assert resp.status_code == 200
+    accounts = resp.json()["accounts"]
+    assert [a["account_id"] for a in accounts] == [
+        "ACC-001",
+        "ACC-002",
+        "ACC-003",
+        "ACC-004",
+    ]
+    # The current account leads the list, because the assistant numbers the rows
+    # in this order and a saved "1" must mean the same account next turn.
+    assert accounts[0]["account_type"] == "current"
+    assert accounts[0]["balance"] == "12300.00"
+
+
+def test_accounts_list_of_an_unknown_customer_is_empty(client):
+    resp = client.post("/accounts/list", json={"owner_user": "nobody"})
+    assert resp.status_code == 200
+    assert resp.json()["accounts"] == []
+
+
+def test_accounts_list_requires_the_api_key(client, monkeypatch):
+    monkeypatch.setattr(bc_settings, "api_key", "s3cret")
+
+    refused = client.post("/accounts/list", json={"owner_user": "demo"})
+    assert refused.status_code == 401
+
+    allowed = client.post(
+        "/accounts/list",
+        json={"owner_user": "demo"},
+        headers={"x-api-key": "s3cret"},
+    )
+    assert allowed.status_code == 200

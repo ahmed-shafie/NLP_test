@@ -1,0 +1,6 @@
+{
+  "fingerprint": "c79de50e8b0d8c72656e89b21a13f2dc460f6b3b89377e61187920c20169ce46",
+  "count": 31893,
+  "dimension": 384,
+  "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+}

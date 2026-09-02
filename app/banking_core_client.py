@@ -111,6 +111,21 @@ def get_balance(
     return _to_account(data)
 
 
+def list_accounts(owner_user: str) -> list[AccountInfo]:
+    """List the customer's accounts, in the order the Core returns them.
+
+    An empty list means "no accounts to choose from" — either the Core is
+    disabled/unreachable or the customer has none — so the caller must not read
+    it as "the customer has no money".
+    """
+
+    data = _post("/accounts/list", {"owner_user": owner_user})
+    if not data:
+        return []
+    accounts = [_to_account(row) for row in data.get("accounts") or []]
+    return [a for a in accounts if a is not None]
+
+
 def _to_preflight(data: dict | None) -> PreflightResult | None:
     if data is None:
         return None

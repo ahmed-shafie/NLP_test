@@ -121,7 +121,30 @@ _AR_NOT_A_NAME = frozenset(
         "ماعرف",
     }
 )
+# Transfer-purpose nouns. Typed inside the request ("حوّل ٤٣٢ لعمر إيجار") the
+# purpose used to be glued onto the payee, and the speller then turned "إيجار"
+# into the given name "أجار" — so the customer was offered to save a beneficiary
+# named after their own purpose word. The purpose is asked from its list instead.
+_AR_PURPOSE_WORDS = frozenset(
+    {
+        "شخصي",
+        "عائلي",
+        "عائلة",
+        "راتب",
+        "إيجار",
+        "ايجار",
+        "تعليم",
+        "دراسة",
+        "طبي",
+        "علاج",
+        "شراء",
+        "دفع",
+        "استثمار",
+        "قرض",
+    }
+)
 _AR_PREFIXES = ("لل", "ال", "بال", "و")
+_AR_CONJUNCTION = "و"
 
 # --- lowercase English names -------------------------------------------------
 # ``_EN_RECIPIENT_RE`` and spaCy both key on capitalisation, so a customer typing
@@ -607,6 +630,77 @@ def _is_ar_person_name(candidate: str) -> bool:
     )
 
 
+def _strip_trailing_purpose(candidate: str) -> str:
+    """Drop a purpose noun trailing the name, never the name itself."""
+
+    words = [w for w in re.split(r"\s+", candidate) if w]
+    while len(words) > 1 and (
+        words[-1] in _AR_PURPOSE_WORDS or _ar_word_stem(words[-1]) in _AR_PURPOSE_WORDS
+    ):
+        words.pop()
+    return " ".join(words)
+
+
+def _split_ar_names(candidate: str) -> list[str]:
+    """Split the names a captured Arabic phrase lists ("محمد وعمر" → two).
+
+    The conjunction only starts a new name after one has begun, so a given name
+    that opens with the same letter ("وليد") is left whole.
+    """
+
+    names: list[str] = []
+    for word in re.split(r"\s+", candidate):
+        if not word:
+            continue
+        if word == _AR_CONJUNCTION:
+            continue
+        if names and word.startswith(_AR_CONJUNCTION) and len(word) > 2:
+            names.append(word[1:])
+        elif names:
+            names[-1] = f"{names[-1]} {word}"
+        else:
+            names.append(word)
+    return names
+
+
+def _clean_ar_name(candidate: str) -> str | None:
+    candidate = _strip_trailing_purpose(candidate.strip(" ,،."))
+    if not candidate:
+        return None
+    if not _is_ar_person_name(candidate) or candidate in _AR_PURPOSE_WORDS:
+        return None
+    return canonicalize_recipient(candidate)
+
+
+def extract_recipients(text: str, language: Language) -> list[str]:
+    """Every payee the sentence names, in the order it names them.
+
+    One sentence can list two ("حوّل 500 لمحمد و300 لعمر"). Pairing each name
+    with its own amount is not something to guess, so the caller asks which
+    transfer to make; this only reports how many were named.
+    """
+
+    pattern = _AR_RECIPIENT_RE if language is Language.AR else _EN_RECIPIENT_RE
+    names: list[str] = []
+    for match in pattern.finditer(text):
+        captured = match.group(1).strip(" ,،.")
+        if not captured:
+            continue
+        if language is Language.AR:
+            names.extend(
+                name
+                for name in (_clean_ar_name(part) for part in _split_ar_names(captured))
+                if name is not None
+            )
+        else:
+            names.append(canonicalize_recipient(captured))
+    deduped: list[str] = []
+    for name in names:
+        if name not in deduped:
+            deduped.append(name)
+    return deduped
+
+
 def extract_recipient(text: str, language: Language) -> str | None:
     """Return the beneficiary name via language-specific surface patterns.
 
@@ -625,8 +719,9 @@ def extract_recipient(text: str, language: Language) -> str | None:
     candidate = match.group(1).strip(" ,،.")
     if not candidate:
         return None
-    if language is Language.AR and not _is_ar_person_name(candidate):
-        return None
+    if language is Language.AR:
+        names = _split_ar_names(candidate)
+        return _clean_ar_name(names[0]) if names else None
     return canonicalize_recipient(candidate)
 
 

@@ -255,6 +255,126 @@ def test_single_match_locks_and_confirms(engine, directory_db, fake_core):
     assert result.state.slots.recipient == "Mona Ali"
 
 
+def test_a_first_person_transfer_request_asks_for_the_amount(
+    engine, directory_db, fake_core
+):
+    """ "ممكن نحول لعمر" is a transfer request, not a question about the account."""
+
+    result = engine.handle("ممكن نحول لعمر", "b-nihawwil")
+    assert result.state.intent is Intent.TRANSFER_MONEY
+    assert result.state.pending_slot == "amount"
+
+
+def test_two_payees_are_asked_about_before_the_directory_resolves_one(
+    engine, directory_db, fake_core
+):
+    """The directory must not settle on one payee while the other is dropped."""
+
+    result = engine.handle("send 500 to Ahmed and 300 to Mona", "b-two-payees")
+    assert result.state.status is ConversationStatus.COLLECTING
+    assert result.state.disambiguation_kind is None
+    assert result.state.slots.recipient is None
+    assert result.state.slots.amount is None
+    assert "Ahmed" in result.reply and "Mona" in result.reply
+
+
+def test_a_family_name_match_is_asked_about_not_bound(engine, directory_db, fake_core):
+    """ "Hassan" matches only "Ahmed Hassan" — a different person to the customer.
+
+    Locking it would put a name in the confirmation the customer never typed.
+    """
+
+    result = engine.handle("send 500 SAR to Hassan", "b-family-1")
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.slots.recipient == "Hassan"
+    assert result.state.slots.account_number is None
+    assert "Hassan" in result.reply and "Ahmed Hassan" in result.reply
+    assert "confirm" not in result.reply.lower()
+
+    picked = engine.handle("1", "b-family-1")
+    assert picked.state.status is ConversationStatus.CONFIRMING
+    assert picked.state.slots.recipient == "Ahmed Hassan"
+
+
+def test_a_first_name_match_still_locks(engine, directory_db, fake_core):
+    """A name that is how the person is addressed stands in for them."""
+
+    result = engine.handle("send 500 SAR to Mona", "b-family-2")
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.recipient == "Mona Ali"
+
+
+def test_a_corrected_name_at_the_choice_prompt_is_looked_up(
+    engine, directory_db, fake_core
+):
+    """ "لا محمد أحمد" answers with a third person, not with one of the options.
+
+    Reprinting the same list says nothing about the name they just typed.
+    """
+
+    engine.handle("حول 500 لعمر", "b-correct-1")
+    result = engine.handle("لا عمر خالد", "b-correct-1")
+
+    assert result.state.status is ConversationStatus.COLLECTING
+    assert result.state.pending_slot == "beneficiary_account"
+    assert result.state.slots.recipient == "عمر خالد"
+    assert result.state.slots.account_number is None
+    assert "عمر خالد" in result.reply
+
+
+def test_another_name_at_the_not_found_prompt_is_looked_up(
+    engine, directory_db, fake_core
+):
+    """The prompt offers "type another beneficiary name", so a name must work.
+
+    Read as an account number it would come back as a malformed IBAN.
+    """
+
+    engine.handle("حول 500 لعمر", "b-correct-4")
+    engine.handle("لا عمر خالد", "b-correct-4")
+    result = engine.handle("منى", "b-correct-4")
+
+    assert result.state.status is ConversationStatus.CONFIRMING
+    assert result.state.slots.recipient == "منى علي"
+    assert result.state.slots.amount == Decimal("500")
+    assert result.state.pending_add_name is None
+
+
+def test_a_non_name_at_the_not_found_prompt_is_still_an_account(
+    engine, directory_db, fake_core
+):
+    """Only a recognisable name replaces the recipient; "abcd" is a bad account."""
+
+    engine.handle("حول 500 لعمر", "b-correct-5")
+    engine.handle("لا عمر خالد", "b-correct-5")
+    result = engine.handle("abcd", "b-correct-5")
+
+    assert result.state.pending_add_name == "عمر خالد"
+    assert result.state.pending_slot == "beneficiary_account"
+
+
+def test_a_bare_no_at_the_choice_prompt_keeps_asking(engine, directory_db, fake_core):
+    """On its own the word refuses the options; it names nobody."""
+
+    first = engine.handle("حول 500 لعمر", "b-correct-2")
+    result = engine.handle("لا", "b-correct-2")
+
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.slots.recipient == "عمر"
+    assert result.reply == first.reply
+
+
+def test_the_asked_name_repeated_picks_nobody(engine, directory_db, fake_core):
+    """ "Ahmed" fits all three options, so it cannot select the first one."""
+
+    engine.handle("send 500 SAR to Ahmed", "b-correct-3")
+    result = engine.handle("Ahmed", "b-correct-3")
+
+    assert result.state.status is ConversationStatus.DISAMBIGUATING
+    assert result.state.slots.recipient == "Ahmed"
+    assert result.state.slots.account_number is None
+
+
 def test_recipient_answer_strips_arabic_verb(engine, directory_db, fake_core):
     """A colloquial recipient answer ("ابغي احمد") resolves, verb stripped."""
 

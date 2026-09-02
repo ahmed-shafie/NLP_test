@@ -66,6 +66,21 @@ class BeneficiaryHit:
     is_favorite: bool = False
 
 
+def matches_leading_name(needle: str, hit: BeneficiaryHit) -> bool:
+    """True when ``needle`` is how ``hit``'s own name starts.
+
+    "Ahmed" is how "Ahmed Hassan" is addressed, so it may stand in for that
+    person. "عمر" is not how "ليلى عمر" is addressed — it is her family name —
+    so the same match is a different person to the customer.
+    """
+
+    key = normalize(needle)
+    for value in (hit.name, hit.name_ar):
+        if value and normalize(str(value)).startswith(key):
+            return True
+    return False
+
+
 def _row_to_hit(r: RowMapping) -> BeneficiaryHit:
     """Map a beneficiaries table row (keyed by column name) to a hit."""
 
