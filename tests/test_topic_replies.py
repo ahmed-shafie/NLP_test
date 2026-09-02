@@ -224,14 +224,59 @@ def test_a_topical_answer_never_starts_a_money_flow() -> None:
 
 
 @pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
-def test_switching_the_feature_off_restores_the_generic_prompt(
+def test_switching_the_feature_off_declines_instead_of_answering(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "topic_replies_enabled", False)
     result = ConversationEngine().handle(
         text="ليش انخصم مني مرتين؟", session_id="topic-3", user_id="demo"
     )
-    assert result.reply == templates.choose_action(Language.AR)
+    # Still not an executable request, and still not answered: with no topical
+    # answer the honest reply says so rather than offering the menu.
+    assert result.reply == templates.out_of_scope(Language.AR)
+
+
+# ------------------------------------------- a question we have no answer for
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+@pytest.mark.parametrize(
+    "question",
+    ["ممكن تفتحلي حساب استثمار؟", "can you open a brokerage account for me?"],
+)
+def test_a_service_we_do_not_carry_is_declined_not_menued(question: str) -> None:
+    """The menu answers nothing; naming what we do is the answer."""
+
+    language = Language.EN if question.isascii() else Language.AR
+    result = ConversationEngine().handle(
+        text=question, session_id=f"oos-{hash(question)}", user_id="demo"
+    )
+
+    assert result.state.intent is None
+    assert result.reply == templates.out_of_scope(language)
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+def test_a_fee_question_is_declined_rather_than_answered() -> None:
+    """We hold no fee schedule, so no figure may be stated."""
+
+    result = ConversationEngine().handle(
+        text="what are the transfer fees?", session_id="oos-fees", user_id="demo"
+    )
+
+    assert result.reply == templates.out_of_scope(Language.EN)
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+def test_asking_how_to_transfer_is_explained_by_example() -> None:
+    """This service we do carry, so declining it would be wrong."""
+
+    result = ConversationEngine().handle(
+        text="كيف نحول فلوس؟", session_id="oos-how", user_id="demo"
+    )
+
+    assert result.state.intent is None  # explaining is not starting
+    assert result.reply == templates.how_to_transact(Language.AR)
 
 
 # ------------------------------------------------- the gate an English question meets

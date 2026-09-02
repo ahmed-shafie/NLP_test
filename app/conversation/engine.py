@@ -535,6 +535,51 @@ _QUESTION_WORDS = {
 }
 
 
+# Wider than ``_QUESTION_WORDS``: those decide whether an action verb is a
+# request or a question, these decide whether the turn is a question at all.
+# Only interrogatives belong here — a word like "can" or "ممكن" also opens a
+# plain request ("can you send 500 to Omar"), so it says nothing on its own.
+_ASKING_WORDS = _QUESTION_WORDS | {
+    normalize(w)
+    for w in (
+        "what",
+        "which",
+        "who",
+        "whose",
+        "وش",
+        "كم",
+        "إيه",
+        "ايه",
+        "مين",
+        "ازاي",
+        "إزاي",
+    )
+}
+
+
+_HOW_WORDS = {normalize(w) for w in ("how", "كيف", "كيفاش", "ازاي", "إزاي")}
+
+
+def _asks_how(text: str) -> bool:
+    """True for "how do I transfer?" — a procedure question, not a fee one."""
+
+    return bool({normalize(t) for t in _tokens(text)} & _HOW_WORDS)
+
+
+def _is_a_question(text: str) -> bool:
+    """True when the turn asks about a service rather than requesting one.
+
+    A question mark settles it; otherwise the turn has to open with an
+    interrogative, so that a vague request ("I want to do something") still
+    gets the chooser rather than an answer about services.
+    """
+
+    if "?" in text or "؟" in text:
+        return True
+    tokens = _tokens_in_order(text)
+    return bool(tokens) and normalize(tokens[0]) in _ASKING_WORDS
+
+
 def _asks_to_act(text: str, verbs: set[str]) -> bool:
     """True when ``text`` asks us to perform the action, not to explain it.
 
@@ -711,7 +756,11 @@ def _mask_own_account(number: str) -> str:
 
 
 def _tokens(text: str) -> set[str]:
-    return {t.strip(".,!؟،").lower() for t in text.split()}
+    return set(_tokens_in_order(text))
+
+
+def _tokens_in_order(text: str) -> list[str]:
+    return [t.strip(".,!؟،").lower() for t in text.split() if t.strip(".,!؟،")]
 
 
 _CONTROL_TOKENS = (
@@ -1366,6 +1415,20 @@ class ConversationEngine:
                     answer = self._topic_answer(text, lang, tracer)
                     if answer is not None:
                         return self._finish(state, answer)
+                    if _is_a_question(text):
+                        # A question we have no answer for is not an unclear
+                        # action: "transfer or bill?" answers nothing. Either
+                        # it asks how to do something we carry, or it asks for
+                        # a service we don't — never invent an answer.
+                        reply = (
+                            templates.how_to_transact(lang)
+                            if _asks_how(text)
+                            and _has_verb(text, _TRANSFER_VERBS | _PAY_VERBS)
+                            else templates.out_of_scope(lang)
+                        )
+                        return self._finish(
+                            state, reply, reason=ReasonCode.INTENT_UNCLEAR
+                        )
                     return self._finish(
                         state,
                         templates.choose_action(lang),

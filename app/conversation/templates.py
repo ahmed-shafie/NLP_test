@@ -117,6 +117,41 @@ _CHOOSE_ACTION: dict[Language, tuple[str, ...]] = {
     ),
 }
 
+# A question about a service the assistant does not carry. It must not invent
+# the answer (fees, policies) — it says so, and names what it can actually do.
+_OUT_OF_SCOPE: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "That's not a service I can help with \U0001f642 — I can send money, pay "
+        "bills, check your balance, and manage your beneficiaries.",
+        "I don't handle that one \U0001f642 — what I can do is transfers, bill "
+        "payments, your balance, and your beneficiaries.",
+        "That's outside what I do \U0001f642 — I'm here for transfers, bills, "
+        "balances, and beneficiaries.",
+    ),
+    Language.AR: (
+        "الخدمة دي مو عندي \U0001f642 — أقدر أساعدك في التحويل، سداد "
+        "الفواتير، الرصيد، والمستفيدين.",
+        "هالطلب مو من خدماتي \U0001f642 — اللي أقدر عليه: تحويل فلوس، "
+        "سداد فواتير، الرصيد، والمستفيدين.",
+        "ما عندي الخدمة دي \U0001f642 — أنا هنا للتحويل، الفواتير، الرصيد، "
+        "والمستفيدين.",
+    ),
+}
+
+# A "how do I …" question about something the assistant *does* carry: explain
+# the flow by example instead of claiming the service is missing.
+_HOW_TO: dict[Language, tuple[str, ...]] = {
+    Language.EN: (
+        "I can do that for you right here \U0001f642 — just tell me the amount "
+        "and who it's for, e.g. \"send 500 to Omar\", and I'll take it from "
+        "there.",
+    ),
+    Language.AR: (
+        "أقدر أسويها لك من هنا \U0001f642 — قل لي المبلغ واسم اللي تحول له، "
+        'مثلاً "حول ٥٠٠ لعمر"، وأنا أكمل معك البقية.',
+    ),
+}
+
 _GREETING: dict[Language, tuple[str, ...]] = {
     Language.EN: (
         "Of course — let's get your transfer sorted.",
@@ -982,6 +1017,18 @@ def opening(language: Language) -> str:
 
 def fallback(language: Language) -> str:
     return phrasing.varied("fallback", _FALLBACK, language)
+
+
+def how_to_transact(language: Language) -> str:
+    """Explain how to start a flow the assistant does carry."""
+
+    return phrasing.varied("how_to_transact", _HOW_TO, language)
+
+
+def out_of_scope(language: Language) -> str:
+    """Answer a question about a service the assistant does not carry."""
+
+    return phrasing.varied("out_of_scope", _OUT_OF_SCOPE, language)
 
 
 def cancelled(language: Language) -> str:
