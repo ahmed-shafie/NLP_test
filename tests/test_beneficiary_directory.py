@@ -691,6 +691,12 @@ def test_list_beneficiaries_arabic_misspelled(engine, directory_db):
         "وش المستفيدين اللي عندي",
         "ابغى اشوف المستفيدين",  # colloquial "let me see"
         "شوف المستفيدين",
+        # A count is a read of the same list, not a question we cannot answer.
+        "كم مستفيد",
+        "كم مستفيد عندي",
+        "عدد المستفيدين",
+        "how many beneficiaries",
+        "how many beneficiaries do I have",
     ],
 )
 def test_list_phrasings_all_list(engine, directory_db, phrase):

@@ -328,6 +328,13 @@ _LIST_BENE_MARKERS = {
         "نشوف",
         "استعرض",
         "راجع",
+        # "how many beneficiaries", "كم مستفيد", "عدد المستفيدين": a count is a
+        # read of the same list, and the listing reply opens with the count.
+        "how",
+        "many",
+        "count",
+        "كم",
+        "عدد",
     )
 }
 
