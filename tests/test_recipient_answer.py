@@ -73,6 +73,33 @@ def test_an_answer_that_is_not_a_name_names_nobody(
     assert result.state.status is ConversationStatus.COLLECTING
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "حياك الله",
+        "صباح الخير",
+        "السلام عليكم",
+        "شكرا",
+        "good morning",
+        "thanks a lot",
+    ],
+)
+def test_a_greeting_at_the_prompt_names_nobody(
+    memory, directory_db, answer: str
+) -> None:
+    """A greeting is not a payee, so it must not reach the confirmation."""
+
+    engine = ConversationEngine()
+    session = f"greet-{answer}"
+    _ask_who(engine, session)
+
+    result = engine.handle(answer, session, user_id="demo")
+
+    assert result.state.slots.recipient is None
+    assert result.state.pending_slot == "recipient"
+    assert result.state.status is ConversationStatus.COLLECTING
+
+
 def test_a_name_typed_at_the_prompt_still_works(memory, directory_db) -> None:
     engine = ConversationEngine()
     _ask_who(engine, "sid-name")

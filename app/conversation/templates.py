@@ -335,6 +335,8 @@ _SMALL_TALK_CUES: tuple[tuple[str, frozenset[str]], ...] = (
                 "هاي",
                 "صباح",
                 "مساء",
+                "حياك",
+                "حياكم",
             }
         ),
     ),
