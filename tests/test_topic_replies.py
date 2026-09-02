@@ -268,6 +268,31 @@ def test_a_fee_question_is_declined_rather_than_answered() -> None:
     assert "customer service" in result.reply.lower()
 
 
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+@pytest.mark.parametrize("request_text", ["قدم ع قرض", "I want a mortgage"])
+def test_a_request_for_a_product_we_do_not_carry_is_declined(request_text: str) -> None:
+    """A request, not only a question: the menu offers something else entirely."""
+
+    language = Language.EN if request_text.isascii() else Language.AR
+    result = ConversationEngine().handle(
+        text=request_text, session_id=f"oos-req-{hash(request_text)}", user_id="demo"
+    )
+
+    assert result.state.intent is None
+    assert result.reply == templates.out_of_scope(language)
+
+
+@pytest.mark.skipif(get_embedder() is None, reason="embedding model unavailable")
+def test_settling_an_instalment_is_not_declined() -> None:
+    """Paying towards a loan is a payment we can take; only applying is not."""
+
+    result = ConversationEngine().handle(
+        text="ابغى اسدد قرض", session_id="oos-settle", user_id="demo"
+    )
+
+    assert result.reply != templates.out_of_scope(Language.AR)
+
+
 @pytest.mark.parametrize("language", list(Language))
 def test_every_decline_points_at_customer_service(language: Language) -> None:
     """We hold no answer, so the customer must be told who does."""

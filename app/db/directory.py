@@ -17,12 +17,33 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from app.config import settings
+from app.data_loader import transliterations
 from app.nlu.normalize import normalize
 
 if TYPE_CHECKING:
     from sqlalchemy import RowMapping
 
 logger = logging.getLogger(__name__)
+
+
+def _needle_forms(needle: str) -> set[str]:
+    """``needle`` plus its spelling in the other script ("omar" -> "عمر").
+
+    A beneficiary saved only in Arabic is the same person when the customer
+    types their name in English, so the search must cross scripts the way the
+    address book already does.
+    """
+
+    tokens = needle.split()
+    if not tokens:
+        return set()
+    forms = {needle}
+    for index, token in enumerate(tokens):
+        for other in transliterations(token):
+            swapped = list(tokens)
+            swapped[index] = other
+            forms.add(" ".join(swapped))
+    return forms
 
 
 def _name_matches(needle: str, name: object, name_ar: object) -> bool:
@@ -34,9 +55,14 @@ def _name_matches(needle: str, name: object, name_ar: object) -> bool:
     stand in for a person: "no" must not reach "Mohammed Nour".
     """
 
-    pattern = re.compile(rf"(?<!\w){re.escape(needle)}(?!\w)")
+    patterns = [
+        re.compile(rf"(?<!\w){re.escape(form)}(?!\w)") for form in _needle_forms(needle)
+    ]
     for value in (name, name_ar):
-        if value and pattern.search(normalize(str(value))):
+        if not value:
+            continue
+        normalized = normalize(str(value))
+        if any(pattern.search(normalized) for pattern in patterns):
             return True
     return False
 
@@ -74,9 +100,18 @@ def matches_leading_name(needle: str, hit: BeneficiaryHit) -> bool:
     so the same match is a different person to the customer.
     """
 
-    key = normalize(needle)
-    for value in (hit.name, hit.name_ar):
-        if value and normalize(str(value)).startswith(key):
+    return starts_with_name(needle, hit.name, hit.name_ar)
+
+
+def starts_with_name(needle: str, name: str, name_ar: str | None) -> bool:
+    """True when ``needle`` is how the person carrying ``name`` is addressed."""
+
+    keys = _needle_forms(normalize(needle))
+    for value in (name, name_ar):
+        if not value:
+            continue
+        normalized = normalize(str(value))
+        if any(normalized.startswith(key) for key in keys):
             return True
     return False
 

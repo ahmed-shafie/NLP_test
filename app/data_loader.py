@@ -281,6 +281,9 @@ def resolve_biller_candidates(
     if candidates:
         return candidates
     if allow_semantic:
+        misspelt = _misspelt_generic_candidates(text)
+        if misspelt:
+            return misspelt
         rec = resolve_biller_fuzzy(text)
         if rec is None and settings.biller_semantic_enabled:
             rec = resolve_biller_semantic(text)
@@ -315,6 +318,47 @@ _BILLER_QUERY_STOPWORDS: frozenset[str] = frozenset(
 # Minimum token length considered for a fuzzy match (shorter tokens are too
 # collision-prone for a single-edit typo rule).
 _FUZZY_MIN_LEN = 4
+
+
+# Longest edit distance tolerated between a token and a generic bill term, so a
+# single slipped letter ("قهرباء" for "كهرباء") still reaches the utility.
+_GENERIC_TERM_MAX_DISTANCE = 1
+
+
+@lru_cache(maxsize=1)
+def _generic_terms() -> tuple[str, ...]:
+    """Normalized generic bill words ("كهرباء", "internet", ...)."""
+
+    terms = {normalize(t) for t in _GENERIC_BILLER_GROUPS}
+    terms |= {normalize(t) for t in _GENERIC_CATEGORY_TERMS}
+    return tuple(sorted(t for t in terms if len(t) >= _FUZZY_MIN_LEN))
+
+
+def _misspelt_generic_candidates(text: str) -> list[BillerRecord]:
+    """Candidates for a generic bill word the customer misspelt.
+
+    "قهرباء" is "كهرباء" with one slipped letter, and the customer means the
+    electricity bill; only tokens long enough for a single edit to stay
+    unambiguous are corrected, and the correction still goes through the normal
+    generic-term path, so an ambiguous word keeps asking which biller.
+    """
+
+    terms = _generic_terms()
+    if not terms:
+        return []
+    for token in normalize_tokens(text):
+        if len(token) < _FUZZY_MIN_LEN or token in terms:
+            continue
+        near = [
+            term
+            for term in terms
+            if Levenshtein.distance(token, term) <= _GENERIC_TERM_MAX_DISTANCE
+        ]
+        if len(near) == 1:
+            candidates = _gazetteer_candidates(near[0])
+            if candidates:
+                return candidates
+    return []
 
 
 @lru_cache(maxsize=1)
@@ -429,6 +473,9 @@ def resolve_biller(text: str, *, allow_semantic: bool = False) -> BillerRecord |
     if gazetteer is not None:
         return gazetteer
     if allow_semantic:
+        misspelt = _misspelt_generic_candidates(text)
+        if misspelt:
+            return misspelt[0]
         fuzzy = resolve_biller_fuzzy(text)
         if fuzzy is not None:
             return fuzzy

@@ -100,6 +100,23 @@ def test_a_greeting_at_the_prompt_names_nobody(
     assert result.state.status is ConversationStatus.COLLECTING
 
 
+@pytest.mark.parametrize(
+    "answer", ["اخبار الطقس", "الطقس", "the weather", "اخبار", "كم الساعة"]
+)
+def test_a_topic_at_the_prompt_names_nobody(memory, directory_db, answer: str) -> None:
+    """The weather is a subject, not a payee: it must never reach an account."""
+
+    engine = ConversationEngine()
+    session = f"topic-{answer}"
+    _ask_who(engine, session)
+
+    result = engine.handle(answer, session, user_id="demo")
+
+    assert result.state.slots.recipient is None
+    assert result.state.slots.account_number is None
+    assert result.state.status is not ConversationStatus.CONFIRMING
+
+
 def test_a_name_typed_at_the_prompt_still_works(memory, directory_db) -> None:
     engine = ConversationEngine()
     _ask_who(engine, "sid-name")

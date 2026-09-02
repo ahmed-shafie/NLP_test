@@ -36,6 +36,7 @@ from app.db.directory import (
     BeneficiaryHit,
     get_beneficiary_directory,
     matches_leading_name,
+    starts_with_name,
 )
 from app.memory.schemas import Shortcut
 from app.memory.service import get_memory_brain
@@ -279,6 +280,10 @@ _LIST_BENE_NOUNS = {
         "المستفيد",
         "مستفيد",
         "مستفيدي",
+        # "my beneficiaries" written as one word: مستفيدين + ي
+        "مستفيديني",
+        "المستفيديني",
+        "مستفيدينى",
         # common misspelling that drops the yaa (المستف[ي]دين)
         "المستفدين",
         "مستفدين",
@@ -571,6 +576,47 @@ def _asks_how(text: str) -> bool:
     """True for "how do I transfer?" — a procedure question, not a fee one."""
 
     return bool({normalize(t) for t in _tokens(text)} & _HOW_WORDS)
+
+
+# Products the assistant does not carry. Naming one is a request we have to
+# decline (and point at customer service) rather than answer with the
+# "transfer or bill?" menu, which offers something else entirely.
+_UNSUPPORTED_SERVICES = {
+    normalize(w)
+    for w in (
+        "loan",
+        "loans",
+        "mortgage",
+        "financing",
+        "investment",
+        "brokerage",
+        "قرض",
+        "قرضا",
+        "قروض",
+        "القرض",
+        "القروض",
+        "تمويل",
+        "التمويل",
+        "عقاري",
+        "استثمار",
+        "الاستثمار",
+        "اسهم",
+        "الاسهم",
+    )
+}
+
+
+def _asks_unsupported_service(text: str) -> bool:
+    """True when the turn is about a product we do not carry.
+
+    A turn that also carries a pay/transfer verb ("اسدد قرض") is left alone:
+    settling an instalment is something the flows can do.
+    """
+
+    tokens = {normalize(t) for t in _tokens(text)}
+    if not tokens & _UNSUPPORTED_SERVICES:
+        return False
+    return not _has_verb(text, _TRANSFER_VERBS | _PAY_VERBS)
 
 
 def _is_a_question(text: str) -> bool:
@@ -920,6 +966,30 @@ _NOT_A_NAME = {
 }
 
 
+# Subjects a customer asks about, which no person is called. The recipient
+# prompt reads the whole message as the answer, so without this "اخبار الطقس"
+# becomes a payee (spelling correction even files it as the name "أبار").
+_NOT_A_PERSON = {
+    normalize(word)
+    for word in (
+        "weather",
+        "news",
+        "time",
+        "date",
+        "joke",
+        "اخبار",
+        "خبر",
+        "طقس",
+        "الطقس",
+        "الجو",
+        "الوقت",
+        "الساعة",
+        "التاريخ",
+        "نكتة",
+    )
+}
+
+
 # A negation that opens an answer and is followed by a name is a correction of
 # the name, not a refusal of the question.
 _CORRECTS_THE_NAME = {normalize(word) for word in ("no", "not", "nope", "لا", "مو")}
@@ -942,7 +1012,9 @@ def _is_name_like(candidate: str) -> bool:
     if templates.is_small_talk(stripped):
         return False
     words = normalize(stripped).split()
-    return bool(words) and not set(words) & _NOT_A_NAME
+    if not words:
+        return False
+    return not set(words) & (_NOT_A_NAME | _NOT_A_PERSON)
 
 
 def _is_known_name(text: str) -> bool:
@@ -1422,7 +1494,7 @@ class ConversationEngine:
                     answer = self._topic_answer(text, lang, tracer)
                     if answer is not None:
                         return self._finish(state, answer)
-                    if _is_a_question(text):
+                    if _is_a_question(text) or _asks_unsupported_service(text):
                         # A question we have no answer for is not an unclear
                         # action: "transfer or bill?" answers nothing. Either
                         # it asks how to do something we carry, or it asks for
@@ -2186,13 +2258,22 @@ class ConversationEngine:
             index = int(digits)
             if 1 <= index <= len(options):
                 return options[index - 1]
-        # A word that fits several of the options ("محمد" against "محمد نور" and
-        # "محمد سعد") picks nobody: it is the question being repeated back.
-        matched: list[BeneficiaryOption] = []
+        # Somebody saved under exactly this name is that person, even when the
+        # word also sits inside another candidate's name ("عمر" against "عمر"
+        # and "ليلى عمر"): their own full name cannot be ambiguous.
         for option in options:
-            names = [normalize(c) for c in (option.name, option.name_ar) if c]
-            if any(n and (n in normalized or normalized in n) for n in names):
-                matched.append(option)
+            if normalized in {normalize(c) for c in (option.name, option.name_ar) if c}:
+                return option
+        # A word that fits several of the options ("محمد" against "محمد نور" and
+        # "محمد سعد") picks nobody: it is the question being repeated back. Nor
+        # does repeating a word that only sits deeper inside one candidate's
+        # name ("Omar" against "Laila Omar") pick her: that is the same word
+        # that was already too weak to identify anybody.
+        matched = [
+            option
+            for option in options
+            if starts_with_name(normalized, option.name, option.name_ar)
+        ]
         return matched[0] if len(matched) == 1 else None
 
     def _start_add_beneficiary(

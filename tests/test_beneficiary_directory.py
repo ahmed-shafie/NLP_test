@@ -697,6 +697,9 @@ def test_list_beneficiaries_arabic_misspelled(engine, directory_db):
         "عدد المستفيدين",
         "how many beneficiaries",
         "how many beneficiaries do I have",
+        "كم عدد المستفيدين",
+        "مستفيديني",  # one colloquial word, "my beneficiaries"
+        "list my beneficiary",
     ],
 )
 def test_list_phrasings_all_list(engine, directory_db, phrase):
