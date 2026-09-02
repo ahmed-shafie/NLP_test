@@ -78,8 +78,8 @@ def test_the_account_prompt_prints_the_cores_own_numbers(
 
     assert "من أي حساب" in result.reply
     # Balances, masks and currency are printed exactly as the Core reported them.
-    assert "SA••7890 — 12300.00 SAR" in result.reply
-    assert "SA••8877 — 5000.00 SAR" in result.reply
+    assert "••••7890 — 12300.00 SAR" in result.reply
+    assert "••••8877 — 5000.00 SAR" in result.reply
 
 
 def test_the_account_pick_is_not_read_as_an_amount(
@@ -177,7 +177,7 @@ def test_the_english_prompts_are_asked_in_english(
 ) -> None:
     account = engine.handle("transfer 432 to omar", "gates-en", language=Language.EN)
     assert "Which account" in account.reply
-    assert "Current Account SA••7890" in account.reply
+    assert "Current Account ••••7890" in account.reply
 
     purpose = engine.handle("1", "gates-en", language=Language.EN)
     assert "Family support" in purpose.reply

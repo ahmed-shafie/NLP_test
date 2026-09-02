@@ -683,6 +683,13 @@ def _mask_account(account: str) -> str:
     return f"SA••{tail}"
 
 
+def _mask_own_account(number: str) -> str:
+    """Mask one of the customer's own accounts as their statements do."""
+
+    digits = "".join(ch for ch in number if ch.isalnum())
+    return f"••••{digits[-4:]}" if len(digits) >= 4 else "••••"
+
+
 def _tokens(text: str) -> set[str]:
     return {t.strip(".,!؟،").lower() for t in text.split()}
 
@@ -2413,7 +2420,7 @@ class ConversationEngine:
             AccountOption(
                 account_id=account.account_id,
                 account_type=account.account_type,
-                masked=_mask_account(account.number),
+                masked=_mask_own_account(account.number),
                 balance=f"{account.balance:.2f}",
                 currency=account.currency,
             )

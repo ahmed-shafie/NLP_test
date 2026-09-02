@@ -834,9 +834,13 @@ _RESUME_NOTE: dict[Language, tuple[str, ...]] = {
 }
 
 
-def _account_label(account_type: str, language: Language) -> str:
-    if language is Language.AR:
-        return f"حساب {_ACCOUNT_TYPE_AR.get(account_type, account_type)}"
+def _account_label(account_type: str) -> str:
+    """The account's display name, in English in both languages.
+
+    A display name identifies the account on the customer's statements, so it
+    is printed as the bank writes it rather than translated per turn.
+    """
+
     return f"{account_type.capitalize()} Account"
 
 
@@ -851,13 +855,13 @@ def choose_source_account(
     """
 
     lines = [
-        f"{i}. {_account_label(account_type, language)} {masked} — {balance} {currency}"
+        f"{i}. {_account_label(account_type)} {masked} — {balance} {currency}"
         for i, (account_type, masked, balance, currency) in enumerate(accounts, start=1)
     ]
     listing = "\n".join(lines)
     if language is Language.AR:
-        return f"من أي حساب تبي تحوّل؟\n{listing}"
-    return f"Which account should the money come from?\n{listing}"
+        return f"من أي حساب تبي تحول؟\n{listing}"
+    return f"Which account do you want to transfer from?\n{listing}"
 
 
 def choose_transfer_purpose(
@@ -874,9 +878,9 @@ def choose_transfer_purpose(
         )
         return f"{title}\n{listing}"
     title = (
-        f"What's this transfer to {recipient} for? Pick from the list:"
+        f"What's the transfer purpose for {recipient}? Choose from the list:"
         if recipient
-        else "What's this transfer for? Pick from the list:"
+        else "What's the transfer purpose? Choose from the list:"
     )
     return f"{title}\n{listing}"
 
