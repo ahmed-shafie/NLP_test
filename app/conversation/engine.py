@@ -1424,7 +1424,7 @@ class ConversationEngine:
                             templates.how_to_transact(lang)
                             if _asks_how(text)
                             and _has_verb(text, _TRANSFER_VERBS | _PAY_VERBS)
-                            else templates.out_of_scope(lang)
+                            else templates.out_of_scope(lang, turn=text)
                         )
                         return self._finish(
                             state, reply, reason=ReasonCode.INTENT_UNCLEAR

@@ -62,6 +62,20 @@ _REPHRASE_SYSTEM_PROMPT = (
 )
 
 
+_DECLINE_SYSTEM_PROMPT = (
+    "You are a bilingual (English/Arabic) Saudi banking assistant. The customer "
+    "asked for something you do NOT handle. Write ONE short reply in the SAME "
+    "language and colloquial register as the customer, in three beats: (1) a brief "
+    "human line acknowledging their situation — e.g. for an accident or illness "
+    'wish them well ("يارب ما تشوف شر"); (2) say plainly that you do not have '
+    "this information and customer service can help them with it; (3) name what you "
+    "DO handle: transfers, bill payments, balance, beneficiaries. Rules: never state "
+    "a fee, rate, policy, phone number, date or ANY number or code — not even an "
+    "approximate one; never promise to do it or to pass the request on; no financial "
+    "advice; at most three short sentences; plain text only, no preamble, no quotes."
+)
+
+
 def _parse_json_object(content: str) -> dict:
     """Extract the first JSON object from an LLM response (tolerates code fences)."""
 
@@ -203,6 +217,40 @@ class LLMExceptionHandler:
         signals.record_call(signals.LLM, ok=True)
         content = content.strip()
         return content or None
+
+    def decline(self, text: str, language: str, timeout: float) -> str | None:
+        """Word a decline for a request the assistant does not handle.
+
+        Unlike :meth:`rephrase` this writes the reply from the customer's own turn,
+        so it can open with a line that fits what they said. It carries no money
+        fact by construction, and the caller's guard drops any candidate that
+        states a number, a code or the wrong script.
+        """
+
+        import litellm
+
+        try:
+            response = litellm.completion(
+                model=self.model,
+                api_base=self.api_base,
+                timeout=timeout,
+                temperature=0.7,
+                max_tokens=160,
+                messages=[
+                    {"role": "system", "content": _DECLINE_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"language={language}\ncustomer={text}",
+                    },
+                ],
+            )
+            content = response["choices"][0]["message"]["content"] or ""
+        except Exception as exc:  # noqa: BLE001 - never let the LLM break the request
+            logger.warning("LLM decline failed: %s", exc)
+            signals.record_call(signals.LLM, ok=False)
+            return None
+        signals.record_call(signals.LLM, ok=True)
+        return content.strip() or None
 
     def rephrase(self, text: str, language: str, timeout: float) -> str | None:
         """Re-word an already-written reply, keeping its meaning and every value.

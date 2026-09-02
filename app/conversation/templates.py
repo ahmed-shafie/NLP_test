@@ -1030,10 +1030,18 @@ def how_to_transact(language: Language) -> str:
     return phrasing.varied("how_to_transact", _HOW_TO, language)
 
 
-def out_of_scope(language: Language) -> str:
-    """Answer a question about a service the assistant does not carry."""
+def out_of_scope(language: Language, turn: str | None = None) -> str:
+    """Answer a question about a service the assistant does not carry.
 
-    return phrasing.varied("out_of_scope", _OUT_OF_SCOPE, language)
+    With the customer's ``turn`` the LLM writes the decline itself, so it can
+    open on what they said before saying the information is not ours; without it
+    (or with the LLM off) the fixed wording is sent.
+    """
+
+    template = phrasing.pick("out_of_scope", _OUT_OF_SCOPE[language])
+    if turn is None:
+        return phrasing.rewrite("out_of_scope", template, language)
+    return phrasing.declined("out_of_scope", turn, template, language)
 
 
 def cancelled(language: Language) -> str:
